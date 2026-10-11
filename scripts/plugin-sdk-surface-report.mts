@@ -265,7 +265,8 @@ export function readPluginSdkSurfaceBudgets(env: NodeJS.ProcessEnv = process.env
       // +2: readRuntimeConfig and captureRuntimeConfigAsyncReader on runtime-config-snapshot.
       // +10: shared database-engine contracts and operations after the SQLite export cutover.
       // +1: approved lexical database-engine admission scope for workboard boot/migrations.
-      3739,
+      // -9: retired heartbeat reply and harness exports.
+      3730,
       env,
     ),
     publicFunctionExports: readPluginSdkSurfaceBudgetEnv(
@@ -297,7 +298,8 @@ export function readPluginSdkSurfaceBudgets(env: NodeJS.ProcessEnv = process.env
       // +2: the same prepared runtime reader and asynchronous config preparation functions.
       // +5: shared database-engine host and worker operations.
       // +1: the same lexical database-engine admission scope.
-      2192,
+      // -4: retired heartbeat reply and harness functions.
+      2188,
       env,
     ),
     publicDeprecatedExports: readPluginSdkSurfaceBudgetEnv(
