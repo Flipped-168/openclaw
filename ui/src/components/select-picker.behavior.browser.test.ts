@@ -1,4 +1,3 @@
-import type WaPopup from "@awesome.me/webawesome/dist/components/popup/popup.js";
 import { html, render } from "lit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
@@ -67,6 +66,33 @@ async function mount(overrides: Partial<PickerParams<PickerOption>> = {}) {
 }
 
 describe("renderPicker", () => {
+  it("keeps reserved option values distinct from the popup and trigger IDs", async () => {
+    const p = await mount({
+      value: "content",
+      options: [
+        { value: "content", label: "Content" },
+        { value: "trigger", label: "Trigger" },
+      ],
+      searchable: "always",
+    });
+    await p.open();
+    const search = p.picker.querySelector<HTMLInputElement>("input")!;
+    for (const value of ["content", "trigger"]) {
+      const row = p.rows().find((option) => option.dataset.value === value)!;
+      await expect.element(search).toHaveAttribute("aria-activedescendant", row.id);
+      const active = document.getElementById(search.getAttribute("aria-activedescendant")!);
+      expect(active?.getAttribute("role")).toBe("option");
+      expect(active?.dataset.value).toBe(value);
+      const ids = [...p.picker.querySelectorAll<HTMLElement>("[id]")].map((element) => element.id);
+      expect(new Set(ids).size).toBe(ids.length);
+      if (value === "content") {
+        await p.key("ArrowDown");
+      }
+    }
+    await p.key("Enter");
+    expect(p.params.onChange).toHaveBeenCalledExactlyOnceWith("trigger");
+  });
+
   it.each([false, true])(
     "does not rewrite retained choices when search removes preceding rows (grouped=%s)",
     async (grouped) => {
@@ -114,10 +140,12 @@ describe("renderPicker", () => {
     },
   );
 
-  it("anchors its popup to the mounted trigger before the first open", async () => {
+  it("anchors its native popup to the mounted trigger before the first open", async () => {
     const p = await mount();
-    const popup = p.picker.querySelector<WaPopup>("wa-popup");
-    expect(popup?.anchor).toBe(p.trigger);
+    const popup = p.picker.querySelector<HTMLElement>(".picker-select__menu")!;
+    expect(popup.style.getPropertyValue("position-anchor")).toBe(
+      p.trigger.style.getPropertyValue("anchor-name"),
+    );
   });
 
   it("leaves closed-trigger Escape to the page after dismissing the menu without a write", async () => {
@@ -288,6 +316,7 @@ describe("renderPicker", () => {
     await p.open();
     await p.search("aurora");
     document.body.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+    document.body.dispatchEvent(new PointerEvent("pointerup", { bubbles: true }));
     await p.picker.updateComplete;
     expect(p.trigger.getAttribute("aria-expanded")).toBe("false");
     await p.open();

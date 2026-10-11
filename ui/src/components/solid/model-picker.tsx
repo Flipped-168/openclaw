@@ -1,7 +1,6 @@
 import { createMemo } from "solid-js";
 import { providerDisplayLabel, renderProviderBrandIcon } from "../provider-icon.ts";
-import type { PickerOption, PickerParams, SelectPicker } from "../select-picker.ts";
-import "../select-picker.ts";
+import { Picker, type PickerParams } from "../select-picker.ts";
 
 export type ModelPickerOption = {
   value: string;
@@ -12,16 +11,6 @@ export type ModelPickerOption = {
 };
 
 type ModelSelectOption = ModelPickerOption & { description?: string };
-
-declare module "@solidjs/web" {
-  namespace JSX {
-    interface IntrinsicElements {
-      "openclaw-select-picker": HTMLAttributes<SelectPicker> & {
-        "prop:params": PickerParams<PickerOption>;
-      };
-    }
-  }
-}
 
 export type ModelPickerParams = {
   id?: string;
@@ -118,11 +107,7 @@ export function ModelPicker(props: ModelPickerParams) {
   }));
   return (
     <div class="model-picker">
-      <openclaw-select-picker
-        class="settings-select picker-select model-picker__select "
-        style={{ width: "100%", "min-width": "min(138px,100%)" }}
-        prop:params={pickerParams()}
-      />
+      <Picker params={pickerParams()} />
       {props.custom ? (
         <input
           id={props.custom.id}

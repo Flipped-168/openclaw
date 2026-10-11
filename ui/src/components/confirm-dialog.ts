@@ -1,6 +1,6 @@
-// Control UI helper presents Promise-based confirmation without relying on a native dialog bridge.
-import { html, nothing } from "lit";
-import { t } from "../i18n/index.ts";
+import { render as renderSolid, type JSX } from "@solidjs/web";
+import { createComponent } from "solid-js";
+import { ConfirmDialogView } from "./confirm-dialog-view.tsx";
 import { withPromiseModalHost } from "./promise-modal-host.ts";
 
 /**
@@ -30,89 +30,11 @@ export type ConfirmDialogOptions = {
 let confirmationActive = false;
 
 function presentConfirmDialog(options: ConfirmDialogOptions): Promise<boolean> {
-  return withPromiseModalHost({ signal: options.signal, value: false }, ({ render, finish }) => {
-    let skipRequested = false;
-    let acknowledged = !options.requiredAcknowledgement;
-    const title = options.title ?? t("common.confirm");
-    const content = () => {
-      return html`
-        <openclaw-modal-dialog
-          label=${title}
-          description=${options.message}
-          @modal-cancel=${() => finish(false)}
-        >
-          <div class="exec-approval-card">
-            <div class="exec-approval-header">
-              <div>
-                <div class="exec-approval-title">${title}</div>
-                <div class="exec-approval-sub" style="white-space: pre-line">
-                  ${options.message}
-                </div>
-              </div>
-            </div>
-            ${
-              options.details
-                ? html`<div class="exec-approval-command mono">${options.details}</div>`
-                : nothing
-            }
-            ${
-              options.requiredAcknowledgement
-                ? html`<label class="field checkbox">
-                    <input
-                      type="checkbox"
-                      .checked=${acknowledged}
-                      @change=${(event: Event) => {
-                        const input = event.currentTarget;
-                        if (input instanceof HTMLInputElement) {
-                          acknowledged = input.checked;
-                          render(content);
-                        }
-                      }}
-                    />
-                    <span>${options.requiredAcknowledgement}</span>
-                  </label>`
-                : nothing
-            }
-            ${
-              options.skipPreference && !options.requiredAcknowledgement
-                ? html`<label class="field checkbox exec-approval-skip">
-                    <input
-                      type="checkbox"
-                      @change=${(event: Event) => {
-                        skipRequested = (event.target as HTMLInputElement).checked;
-                      }}
-                    />
-                    <span>${t("common.dontAskAgain")}</span>
-                  </label>`
-                : nothing
-            }
-            <div class="exec-approval-actions">
-              <button
-                type="button"
-                class="btn ${options.danger ? "danger" : "primary"}"
-                ?disabled=${!acknowledged}
-                @click=${() => {
-                  if (!acknowledged) {
-                    return;
-                  }
-                  if (skipRequested) {
-                    options.skipPreference?.remember();
-                  }
-                  finish(true);
-                }}
-              >
-                ${options.confirmLabel ?? t("common.confirm")}
-              </button>
-              <button type="button" class="btn" autofocus @click=${() => finish(false)}>
-                ${options.cancelLabel ?? t("common.cancel")}
-              </button>
-            </div>
-          </div>
-        </openclaw-modal-dialog>
-      `;
-    };
-    render(content);
-  });
+  return withPromiseModalHost<boolean, JSX.Element>(
+    { signal: options.signal, value: false },
+    ({ render, finish }) => render(() => createComponent(ConfirmDialogView, { options, finish })),
+    (content, host) => renderSolid(content, host),
+  );
 }
 
 /** Native confirms block reentrancy; reject a second request instead of replaying it later. */

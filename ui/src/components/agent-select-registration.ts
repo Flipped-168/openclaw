@@ -1,20 +1,15 @@
-import type { AgentSelectOption } from "./agent-select.ts";
-import { AgentSelect } from "./agent-select.ts";
-
-if (!customElements.get("openclaw-agent-select")) {
-  customElements.define("openclaw-agent-select", AgentSelect);
-}
+import type { AgentSelectElement, AgentSelectOption } from "./agent-select.ts";
+import "./agent-select.tsx";
 
 declare global {
   interface HTMLElementTagNameMap {
-    "openclaw-agent-select": AgentSelect;
+    "openclaw-agent-select": AgentSelectElement;
   }
 }
-
 declare module "@solidjs/web" {
   namespace JSX {
     interface IntrinsicElements {
-      "openclaw-agent-select": HTMLAttributes<AgentSelect> & {
+      "openclaw-agent-select": HTMLAttributes<AgentSelectElement> & {
         "prop:options": AgentSelectOption[];
         "prop:value": string;
         "prop:accessibleLabel": string;

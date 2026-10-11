@@ -87,6 +87,54 @@ if (typeof HTMLDialogElement !== "undefined" && !("close" in HTMLDialogElement.p
   });
 }
 
+// JSDOM renderer tests exercise domain callbacks without a browser top layer.
+// Native visibility, focus, and dismissal contracts run in the browser suites.
+if (typeof HTMLElement !== "undefined" && !("showPopover" in HTMLElement.prototype)) {
+  const openPopovers = new WeakSet<HTMLElement>();
+  // oxlint-disable-next-line typescript/unbound-method -- Every call supplies the actual element receiver below.
+  const matches = Element.prototype.matches;
+  Object.defineProperty(Element.prototype, "matches", {
+    configurable: true,
+    value(this: Element, selector: string) {
+      return selector === ":popover-open"
+        ? this instanceof HTMLElement && openPopovers.has(this)
+        : matches.call(this, selector);
+    },
+  });
+  const setOpen = (element: HTMLElement, open: boolean) => {
+    const wasOpen = openPopovers.has(element);
+    if (wasOpen === open) {
+      return;
+    }
+    const states = { oldState: wasOpen ? "open" : "closed", newState: open ? "open" : "closed" };
+    if (
+      !element.dispatchEvent(Object.assign(new Event("beforetoggle", { cancelable: open }), states))
+    ) {
+      return;
+    }
+    if (open) {
+      openPopovers.add(element);
+    } else {
+      openPopovers.delete(element);
+    }
+    element.dispatchEvent(Object.assign(new Event("toggle"), states));
+  };
+  Object.defineProperties(HTMLElement.prototype, {
+    showPopover: {
+      configurable: true,
+      value(this: HTMLElement) {
+        setOpen(this, true);
+      },
+    },
+    hidePopover: {
+      configurable: true,
+      value(this: HTMLElement) {
+        setOpen(this, false);
+      },
+    },
+  });
+}
+
 // Node 25+ exposes accessor-backed WebStorage that can be disabled or inert.
 // Vitest intentionally rejects all storage accessors, so jsdom needs an owned
 // value descriptor even when invoking the original getter appears to work.
