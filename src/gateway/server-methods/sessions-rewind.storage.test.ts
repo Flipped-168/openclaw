@@ -649,9 +649,8 @@ it.each(["SQLite writer fault injection", "public lifecycle predecessor"] as con
   async (revocation) => {
     await withOpenClawTestState({ label: "message-fork-participation" }, async (testState) => {
       await testState.writeConfig(cfg);
-      if (revocation === "SQLite writer fault injection") {
-        openOpenClawAgentDatabase({ agentId: "main" });
-      }
+      // Both variants use native fixture reads; admit their handle before asynchronous writers.
+      openOpenClawAgentDatabase({ agentId: "main" });
       const scope = await seedMessageCutSource();
       await addSessionMember(scope, {
         identityId: "member",
