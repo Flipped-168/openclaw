@@ -8,6 +8,8 @@ import { observeHostDataSql } from "../../test/helpers/sqlite-statement-executio
 import { useAutoCleanupTempDirTracker } from "../../test/helpers/temp-dir.js";
 import { openNodeSqliteDatabase } from "../infra/node-sqlite.js";
 import * as nodeSqlite from "../infra/node-sqlite.js";
+import { readSqliteCleanCloseSeal } from "../infra/sqlite-clean-close-seal.js";
+import { readSqliteDatabaseCleanClose } from "../infra/sqlite-database-admission.js";
 import { resolveSqliteDatabaseFilePaths } from "../infra/sqlite-files.js";
 import type { SqliteIntegrityDiagnostics } from "../infra/sqlite-integrity.js";
 import { readDatabasePathIdentitySync } from "../infra/sqlite-worker-identity.js";
@@ -34,9 +36,9 @@ import {
   resolveOpenClawAgentSqlitePath,
 } from "./openclaw-agent-db.js";
 import { cleanupRetiredAgentDatabaseLease } from "./openclaw-agent-execution-cleanup.js";
+import { OPENCLAW_DATABASE_SEAL_SCHEMA } from "./openclaw-database-seal-schema.js";
 import {
   clearOpenClawDatabaseQuarantine,
-  readOpenClawAgentIntegrityVerification,
   readOpenClawDatabaseQuarantineFailure,
   recordOpenClawDatabaseQuarantine,
 } from "./openclaw-quarantine-store.js";
@@ -109,7 +111,7 @@ function openOwner() {
   return {
     env,
     database,
-    record: () => readOpenClawAgentIntegrityVerification(database.path, env),
+    cleanClose: () => readSqliteDatabaseCleanClose(database.path),
   };
 }
 
@@ -164,22 +166,30 @@ it.each(process.platform === "win32" ? [false] : [false, true])(
       closeOpenClawAgentDatabaseByPath(owner.database.path);
       openOpenClawAgentDatabase({ agentId: "integrity-lease", env: owner.env, path: childPath });
       closeOpenClawAgentDatabaseByPath(childPath);
-      openOpenClawAgentDatabase({
+      const reopened = openOpenClawAgentDatabase({
         agentId: "integrity-lease",
         env: owner.env,
         path: owner.database.path,
       });
+      reopened.db.exec("INSERT INTO auth_profile_state VALUES ('alias-writer', '{}', 1)");
     }
     const child = await openChild(childPath, owner.env);
-    expect(owner.record()?.clean_close).toBe(0);
+    expect(owner.cleanClose()).toBe(false);
 
     closeOpenClawAgentDatabaseByPath(owner.database.path);
-    expect(owner.record()?.clean_close).toBe(0);
+    expect(owner.cleanClose()).toBe(false);
 
     const exited = once(child, "exit");
     child.send("close");
     expect(await exited).toEqual([0, null]);
-    expect(readOpenClawAgentIntegrityVerification(childPath, owner.env)?.clean_close).toBe(1);
+    const canonicalPath = fs.realpathSync(childPath);
+    expect(
+      readSqliteCleanCloseSeal(
+        canonicalPath,
+        OPENCLAW_DATABASE_SEAL_SCHEMA,
+        fs.statSync(canonicalPath, { bigint: true }),
+      ),
+    ).toBeDefined();
   },
 );
 
@@ -222,12 +232,12 @@ it.each(["forced cleanup", "stale admission"])(
         },
         lease: receipt,
       });
-      expect(owner.record()).toBeUndefined();
+      expect(owner.cleanClose()).toBe(false);
       closeOpenClawAgentDatabaseByPath(owner.database.path);
-      expect(owner.record()).toBeUndefined();
+      expect(owner.cleanClose()).toBe(false);
     } else {
       closeOpenClawAgentDatabaseByPath(owner.database.path);
-      expect(owner.record()?.clean_close).toBe(0);
+      expect(owner.cleanClose()).toBe(false);
     }
     const gate = schema.agentDatabaseIntegrityBeforeMutationSteps;
     let diagnostics: SqliteIntegrityDiagnostics | undefined;
@@ -248,14 +258,14 @@ it.each(["forced cleanup", "stale admission"])(
         .prepare("SELECT state_key FROM auth_profile_state WHERE state_key='killed-write'")
         .get(),
     ).toBeUndefined();
-    expect(owner.record()?.clean_close).toBe(0);
+    expect(owner.cleanClose()).toBe(false);
     expect(
       state.db
         .prepare("SELECT lease_id FROM agent_database_leases WHERE owner_pid = ?")
         .all(child.pid!),
     ).toEqual([]);
     closeOpenClawAgentDatabaseByPath(owner.database.path);
-    expect(owner.record()?.clean_close).toBe(1);
+    expect(owner.cleanClose()).toBe(true);
   },
 );
 
@@ -272,7 +282,7 @@ it("does not certify a failed checkpoint or native close", () => {
   });
   prepare.mockRestore();
   closeOpenClawAgentDatabaseByPath(owner.database.path);
-  expect(owner.record()).toBeUndefined();
+  expect(owner.cleanClose()).toBe(false);
 
   closeOpenClawAgentDatabasesForTest();
   const reopened = openOpenClawAgentDatabase({ agentId: "integrity-lease", env: owner.env });
@@ -281,9 +291,9 @@ it("does not certify a failed checkpoint or native close", () => {
     throw failure;
   });
   expect(() => closeOpenClawAgentDatabaseByPath(reopened.path)).toThrow(failure);
-  expect(owner.record()).toBeUndefined();
+  expect(owner.cleanClose()).toBe(false);
   closeOpenClawAgentDatabaseByPath(reopened.path);
-  expect(owner.record()).toBeUndefined();
+  expect(owner.cleanClose()).toBe(false);
 });
 
 it.each(["before", "after"] as const)(
@@ -302,16 +312,16 @@ it.each(["before", "after"] as const)(
       if (reader) {
         expect(reader.found).toBe(true);
       }
-      expect(readOpenClawAgentIntegrityVerification(database.path, env)?.clean_close).toBe(0);
+      expect(readSqliteDatabaseCleanClose(database.path)).toBe(false);
       closeOpenClawAgentDatabaseByPath(database.path);
-      expect(readOpenClawAgentIntegrityVerification(database.path, env)?.clean_close).toBe(0);
+      expect(readSqliteDatabaseCleanClose(database.path)).toBe(false);
     } finally {
       if (reader?.found) {
         reader.database.close();
       }
       releaseOpenClawAgentDatabaseLease(lease, { env }, "read-only");
     }
-    expect(readOpenClawAgentIntegrityVerification(database.path, env)?.clean_close).toBe(0);
+    expect(readSqliteDatabaseCleanClose(database.path)).toBe(false);
   },
 );
 
@@ -322,7 +332,7 @@ it("preserves dirty proof without quarantine SQL when a healthy peer closes befo
     path: owner.database.path,
     env: owner.env,
   });
-  expect(owner.record()?.clean_close).toBe(0);
+  expect(owner.cleanClose()).toBe(false);
   const quarantineSql: string[] = [];
   const observer = observeHostDataSql((sql, database) => {
     if (
@@ -338,9 +348,9 @@ it("preserves dirty proof without quarantine SQL when a healthy peer closes befo
   } finally {
     observer.restore();
   }
-  expect(owner.record()?.clean_close).toBe(0);
+  expect(owner.cleanClose()).toBe(false);
   closeOpenClawAgentDatabaseByPath(owner.database.path);
-  expect(owner.record()?.clean_close).toBe(1);
+  expect(owner.cleanClose()).toBe(true);
 });
 
 it.each(["closing", "unregistering", "reopening shared state before closing"])(

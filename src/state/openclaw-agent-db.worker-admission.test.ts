@@ -7,6 +7,7 @@ import { observeHostDataSql } from "../../test/helpers/sqlite-statement-executio
 import { useAutoCleanupTempDirTracker } from "../../test/helpers/temp-dir.js";
 import { readSessionNodesGeneration } from "../config/sessions/session-accessor.sqlite-entry-revision.js";
 import { openNodeSqliteDatabase } from "../infra/node-sqlite.js";
+import { revokeSqliteDatabaseAdmissionsForPath } from "../infra/sqlite-database-admission.js";
 import { getAdmittedSqliteSchemaFacts } from "../infra/sqlite-schema-facts.js";
 import type { SqliteWorkerExecutionAuthority } from "../infra/sqlite-worker-contract.js";
 import { readDatabasePathIdentitySync } from "../infra/sqlite-worker-identity.js";
@@ -57,7 +58,6 @@ import {
 } from "./openclaw-agent-execution-authority.js";
 import { createAgentDatabaseNativeGeneration } from "./openclaw-agent-execution-native.js";
 import { captureOpenClawAgentDatabaseExecution } from "./openclaw-agent-execution.js";
-import { clearOpenClawAgentIntegrityVerification } from "./openclaw-quarantine-store.js";
 import {
   closeOpenClawStateDatabaseAsync,
   closeOpenClawStateDatabaseForTest,
@@ -549,7 +549,7 @@ it.each([
         fs.renameSync(`${pathname}.replacement`, pathname);
       }
       if (change === "damage") {
-        clearOpenClawAgentIntegrityVerification(pathname, options.env);
+        revokeSqliteDatabaseAdmissionsForPath(pathname);
         fs.writeFileSync(pathname, "damaged SQLite fixture");
       } else if (change !== "warm-schema") {
         const editor = openNodeSqliteDatabase(pathname);

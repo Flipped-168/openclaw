@@ -4,6 +4,11 @@ import { once } from "node:events";
 import { setImmediate as yieldToEventLoop } from "node:timers/promises";
 import type { Worker, WorkerOptions } from "node:worker_threads";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import {
+  revokeSqliteDatabaseAdmissionsForPath,
+  readSqliteDatabaseIntegrityVerification,
+  readSqliteDatabaseCleanClose,
+} from "../../infra/sqlite-database-admission.js";
 import { SQLITE_IDLE_HANDLE_TTL_MS } from "../../infra/sqlite-handle-lifecycle.js";
 import {
   markGatewayRestartDraining,
@@ -34,10 +39,6 @@ import {
 import { removeAgentIntegrityMetadataForTest } from "../../state/openclaw-agent-db.test-support.js";
 import { captureOpenClawAgentDatabaseExecution } from "../../state/openclaw-agent-execution.js";
 import { runOpenClawAgentWriteAdmission } from "../../state/openclaw-agent-write-admission.js";
-import {
-  clearOpenClawAgentIntegrityVerification,
-  readOpenClawAgentIntegrityVerification,
-} from "../../state/openclaw-quarantine-store.js";
 import {
   closeOpenClawStateDatabaseAsync,
   closeOpenClawStateDatabaseForTest,
@@ -145,11 +146,11 @@ test.each(["two-leases-missing", "revoked-after-open", "revoked-during-open"] as
       expect(entries).toBe(1);
       expect(loadSessionEntryReadOnly(scopes[0]!)).toMatchObject({ sessionId: "victim" });
       if (proof.startsWith("two-leases")) {
-        const before = readOpenClawAgentIntegrityVerification(database.path, options.env);
+        const before = readSqliteDatabaseIntegrityVerification(database.path);
         peerLease = claimOpenClawAgentDatabaseLease({ ...options, path: database.path });
-        expect(readOpenClawAgentIntegrityVerification(database.path, options.env)).toEqual(before);
+        expect(readSqliteDatabaseIntegrityVerification(database.path)).toEqual(before);
         if (proof === "two-leases-missing") {
-          removeAgentIntegrityMetadataForTest(options.env);
+          removeAgentIntegrityMetadataForTest(database.path);
         }
       }
       expect(getOpenClawAgentDatabaseIfOpen(options)).toBeUndefined();
@@ -197,7 +198,7 @@ test("retained reclamation operations share the first full scan until the Gatewa
     });
   }
   closeOpenClawAgentDatabasesForTest(databaseOptions.env.OPENCLAW_STATE_DIR);
-  clearOpenClawAgentIntegrityVerification(database.path, databaseOptions.env);
+  revokeSqliteDatabaseAdmissionsForPath(database.path);
   // Count the native admission carrier as well as the reclamation actor for this exact file.
   validation.admissionPath = database.path;
   const workerIds = new Set<number>();
@@ -205,7 +206,7 @@ test("retained reclamation operations share the first full scan until the Gatewa
     if (pass === 2) {
       await closeOpenClawAgentDatabasesAsync(databaseOptions.env.OPENCLAW_STATE_DIR);
       closeOpenClawAgentDatabasesForTest(databaseOptions.env.OPENCLAW_STATE_DIR);
-      clearOpenClawAgentIntegrityVerification(database.path, databaseOptions.env);
+      revokeSqliteDatabaseAdmissionsForPath(database.path);
     }
     const diagnostics: SqliteSessionReclamationDiagnostics = {};
     await expect(runSqliteSessionReclamation({ plan, diagnostics })).resolves.toMatchObject({
@@ -606,7 +607,7 @@ test.each(["idle", "active"] as const)(
     const nativeCloses = observeNativeGenerationRetirement(fixture.database.path);
     validation.admissionPath = fixture.database.path;
     closeOpenClawAgentDatabasesForTest(fixture.options.env.OPENCLAW_STATE_DIR);
-    clearOpenClawAgentIntegrityVerification(fixture.database.path, fixture.options.env);
+    revokeSqliteDatabaseAdmissionsForPath(fixture.database.path);
     const close = vi.spyOn(SqliteReclamationWorker.prototype, "close");
     let drainOnCommit = false;
     let closesAtDrain: number | undefined;
@@ -647,10 +648,7 @@ test.each(["idle", "active"] as const)(
     await Promise.all([close.mock.results[0]?.value, ...nativeCloses]);
     expect(spawned[0]?.threadId).toBe(-1);
     expect(leasesFor(fixture)).toHaveLength(0);
-    expect(
-      readOpenClawAgentIntegrityVerification(fixture.database.path, fixture.options.env)
-        ?.clean_close,
-    ).toBe(1);
+    expect(readSqliteDatabaseCleanClose(fixture.database.path)).toBe(true);
     resetGatewayWorkAdmission();
     await expect(runSqliteSessionReclamation({ plan: fixture.plans[2]! })).resolves.toMatchObject({
       kind: "lifecycle-artifacts",

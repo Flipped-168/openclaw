@@ -1,5 +1,9 @@
 import { statSync } from "node:fs";
 import { disposeNodeSqliteDependents } from "../infra/kysely-sync-cache-state.js";
+import {
+  prepareSqliteDatabaseCleanClose,
+  revokeSqliteDatabaseAdmissionsForPath,
+} from "../infra/sqlite-database-admission.js";
 import { isSqliteWalWorkerMaintained } from "../infra/sqlite-wal-write-admission.js";
 import { releaseAgentCreationClaimHandle } from "./agent-creation-claim.js";
 import { releaseAgentDeletionDatabaseCleanup } from "./agent-deletion-cleanup.js";
@@ -9,7 +13,7 @@ import {
   readOpenClawAgentDatabaseIdentity,
 } from "./openclaw-agent-db-identity.js";
 import { releaseOpenClawAgentDatabaseLease } from "./openclaw-agent-db-lease.js";
-import { clearOpenClawAgentIntegrityVerification } from "./openclaw-quarantine-store.js";
+import { invalidateOpenClawAgentDatabaseValidation } from "./openclaw-agent-db-validation-cache.js";
 
 /** Native handle close uses the lifecycle owner's existing leases and validation. */
 export function createAgentDatabaseHandleCloser(cache: {
@@ -27,7 +31,9 @@ export function createAgentDatabaseHandleCloser(cache: {
     const alreadyClosed = !database.db.isOpen;
     const delegated = isSqliteWalWorkerMaintained(database.db);
     const priorCheckpointError = database.walMaintenance.health?.state === "error";
-    let clean: { path: string; identity: string } | undefined;
+    const publishSeal =
+      !alreadyClosed && !options.eviction ? prepareSqliteDatabaseCleanClose(database.db) : undefined;
+    let clean: { path: string; publishSeal: () => boolean } | undefined;
     let retainRuntimeProof: boolean;
     try {
       disposeNodeSqliteDependents(database.db);
@@ -41,24 +47,26 @@ export function createAgentDatabaseHandleCloser(cache: {
         healthy &&
         !priorCheckpointError &&
         (alreadyClosed ||
-          (pathCurrent && (delegated || database.walMaintenance.health?.state === "blocked")));
+          (pathCurrent &&
+            (checkpointed || delegated || database.walMaintenance.health?.state === "blocked")));
       if (database.db.isOpen) {
         database.db.close();
       }
       if (pathCurrent) {
-        const { identity, canonicalPath } = readOpenClawAgentDatabaseIdentity(database);
+        const { canonicalPath } = readOpenClawAgentDatabaseIdentity(database);
         // Native last-close may finish a checkpoint; a pinned WAL must remain unsealed.
         const closedWithEmptyWal =
           delegated &&
           !priorCheckpointError &&
           (statSync(`${canonicalPath}-wal`, { throwIfNoEntry: false })?.size ?? 0) === 0;
-        if (typeof identity === "string" && (checkpointed || closedWithEmptyWal)) {
-          clean = { path: database.path, identity };
+        if (publishSeal && (checkpointed || closedWithEmptyWal)) {
+          clean = { path: database.path, publishSeal };
         }
       }
     } catch (error) {
       if (lease) {
-        clearOpenClawAgentIntegrityVerification(database.path, lease.env);
+        invalidateOpenClawAgentDatabaseValidation(database.path);
+        revokeSqliteDatabaseAdmissionsForPath(database.path);
       }
       throw error;
     }
