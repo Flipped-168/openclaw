@@ -280,7 +280,7 @@ export function createNodeWorkspaceRetainCoordinator(
       );
     }
     for (;;) {
-      const isDispatchAuthorized = () => {
+      const authorizeDispatch = async () => {
         try {
           return (
             isCurrent() &&
@@ -298,16 +298,15 @@ export function createNodeWorkspaceRetainCoordinator(
           return false;
         }
       };
-      if (!isDispatchAuthorized()) {
-        return;
-      }
       const result = await currentTransport.invoke({
         node,
         command: NODE_WORKER_WORKSPACE_RETAIN_COMMAND,
         params: input,
         timeoutMs: RETAIN_COMMAND_TIMEOUT_MS,
         signal: abortController.signal,
-        isDispatchAuthorized,
+        authorizeDispatch,
+        // Snapshot currency governs dispatch; the live node owns the accepted reply.
+        isDispatchAuthorized: isCurrent,
       });
       if (!isCurrent()) {
         return;
