@@ -260,6 +260,7 @@ describe("shared worktree receipt observation", () => {
   it.each(["latest", "pending", "terminal"] as const)(
     "revalidates workspace selection after the worker read for %s",
     async (mode) => {
+      mocks.persistedSessionKeys.add(SESSION_KEY);
       const coordinator = sharedPublicationCoordinator();
       const row = insertSharedWorktreeReceipt("held-selection");
       if (mode !== "pending") {
@@ -444,7 +445,7 @@ describe("shared worktree receipt observation", () => {
     await expect(
       async () =>
         await coordinator.sharedStatus({ ...session, agentId: "other" }, "private-to-session"),
-    ).rejects.toThrow('agent-scoped session key belongs to "main", not "other"');
+    ).rejects.toThrow("GitHub publication session lifecycle changed.");
     changeSession({ sessionId: "rotated-before-read" });
     await expect(async () => await coordinator.latestShared(session)).rejects.toThrow(
       /session.*changed/i,
@@ -705,7 +706,7 @@ describe("shared repository receipt observation", () => {
     ).toBeUndefined();
     await expect(
       async () => await coordinator.sharedStatus({ ...session, agentId: "other" }, row.request_id),
-    ).rejects.toThrow('agent-scoped session key belongs to "main", not "other"');
+    ).rejects.toThrow("GitHub publication session lifecycle changed.");
   });
 
   it("excludes personal rows before decoding even when their stored digest is corrupt", async () => {

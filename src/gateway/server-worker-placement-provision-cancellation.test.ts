@@ -267,6 +267,10 @@ describe("dispatch Stop before provider allocation", () => {
             await placements.startDispatch(REQUEST);
           } else if (outcome === "incarnation") {
             sourceEntry.sessionId = "replacement-session";
+            await upsertSessionEntryCore(
+              { agentId: REQUEST.agentId, sessionKey: REQUEST.sessionKey, storePath },
+              sourceEntry,
+            );
           }
         }
         release.resolve();

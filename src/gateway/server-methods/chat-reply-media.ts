@@ -181,6 +181,7 @@ export async function captureWebchatReplyMediaScope(
       ...scope,
       workspace: selectedAuthority.workspace,
       release,
+      prepareRead: () => retained?.prepareRead(),
       assertCurrent: () => {
         params.assertCurrent?.();
         const current = isIncognitoSessionKey(params.sessionKey)
@@ -238,6 +239,11 @@ export async function withPreparedWebchatReplyMedia<T>(
   const hasMedia = sourcePayloads.some(
     (payload) => resolveSendableOutboundReplyParts(payload).mediaUrls.length > 0,
   );
+  // Finalization can await transcript reads after capture while a writer publishes.
+  const publication = scope.prepareRead();
+  if (publication) {
+    await publication;
+  }
   return await withChannelReadAuthority(
     scope.assertCurrent,
     async () => {

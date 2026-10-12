@@ -471,6 +471,8 @@ describe("Gateway creation preparation", () => {
           operatorRoleActor: { kind: "operator", profileId },
           creation: { via: "operator", actor: { type: "human", source: "profile", id: profileId } },
           commitGuard: authorization.assertCurrent,
+          bindSharingCreation: (operation) => authorization.bindCreation?.({ key }, operation),
+          followSharingRegistration: authorization.followRegistration,
           onCreatedSessionCommitted: notify,
           afterCreate,
         });

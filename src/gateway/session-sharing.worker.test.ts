@@ -144,6 +144,7 @@ it.each([
         ...route,
         requestedKey: kind === "alias" ? route.canonicalKey : scope.sessionKey,
         storeKey: route.canonicalKey,
+        readSource: route.capturedReadSource,
       });
       const effect = vi.fn();
       const host = observeHostDataSql();

@@ -186,6 +186,15 @@ export function workerPlacement(params: {
 
 export function placementReader(current: () => WorkerSessionPlacementRecord | undefined) {
   return {
+    async prepareSessionPlacement(sessionId: string) {
+      return {
+        current: () => {
+          const placement = current();
+          return placement?.sessionId === sessionId ? placement : undefined;
+        },
+        release() {},
+      };
+    },
     getMany(sessionIds: readonly string[]) {
       const placement = current();
       return new Map(

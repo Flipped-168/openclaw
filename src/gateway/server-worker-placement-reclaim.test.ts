@@ -555,6 +555,7 @@ it.each([false, true])(
 
 it("an idempotent failed-cleanup result does not cancel work already on the local placement", async () => {
   const storePath = path.join(tempDirs.make("failed-already-local-"), "sessions.sqlite");
+  setRuntimeConfigSnapshot({ session: { store: storePath } });
   const entry = { sessionId: REQUEST.sessionId, updatedAt: Date.now() };
   await replaceSessionEntry({ ...REQUEST, storePath }, entry);
   const local = { state: "local", sessionId: REQUEST.sessionId, generation: 4 };

@@ -411,17 +411,10 @@ it("keeps the maintenance inventory usable across non-local turn bookkeeping", a
     await placements.completeWorkspaceResultAndReleaseTurn(claim);
     inventory.assertCurrent();
     expect(pendingChecks).toBe(6);
-    expect(inventory.placements).toContainEqual(active);
+    expect(inventory.placements).toContainEqual({ ...active, lastLiveEventAckCursor: 9 });
     const current = await placements.prepareMaintenancePlacements();
     try {
-      expect(current.placements).toContainEqual(
-        expect.objectContaining({
-          sessionId: active.sessionId,
-          state: "active",
-          turnClaim: null,
-          lastLiveEventAckCursor: 9,
-        }),
-      );
+      expect(current.placements).toContainEqual({ ...active, lastLiveEventAckCursor: 9 });
     } finally {
       current.release();
     }

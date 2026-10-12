@@ -14,7 +14,11 @@ import { createSubscriptionTestFixture } from "./server-runtime-subscriptions.te
 import * as sessionObserverModel from "./session-observer-model.js";
 
 const runtimeConfigState = vi.hoisted(() => ({ value: {} as Record<string, unknown> }));
-vi.mock("../config/io.js", () => ({ getRuntimeConfig: () => runtimeConfigState.value }));
+// mock-isolation: Shutdown fixtures expose their owned config snapshot without loading live state.
+vi.mock("../config/io.js", () => ({
+  getRuntimeConfig: () => runtimeConfigState.value,
+  getRuntimeConfigSnapshot: () => runtimeConfigState.value,
+}));
 vi.mock("../audit/audit-recorder.js", () => ({
   createAuditEventRecorder: () => ({
     record: vi.fn(),

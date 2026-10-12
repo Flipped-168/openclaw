@@ -245,14 +245,14 @@ describe("worker placement read projection", () => {
       expect(request.params).toMatchObject({
         retain: [expect.objectContaining({ manifestRefs: null })],
       });
-      expect(await request.authorizeDispatch?.()).toBe(true);
+      expect(request.isDispatchAuthorized()).toBe(true);
       sql.expectIdle();
       await store.startDispatch({
         sessionId: "unrelated",
         sessionKey: "agent:main:unrelated",
         agentId: "main",
       });
-      expect(await request.authorizeDispatch?.()).toBe(true);
+      expect(request.isDispatchAuthorized()).toBe(true);
       await store.startDrain({
         sessionId: placement.sessionId,
         environmentId: placement.environmentId!,
@@ -260,8 +260,8 @@ describe("worker placement read projection", () => {
         expectedGeneration: placement.generation,
       });
       sql.clear();
-      expect(await request.authorizeDispatch?.()).toBe(false);
-      expect(request.isDispatchAuthorized()).toBe(true);
+      expect(request.isDispatchAuthorized()).toBe(false);
+      expect(request.isCompletionAuthorized?.()).toBe(true);
       sql.expectIdle();
       expect(warn).not.toHaveBeenCalled();
     } finally {

@@ -266,7 +266,9 @@ export async function prepareGitHubPublicationSession(
       if (!active || (retained && !retained.isCurrent())) {
         throw new GitHubPublicationSessionChangedError();
       }
-      return native ? readGitHubPublicationSession(sessionKey, options) : loaded;
+      return native
+        ? readGitHubPublicationSession(sessionKey, options)
+        : { ...loaded, entry: retained ? retained.readRetainedEntry() : loaded.entry };
     },
     release,
     [Symbol.dispose]: release,

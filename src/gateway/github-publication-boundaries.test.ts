@@ -510,6 +510,7 @@ describe("Gateway GitHub publication boundaries", () => {
         worktree: { id: otherWorktree.id, branch: BRANCH, repoRoot: "/repo" },
       },
     );
+    mocks.persistedSessionKeys.add(otherSession);
     const findWorktree = mocks.findWorktree.getMockImplementation()!;
     mocks.findWorktree.mockImplementation((kind: string, key: string) =>
       key === otherSession ? otherWorktree : findWorktree(kind, key),

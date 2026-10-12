@@ -307,13 +307,30 @@ describe("sessions_send gateway loopback", () => {
 
     expect(spy).toHaveBeenCalledOnce();
     const { callGateway } = await import("./call.js");
+    const sharingPreparation = await import("./session-sharing-preparation.js");
+    const prepareFacts = sharingPreparation.prepareSessionMutationFacts;
+    let preparationFailure: unknown;
+    const preparationProbe = vi
+      .spyOn(sharingPreparation, "prepareSessionMutationFacts")
+      .mockImplementation(async (params) => {
+        try {
+          return await prepareFacts(params);
+        } catch (error) {
+          preparationFailure = error;
+          throw error;
+        }
+      });
     const history = await callGateway<{ messages?: unknown[] }>({
       method: "chat.history",
       params: { sessionKey: "main", limit: 10 },
       timeoutMs: 5_000,
-    }).catch((error: unknown) => {
-      throw new Error(`sessions_send history read failed: ${String(error)}`, { cause: error });
-    });
+    })
+      .catch((error: unknown) => {
+        throw new Error(`sessions_send history read failed: ${String(error)}`, {
+          cause: preparationFailure ?? error,
+        });
+      })
+      .finally(() => preparationProbe.mockRestore());
     // Observe both receiving and persisted body failures before ending the case.
     expect.soft(firstCall?.message?.split("\n").slice(-2).join("\n")).toBe(body);
     expect.soft(history.messages).toContainEqual(

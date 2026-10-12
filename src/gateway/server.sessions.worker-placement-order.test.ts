@@ -3,6 +3,8 @@ import { withinTest } from "../../test/helpers/promise.js";
 import { createDeferredCore } from "../shared/deferred.js";
 import { createGatewayWorkerPlacementMoveBarrier } from "./server-worker-placement-move-barrier.js";
 import { loadSessionEntryAsync } from "./session-entry-load.test-support.js";
+import { resolveGatewaySessionStoreTargetInWorker } from "./session-utils-store-worker.js";
+import { resolveCanonicalSessionEntryFromStoreKeys } from "./session-utils-store.js";
 import { writeSessionStore } from "./test-helpers.js";
 import {
   directSessionReq,
@@ -54,7 +56,6 @@ test.for(["delete", "archive", "recover"] as const)(
         messages: [{ role: "user", content: "recover this session" }],
       });
     }
-    const moveEntry = (await loadSessionEntryAsync(sessionKey)).entry;
     let placement = {
       sessionId,
       sessionKey,
@@ -86,15 +87,13 @@ test.for(["delete", "archive", "recover"] as const)(
               path: "/fixture/worktree",
             }),
           },
-          resolveGatewaySessionStoreTargetInWorker: async () => ({
-            storePath,
-            canonicalKey: sessionKey,
-            storeKeys: [sessionKey],
-            agentId: "main",
-            store: { [sessionKey]: moveEntry! },
-          }),
-          resolveCanonicalSessionEntryFromStoreKeys: () => moveEntry,
-        } as never;
+          resolveGatewaySessionStoreTargetInWorker: (params) =>
+            resolveGatewaySessionStoreTargetInWorker({
+              ...params,
+              cfg: { ...params.cfg, session: { ...params.cfg.session, store: storePath } },
+            }),
+          resolveCanonicalSessionEntryFromStoreKeys,
+        };
       },
       revokeSessionAuthority: () => {},
     });
@@ -191,8 +190,8 @@ test.for(["delete", "archive", "recover"] as const)(
       await Promise.allSettled([moving, lifecycle, cleanupBlockedReclaim.promise]);
       await serializedReclaim?.catch(() => {});
     }
-    expect(acquiredBeforeCleanup).toBe(true);
     expect(await moving).toMatchObject({ message: "move preflight rejected" });
+    expect(acquiredBeforeCleanup).toBe(true);
     const result = await lifecycle;
     expect(result.ok, JSON.stringify(result.error)).toBe(true);
     const entry = (await loadSessionEntryAsync(sessionKey)).entry;

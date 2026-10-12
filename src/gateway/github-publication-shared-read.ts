@@ -134,6 +134,8 @@ export async function readSharedGitHubPublication(
   }
   using selected = await prepareGitHubPublicationSession(session.sessionKey, {
     agentId: session.agentId,
+    // Terminal receipts retain session authority independently of the current workspace.
+    fields: ["sessionId", "lifecycleRevision", "owner", "createdActor", "visibility", "incognito"],
   });
   const entry = selected.loaded.entry;
   if (
