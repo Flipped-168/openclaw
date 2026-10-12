@@ -36,25 +36,29 @@ async function fixture(
 }
 
 describe("Agent select native menu", () => {
-  it("reveals the selected agent when opening a long menu", async () => {
-    const f = await fixture(
-      "agent-28",
-      Array.from({ length: 40 }, (_, index) => ({
-        value: `agent-${index}`,
-        label: `Agent ${index}`,
-      })),
-    );
-    const shown = new Promise<void>((resolve) => {
-      f.menu.addEventListener("overlay-after-show", () => resolve(), { once: true });
-    });
-    await f.open();
-    await shown;
-    const row = f.items[28]!;
-    const bounds = f.menu.getBoundingClientRect();
-    const selected = row.getBoundingClientRect();
-    expect(selected.top).toBeGreaterThanOrEqual(bounds.top);
-    expect(selected.bottom).toBeLessThanOrEqual(bounds.bottom);
-  });
+  it.each([false, true])(
+    "reveals the initial focus in a long menu (selected disabled: %s)",
+    async (disabled) => {
+      const f = await fixture(
+        "agent-28",
+        Array.from({ length: 40 }, (_, index) => ({
+          value: `agent-${index}`,
+          label: `Agent ${index}`,
+          disabled: disabled && index === 28,
+        })),
+      );
+      const shown = new Promise<void>((resolve) => {
+        f.menu.addEventListener("overlay-after-show", () => resolve(), { once: true });
+      });
+      await f.open();
+      await shown;
+      const row = f.items[disabled ? 0 : 28]!;
+      const bounds = f.menu.getBoundingClientRect();
+      const selected = row.getBoundingClientRect();
+      expect(selected.top).toBeGreaterThanOrEqual(bounds.top);
+      expect(selected.bottom).toBeLessThanOrEqual(bounds.bottom);
+    },
+  );
   it.each(["main", "research"])(
     "focuses selected %s and keeps keyboard navigation",
     async (value) => {

@@ -185,7 +185,7 @@ export const AgentSelect = defineSolidBridge<AgentSelectProps>(
         placement="bottom-start"
         onAfterShow={() => {
           const surface = menu?.overlay.surface;
-          const option = surface?.querySelector<HTMLElement>("[data-selected]");
+          const option = surface?.querySelector<HTMLElement>(":focus");
           if (surface && option) {
             revealInScrollRegion(surface, option);
           }
