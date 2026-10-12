@@ -171,9 +171,7 @@ export const AgentSelect = defineSolidBridge<AgentSelectProps>(
         ref={(handle) => {
           menu = handle;
         }}
-        class={["agent-select", props.variant === "compact" ? "agent-select--compact" : ""].join(
-          " ",
-        )}
+        class={props.variant === "compact" ? "agent-select agent-select--compact" : "agent-select"}
         panelClass="agent-select__menu"
         triggerClass="agent-select__trigger"
         label={

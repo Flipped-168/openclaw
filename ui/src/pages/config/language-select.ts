@@ -19,6 +19,6 @@ export function renderLanguageSelect(
       { value: "system", label: systemLabel },
       ...SUPPORTED_LOCALES.map((value) => ({ value, label: languageLabel(value) })),
     ],
-    onChange: (value) => onChange(SUPPORTED_LOCALES.find((locale) => locale === value)),
+    onChange: (value) => onChange(SUPPORTED_LOCALES.find((candidate) => candidate === value)),
   });
 }
