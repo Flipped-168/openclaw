@@ -255,6 +255,7 @@ export class SqliteDatabaseAdmissionRegistry {
     return record;
   }
 
+  /** Only the joined lifecycle owner may release a retained descriptor. */
   publish(record?: Admission): void {
     // Another isolate can retire shared custody. Reclaim it at publication, not on every request.
     for (const [identity, current] of this.records) {

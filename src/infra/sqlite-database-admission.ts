@@ -33,10 +33,7 @@ import { createSqliteDatabaseWriteReceipts } from "./sqlite-database-write-recei
 import { getSqliteNativeAdmissionFacts } from "./sqlite-native-admission.js";
 import { stageSqliteTransactionState } from "./sqlite-post-commit.js";
 import { schemaAdmission } from "./sqlite-schema-admission.js";
-import {
-  isSoleDatabaseFileDescriptor,
-  type DatabaseFileIdentity,
-} from "./sqlite-worker-identity.js";
+import type { DatabaseFileIdentity } from "./sqlite-worker-identity.js";
 
 export {
   readSqliteDatabaseAdmissions,
