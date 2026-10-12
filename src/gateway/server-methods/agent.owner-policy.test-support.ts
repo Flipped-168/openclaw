@@ -101,7 +101,11 @@ export function registerAgentOwnerPolicyCases(): void {
       let availableTools: string[] | undefined;
       mocks.agentCommand.mockImplementation(async (opts: AgentCommandGatewayIngressOpts) => {
         availableTools = projectConversationToolNames({
-          capabilityProfile: resolveConversationCapabilityProfile({ ...opts, config: cfg }),
+          capabilityProfile: resolveConversationCapabilityProfile({
+            ...opts,
+            workspaceDir: opts.workspaceDir ?? undefined,
+            config: cfg,
+          }),
           toolNames: ["read", "exec"],
           warn: () => undefined,
         });

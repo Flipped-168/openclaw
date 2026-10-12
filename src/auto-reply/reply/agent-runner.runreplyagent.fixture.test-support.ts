@@ -1,6 +1,10 @@
 import { join } from "node:path";
-import { afterEach, type Mock } from "vitest";
+import { afterEach, beforeEach, type Mock } from "vitest";
 import { useAutoCleanupTempDirTracker } from "../../../test/helpers/temp-dir.js";
+import {
+  clearRuntimeConfigSnapshot,
+  setRuntimeConfigSnapshot,
+} from "../../config/runtime-snapshot.js";
 import { replaceSessionEntry } from "../../config/sessions/session-accessor.js";
 import type { SessionEntry } from "../../config/sessions/types.js";
 import type { TypingMode } from "../../config/types.js";
@@ -18,19 +22,24 @@ import { buildChannelSourceTurnId, setChannelSourceTurnId } from "./source-turn-
 import { createMockTypingController } from "./test-helpers.js";
 
 export function createReplyAgentSessionFixture() {
+  beforeEach(() => setRuntimeConfigSnapshot({}));
   const sessionKeys = new Set<string>();
   const tempDirs = useAutoCleanupTempDirTracker((cleanup) =>
     afterEach(async () => {
-      // Reply completion starts asynchronous recovery-owner release. Join it before
-      // deleting stores so late cleanup cannot recreate a previous case's database.
-      await Promise.all(
-        [...sessionKeys].map((sessionKey) => waitForReplyRunSuccessorAdmission(sessionKey, null)),
-      );
-      for (const dir of tempDirs.dirs) {
-        await closeOpenClawAgentDatabasesAsync(dir);
+      try {
+        // Reply completion starts asynchronous recovery-owner release. Join it before
+        // deleting stores so late cleanup cannot recreate a previous case's database.
+        await Promise.all(
+          [...sessionKeys].map((sessionKey) => waitForReplyRunSuccessorAdmission(sessionKey, null)),
+        );
+        for (const dir of tempDirs.dirs) {
+          await closeOpenClawAgentDatabasesAsync(dir);
+        }
+        sessionKeys.clear();
+        cleanup();
+      } finally {
+        clearRuntimeConfigSnapshot();
       }
-      sessionKeys.clear();
-      cleanup();
     }),
   );
   return {
