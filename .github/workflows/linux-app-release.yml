@@ -1,5 +1,7 @@
 name: Linux App Release
 
+run-name: ${{ github.event_name == 'workflow_run' && format('Linux App Release request={0} attempt={1}', github.event.workflow_run.id, github.event.workflow_run.run_attempt) || format('Linux App Release mirror={0}', inputs.release_publish_run_id) }}
+
 on:
   workflow_dispatch:
     inputs:
@@ -246,6 +248,40 @@ jobs:
             echo "- Linux: existing same-tag bundles and signed updater metadata verified; no rebuild needed. Current updater publication follows." >> "$GITHUB_STEP_SUMMARY"
           fi
 
+      - name: Record Linux builder admission
+        if: ${{ always() }}
+        env:
+          REQUEST_RUN_ID: ${{ github.event.workflow_run.id }}
+          REQUEST_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+          REQUEST_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+          RELEASE_TAG: ${{ steps.request.outputs.release_tag }}
+          TAG_SHA: ${{ steps.ancestry.outputs.tag_sha }}
+          ADMISSION_STATUS: ${{ job.status }}
+        run: |
+          set -euo pipefail
+          jq -n --arg repository "$GITHUB_REPOSITORY" \
+            --arg requestRunId "$REQUEST_RUN_ID" --arg requestRunAttempt "$REQUEST_RUN_ATTEMPT" \
+            --arg requestSha "$REQUEST_HEAD_SHA" --arg builderRunId "$GITHUB_RUN_ID" \
+            --arg builderRunAttempt "$GITHUB_RUN_ATTEMPT" --arg toolingSha "$WORKFLOW_SHA" \
+            --arg tag "$RELEASE_TAG" --arg sourceSha "$TAG_SHA" --arg status "$ADMISSION_STATUS" \
+            '{schemaVersion: 1, repository: $repository,
+              request: {runId: $requestRunId, runAttempt: $requestRunAttempt, headSha: $requestSha},
+              builder: {runId: $builderRunId, runAttempt: $builderRunAttempt, toolingSha: $toolingSha},
+              tag: (if $tag == "" then null else $tag end),
+              sourceSha: (if $sourceSha == "" then null else $sourceSha end),
+              admission: (if $status == "success" then "admitted" else "rejected" end)}' \
+            > "$RUNNER_TEMP/linux-release-admission.json"
+          echo "- Linux builder: $ADMISSION_STATUS; request https://github.com/$GITHUB_REPOSITORY/actions/runs/$REQUEST_RUN_ID; builder https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Retain Linux builder admission
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: linux-release-admission-${{ github.event.workflow_run.id }}-${{ github.event.workflow_run.run_attempt }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/linux-release-admission.json
+          if-no-files-found: error
+
       - name: Retain Linux completion evidence
         if: ${{ always() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
@@ -357,6 +393,7 @@ jobs:
           .release-tooling/apps/linux/scripts/tauri-appimage-tools.sh verify pre-build
 
       - name: Build Linux companion bundles
+        id: bundle-build
         working-directory: apps/linux/src-tauri
         env:
           # appimagetool strips fail on CI runners; Tauri documents NO_STRIP for Actions.
@@ -373,6 +410,7 @@ jobs:
             --config "{\"version\":\"${version}\",\"bundle\":{\"createUpdaterArtifacts\":false,\"useLocalToolsDir\":false}}"
 
       - name: Finalize AppImage
+        id: finalize-appimage
         env:
           XDG_CACHE_HOME: ${{ runner.temp }}/openclaw-tauri-cache
         run: |
@@ -381,6 +419,7 @@ jobs:
           .release-tooling/apps/linux/scripts/finalize-appimage.sh "$bundle_dir"
 
       - name: Verify and stage unsigned Linux bundles
+        id: stage-bundles
         env:
           RELEASE_TAG: ${{ needs.validate_release.outputs.release_tag }}
         run: |
@@ -432,6 +471,51 @@ jobs:
             "${runtime_args[@]}" \
             --shell-container \
               "archlinux@sha256:82b1b08faae9d61e3e7e13d562f4d09114d939105b0d59ff34140f3bd418593a"
+
+      # Diagnostic bytes never use the qualified artifact IDs consumed by signing.
+      - name: Retain completed unqualified Linux bundles
+        if: ${{ failure() && steps.bundle-build.outcome == 'success' }}
+        env:
+          RELEASE_TAG: ${{ needs.validate_release.outputs.release_tag }}
+          TAG_SHA: ${{ needs.validate_release.outputs.tag_sha }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+          FINALIZE_OUTCOME: ${{ steps.finalize-appimage.outcome }}
+          STAGING_OUTCOME: ${{ steps.stage-bundles.outcome }}
+          RUNTIME_OUTCOME: ${{ steps.packaged-runtime.outcome }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          output="$RUNNER_TEMP/linux-unqualified-bundles"
+          mkdir -p "$output/bundles"
+          bundles=(apps/linux/src-tauri/target/release/bundle/deb/*.deb apps/linux/src-tauri/target/release/bundle/appimage/*.AppImage)
+          for bundle in "${bundles[@]}"; do
+            [[ -f "$bundle" && ! -L "$bundle" ]]
+            cp "$bundle" "$output/bundles/"
+          done
+          if [[ ${#bundles[@]} -eq 0 ]]; then
+            echo "::warning::No completed Linux bundle files remain for diagnostics."
+            exit 0
+          fi
+          (cd "$output" && sha256sum bundles/* > SHA256SUMS)
+          jq -n --arg repository "$GITHUB_REPOSITORY" --arg tag "$RELEASE_TAG" \
+            --arg sourceSha "$TAG_SHA" --arg toolingSha "$WORKFLOW_SHA" \
+            --arg runId "$GITHUB_RUN_ID" --arg runAttempt "$GITHUB_RUN_ATTEMPT" \
+            --arg finalize "$FINALIZE_OUTCOME" --arg staging "$STAGING_OUTCOME" --arg runtime "$RUNTIME_OUTCOME" \
+            '{schemaVersion: 1, qualification: "unqualified", repository: $repository, tag: $tag,
+              sourceSha: $sourceSha, toolingSha: $toolingSha, runId: $runId, runAttempt: $runAttempt,
+              checks: {finalize: $finalize, staging: $staging, packagedRuntime: $runtime}}' \
+            > "$output/identity.json"
+          echo "- Linux: completed bundles retained for diagnostics only; not eligible for signing or publication. Verify identity.json and SHA256SUMS before rerunning the packaging checker on these exact bytes." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload unqualified Linux bundle diagnostics
+        if: ${{ failure() && steps.bundle-build.outcome == 'success' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: linux-app-release-unqualified-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 14
+          compression-level: 0
+          if-no-files-found: warn
+          path: ${{ runner.temp }}/linux-unqualified-bundles
 
       - name: Upload packaged runtime failure evidence
         if: failure() && steps.packaged-runtime.outcome == 'failure'

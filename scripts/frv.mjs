@@ -2049,7 +2049,9 @@ async function createPublicationReader(repository) {
     const ids = new Set();
     let total;
     for (let page = 1; page <= limits.pages; page += 1) {
-      const value = json(`${path}?per_page=${limits.pageSize}&page=${page}`);
+      const value = json(
+        `${path}${path.includes("?") ? "&" : "?"}per_page=${limits.pageSize}&page=${page}`,
+      );
       requirePublication(
         Number.isSafeInteger(value?.total_count) &&
           value.total_count >= 0 &&
@@ -2079,13 +2081,15 @@ async function createPublicationReader(repository) {
     }
     throw new PublicationStatusError("limits");
   }
-  async function getRun(runId) {
+  async function getRun(runId, options = {}) {
+    const event = options.event ?? "workflow_dispatch";
     const key = String(runId);
     requirePublication(/^[1-9][0-9]*$/u.test(key) && Number.isSafeInteger(Number(key)), "limits");
     if (!runs.has(key)) {
       requirePublication(runs.size < limits.runs, "limits");
-      runs.set(key, parsePublicationRun(json(`actions/runs/${key}`), repository, key));
+      runs.set(key, parsePublicationRun(json(`actions/runs/${key}`), repository, key, event));
     }
+    requirePublication(runs.get(key).event === event);
     return runs.get(key);
   }
   async function authenticate(run, path) {
@@ -2103,6 +2107,7 @@ async function createPublicationReader(repository) {
       json(`actions/runs/${runId}/attempts/${attempt}`),
       repository,
       String(runId),
+      current.event,
     );
     requirePublication(
       observed.run_attempt === attempt &&
@@ -2190,6 +2195,17 @@ async function createPublicationReader(repository) {
     authenticate,
     readArtifact,
     listArtifacts,
+    findLinuxBuilders(request) {
+      requirePublication(request.created_at, "incomplete");
+      const title = `Linux App Release request=${request.id} attempt=${request.run_attempt}`;
+      // workflow_run uses current main, which can reject an older request.
+      // Filter by request creation, not SHA, so that rejection remains visible.
+      const created = encodeURIComponent(`>=${request.created_at}`);
+      return collection(
+        `actions/workflows/linux-app-release.yml/runs?event=workflow_run&branch=main&created=${created}`,
+        "workflow_runs",
+      ).filter((run) => run.display_title === title);
+    },
     async getAttemptJobs(runId, attempt) {
       return parsePublicationJobs(
         collection(`actions/runs/${runId}/attempts/${attempt}/jobs`, "jobs"),
@@ -2202,7 +2218,7 @@ async function createPublicationReader(repository) {
         try {
           assertPublicationRunUnchanged(
             run,
-            parsePublicationRun(json(`actions/runs/${runId}`), repository, runId),
+            parsePublicationRun(json(`actions/runs/${runId}`), repository, runId, run.event),
           );
         } catch (error) {
           throw new PublicationStatusError(publicationFailure(error), runId);
@@ -2232,6 +2248,8 @@ async function inspectPublicationStatus(options) {
     joinPublicationValidation,
     observePublicationChild,
     parseWindowsDispatch,
+    parseLinuxDispatch,
+    observeLinuxAdmission,
     observeWindowsMarker,
     parseClawHubDispatch,
   } = policy;
@@ -2416,6 +2434,110 @@ async function inspectPublicationStatus(options) {
           Number(dispatch.normalClawHubRunAttempt),
           "dispatch-record",
         );
+      }
+    }
+    const linux = await reader.readArtifact(
+      publisher,
+      `linux-release-dispatch-${publisher.id}-${publisher.run_attempt}`,
+      "linux-dispatch.json",
+      PUBLICATION_LIMITS.diagnosticBytes,
+    );
+    if (linux.state === "available") {
+      requireArtifactUploadJob(
+        jobs,
+        "Request Linux assets after publication",
+        "Retain Linux request evidence",
+      );
+      const dispatch = parseLinuxDispatch(linux.value, plan.targetSha);
+      requirePublication(
+        !diagnostic?.context.releaseTag || dispatch.tag === diagnostic.context.releaseTag,
+      );
+      const surface = publication.surfaces.nativeLinux;
+      surface.selection = "selected";
+      surface.operation.state =
+        dispatch.state === "published-assets-reused"
+          ? "published-assets-reused"
+          : "awaiting-admission";
+      publication.dispatches.push({
+        scope: "linux",
+        state: dispatch.requestRunId ? "acknowledged" : "unknown",
+        runId: String(publisher.id),
+        runAttempt: publisher.run_attempt,
+        artifactId: linux.artifactId,
+      });
+      if (dispatch.requestRunId && !dispatch.requestRunAttempt) {
+        surface.operation.state = "request-attempt-unknown";
+      }
+      if (dispatch.requestRunId && dispatch.requestRunAttempt) {
+        const currentRequest = await reader.getRun(dispatch.requestRunId);
+        await reader.authenticate(
+          currentRequest,
+          ".github/workflows/linux-app-release-request.yml",
+        );
+        const request = await reader.getRunAttempt(
+          dispatch.requestRunId,
+          Number(dispatch.requestRunAttempt),
+        );
+        requirePublication(
+          request.head_branch === "main" &&
+            request.head_sha === dispatch.workflowSha &&
+            [
+              `Linux App Release Request [${dispatch.tag}] desktop=false`,
+              `Linux App Release Request [${dispatch.tag}] desktop=true`,
+            ].includes(request.display_title),
+        );
+        const builders = reader.findLinuxBuilders(request);
+        requirePublication(builders.length <= 1);
+        if (
+          !builders.length &&
+          request.status === "completed" &&
+          request.conclusion !== "success"
+        ) {
+          surface.operation.state = `request-${request.conclusion ?? "unknown"}`;
+        }
+        if (builders.length) {
+          const builder = await reader.getRun(String(builders[0].id), { event: "workflow_run" });
+          await reader.authenticate(builder, ".github/workflows/linux-app-release.yml");
+          requirePublication(
+            builder.head_branch === "main" &&
+              builder.display_title ===
+                `Linux App Release request=${request.id} attempt=${request.run_attempt}`,
+          );
+          observePublicationChild(publication, "nativeLinux", builder, null, "dispatch-record");
+          surface.operation.state =
+            builder.status === "completed"
+              ? (builder.conclusion ?? "unknown")
+              : "awaiting-admission";
+          const admission = await reader.readArtifact(
+            builder,
+            `linux-release-admission-${request.id}-${request.run_attempt}-${builder.id}-${builder.run_attempt}`,
+            "linux-release-admission.json",
+            PUBLICATION_LIMITS.diagnosticBytes,
+          );
+          if (admission.state === "available") {
+            const builderJobs = await reader.getAttemptJobs(
+              String(builder.id),
+              builder.run_attempt,
+            );
+            requireArtifactUploadJob(
+              builderJobs,
+              "Validate release tag",
+              "Retain Linux builder admission",
+            );
+            observeLinuxAdmission(
+              publication,
+              admission.value,
+              request,
+              builder,
+              dispatch.tag,
+              plan.targetSha,
+              admission.artifactId,
+            );
+            if (builder.status !== "completed") {
+              surface.operation.state = surface.terminalMarker.state;
+            }
+          }
+        }
       }
     }
     const windows = await reader.readArtifact(

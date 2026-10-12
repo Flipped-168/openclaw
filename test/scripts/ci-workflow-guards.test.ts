@@ -6621,6 +6621,126 @@ it("reports stale Linux release requests before selected code runs", () => {
   }
 });
 
+it.each(["success", "failure"])(
+  "records the exact Linux request and builder admission (%s)",
+  (status) => {
+    const workflow = parse(readFileSync(".github/workflows/linux-app-release.yml", "utf8"));
+    const step = (workflow.jobs.validate_release.steps as WorkflowStep[]).find(
+      ({ name }) => name === "Record Linux builder admission",
+    );
+    const directory = tempDirs.make("openclaw-linux-admission-");
+    const summary = path.join(directory, "summary");
+    const result = spawnSync("bash", ["-c", expectDefined(step?.run, "admission owner")], {
+      encoding: "utf8",
+      env: {
+        PATH: process.env.PATH,
+        RUNNER_TEMP: directory,
+        GITHUB_STEP_SUMMARY: summary,
+        GITHUB_REPOSITORY: "openclaw/openclaw",
+        GITHUB_RUN_ID: "456",
+        GITHUB_RUN_ATTEMPT: "2",
+        REQUEST_RUN_ID: "123",
+        REQUEST_RUN_ATTEMPT: "1",
+        REQUEST_HEAD_SHA: "a".repeat(40),
+        WORKFLOW_SHA: "a".repeat(40),
+        RELEASE_TAG: status === "success" ? "v2026.8.2" : "",
+        TAG_SHA: status === "success" ? "b".repeat(40) : "",
+        ADMISSION_STATUS: status,
+      },
+    });
+    expect(result.status, `${result.stdout}${result.stderr}`).toBe(0);
+    expect(
+      JSON.parse(readFileSync(path.join(directory, "linux-release-admission.json"), "utf8")),
+    ).toEqual({
+      schemaVersion: 1,
+      repository: "openclaw/openclaw",
+      request: { runId: "123", runAttempt: "1", headSha: "a".repeat(40) },
+      builder: { runId: "456", runAttempt: "2", toolingSha: "a".repeat(40) },
+      tag: status === "success" ? "v2026.8.2" : null,
+      sourceSha: status === "success" ? "b".repeat(40) : null,
+      admission: status === "success" ? "admitted" : "rejected",
+    });
+  },
+);
+
+it("retains exact completed Linux bundle bytes after packaging fails without admitting signing", () => {
+  const workflow = parse(readFileSync(".github/workflows/linux-app-release.yml", "utf8"));
+  const steps = workflow.jobs.build_linux.steps as WorkflowStep[];
+  const step = steps.find(({ name }) => name === "Retain completed unqualified Linux bundles");
+  const directory = tempDirs.make("openclaw-linux-unqualified-");
+  const runner = path.join(directory, "runner");
+  mkdirSync(runner);
+  for (const [kind, filename, bytes] of [
+    ["deb", "OpenClaw.deb", "completed deb bytes"],
+    ["appimage", "OpenClaw.AppImage", "completed appimage bytes"],
+  ] as const) {
+    const bundleDirectory = path.join(
+      directory,
+      "apps/linux/src-tauri/target/release/bundle",
+      kind,
+    );
+    mkdirSync(bundleDirectory, { recursive: true });
+    writeFileSync(path.join(bundleDirectory, filename), bytes);
+  }
+  const result = spawnSync("bash", ["-c", expectDefined(step?.run, "diagnostic retention")], {
+    cwd: directory,
+    encoding: "utf8",
+    env: {
+      PATH: process.env.PATH,
+      RUNNER_TEMP: runner,
+      GITHUB_STEP_SUMMARY: path.join(runner, "summary"),
+      GITHUB_REPOSITORY: "openclaw/openclaw",
+      GITHUB_RUN_ID: "456",
+      GITHUB_RUN_ATTEMPT: "1",
+      RELEASE_TAG: "v2026.8.2",
+      TAG_SHA: "b".repeat(40),
+      WORKFLOW_SHA: "a".repeat(40),
+      FINALIZE_OUTCOME: "success",
+      STAGING_OUTCOME: "success",
+      RUNTIME_OUTCOME: "failure",
+    },
+  });
+  expect(result.status, `${result.stdout}${result.stderr}`).toBe(0);
+  const retained = path.join(runner, "linux-unqualified-bundles");
+  expect(readFileSync(path.join(retained, "bundles/OpenClaw.deb"), "utf8")).toBe(
+    "completed deb bytes",
+  );
+  expect(readFileSync(path.join(retained, "bundles/OpenClaw.AppImage"), "utf8")).toBe(
+    "completed appimage bytes",
+  );
+  expect(JSON.parse(readFileSync(path.join(retained, "identity.json"), "utf8"))).toMatchObject({
+    qualification: "unqualified",
+    sourceSha: "b".repeat(40),
+    toolingSha: "a".repeat(40),
+    runId: "456",
+    runAttempt: "1",
+    checks: { packagedRuntime: "failure" },
+  });
+  const hashes = spawnSync("sha256sum", ["--check", "SHA256SUMS"], {
+    cwd: retained,
+    encoding: "utf8",
+  });
+  expect(hashes.status, hashes.stderr).toBe(0);
+  // Model the Actions failure boundary: normal uploads skip, and failed build
+  // blocks the signing dependency. Diagnostic retention has no promoted outputs.
+  const context = {
+    eventName: "workflow_run" as const,
+    repository: "openclaw/openclaw",
+    runAttempt: 1,
+    failed: true,
+    steps: { "bundle-build": { outcome: "success" as const, outputs: {} } },
+  };
+  expect(evaluateWorkflowExpression(expectDefined(step?.if, "retention condition"), context)).toBe(
+    true,
+  );
+  for (const name of ["Upload Debian bundle", "Upload finalized unsigned AppImage"]) {
+    expect(steps.find((entry) => entry.name === name)?.if).toBeUndefined();
+  }
+  expect(workflow.jobs.sign_linux.needs).toContain("build_linux");
+  expect(workflow.jobs.sign_linux.if).toBeUndefined();
+  expect(workflow.jobs.build_linux.outputs).not.toHaveProperty("unqualified_artifact_id");
+});
+
 it("isolates release credentials and verifies trusted AppImage and signing tools", () => {
   const pinned = {
     name: "Prepare Git owner",
