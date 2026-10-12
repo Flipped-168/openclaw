@@ -22,14 +22,12 @@ import {
   resetConfigRuntimeState,
   setRuntimeConfigSnapshot,
 } from "../config/config.js";
-import { resolveSystemMainSessionTarget, type SessionEntry } from "../config/sessions.js";
-import {
-  applySessionEntryLifecycleMutation,
-  listSessionEntriesCore,
-} from "../config/sessions/session-accessor.js";
+import { resolveSystemMainSessionTarget } from "../config/sessions/main-session.js";
+import { listSessionEntriesCore } from "../config/sessions/session-accessor.entry.js";
+import { applySessionEntryLifecycleMutation } from "../config/sessions/session-accessor.lifecycle.js";
 import { replaceTranscriptEvents } from "../config/sessions/session-accessor.sqlite-transcript-write.test-support.js";
 import { clearSessionStoreCacheForTest } from "../config/sessions/store-writer-state.js";
-import type { SessionOrigin } from "../config/sessions/types.js";
+import type { SessionEntry, SessionOrigin } from "../config/sessions/types.js";
 import type { OpenClawConfig } from "../config/types.js";
 import { resetAgentEventsForTest } from "../infra/agent-events.js";
 import {
