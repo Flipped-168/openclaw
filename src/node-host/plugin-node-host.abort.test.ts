@@ -25,7 +25,7 @@ describe("non-duplex node-host plugin cancellation", () => {
     signal,
   }) => {
     const controller = new AbortController();
-    const handlerEntered = createDeferred();
+    const handlerReady = createDeferred();
     const sendNodeEvent = vi.fn(async () => undefined);
     const handle = vi.fn(
       async (
@@ -33,7 +33,6 @@ describe("non-duplex node-host plugin cancellation", () => {
         _io?: unknown,
         context?: OpenClawPluginNodeHostCommandContext,
       ) => {
-        handlerEntered.resolve();
         await new Promise<void>((_resolve, reject) => {
           context?.signal?.addEventListener(
             "abort",
@@ -45,6 +44,7 @@ describe("non-duplex node-host plugin cancellation", () => {
               ),
             { once: true },
           );
+          handlerReady.resolve();
         });
         return '{"stale":true}';
       },
@@ -86,18 +86,18 @@ describe("non-duplex node-host plugin cancellation", () => {
     try {
       await withinTest(
         awaitGateBeforeSettlement(
-          handlerEntered.promise,
+          handlerReady.promise,
           invocation,
-          "node invocation settled before entering its plugin handler",
+          "node plugin invocation settled before its handler installed the abort listener",
         ),
         signal,
       );
-      expect(handle).toHaveBeenCalledOnce();
     } finally {
       controller.abort(new Error("paired inference canceled"));
       await invocation;
     }
 
+    expect(handle).toHaveBeenCalledOnce();
     expect(handle).toHaveBeenCalledWith('{"model":"local-only:small"}', undefined, {
       sendNodeEvent,
       sessionKey: "agent:main:local-model",

@@ -243,7 +243,7 @@ describe("maybeCompactCodexAppServerSession", () => {
     }
 
     await expect(pending).rejects.toThrow(
-      /Codex session (generation is no longer current|execution policy changed)/,
+      "Codex session execution policy changed; prepare the operation again.",
     );
     expect(clientFactory).not.toHaveBeenCalled();
     expect(fake.request).not.toHaveBeenCalled();
