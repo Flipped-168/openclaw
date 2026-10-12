@@ -395,6 +395,11 @@ export const talkSessionHandlers: GatewayRequestHandlers = {
           params.provider,
           params.model,
         );
+        if (transcriptionConfig.file && !transcriptionConfig.file.ready) {
+          throw new Error(
+            "No configured audio transcription provider is available; check tools.media.models",
+          );
+        }
         const resolution = transcriptionConfig.file
           ? { file: transcriptionConfig.file, assertCurrent: requester.assertCurrent }
           : await resolveConfiguredRealtimeTranscriptionProvider({

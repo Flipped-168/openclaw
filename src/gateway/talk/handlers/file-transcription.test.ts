@@ -2,13 +2,18 @@ import { afterEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { awaitGateBeforeSettlement, createDeferred } from "../../../../test/helpers/promise.js";
 import type { OpenClawConfig } from "../../../config/types.js";
 import type { AudioTranscriptionRequest } from "../../../media-understanding/types.js";
+import type { RealtimeTranscriptionProviderPlugin } from "../../../plugins/capability-provider.types.js";
 import { createPluginMetadataSnapshotFixture } from "../../../plugins/plugin-metadata.test-support.js";
 import { createEmptyPluginRegistry } from "../../../plugins/registry-empty.js";
 import { withPluginRuntimeGenerationScope } from "../../../plugins/runtime/generation-scope.js";
 import { cleanupTalkConnection } from "../session-registry.js";
 import { createTalkHandlerCaller } from "./handler-invocation.test-support.js";
 import { talkHandlers } from "./index.js";
-import { expectRespondError, expectRespondOk } from "./responses.test-support.js";
+import {
+  expectRecordFields,
+  expectRespondError,
+  expectRespondOk,
+} from "./responses.test-support.js";
 import { talkSessionHandlers } from "./session.js";
 
 const cfg: OpenClawConfig = {
@@ -32,6 +37,7 @@ const cfg: OpenClawConfig = {
 function withFileProvider(
   run: (requests: AudioTranscriptionRequest[]) => Promise<void>,
   beforeTranscription?: () => Promise<void>,
+  streamingProvider?: RealtimeTranscriptionProviderPlugin,
 ) {
   const requests: AudioTranscriptionRequest[] = [];
   const registry = createEmptyPluginRegistry();
@@ -48,11 +54,28 @@ function withFileProvider(
       },
     },
   });
+  if (streamingProvider) {
+    registry.realtimeTranscriptionProviders.push({
+      pluginId: "streaming-stt",
+      source: "test",
+      provider: streamingProvider,
+    });
+  }
   return withPluginRuntimeGenerationScope(
     {
       pluginRegistry: registry,
       metadataSnapshot: createPluginMetadataSnapshotFixture({
-        plugins: [{ id: "local-stt", contracts: { mediaUnderstandingProviders: ["local-stt"] } }],
+        plugins: [
+          { id: "local-stt", contracts: { mediaUnderstandingProviders: ["local-stt"] } },
+          ...(streamingProvider
+            ? [
+                {
+                  id: "streaming-stt",
+                  contracts: { realtimeTranscriptionProviders: ["streaming-stt"] },
+                },
+              ]
+            : []),
+        ],
       }),
     },
     () => run(requests),
@@ -175,6 +198,162 @@ describe("configured file transcription through Talk RPCs", () => {
       expectRespondError(rejected, { message: expect.stringContaining("8192 byte limit") });
       expect(requests).toHaveLength(0);
       cleanupTalkConnection("conn-1", context.logGateway);
+    });
+  });
+
+  it("preserves a saved transcription voice model when file models are also configured", async () => {
+    const createSession = vi.fn(() => ({
+      connect: async () => {},
+      sendAudio: vi.fn(),
+      close: vi.fn(),
+      isConnected: () => true,
+    }));
+    await withFileProvider(
+      async (requests) => {
+        const config: OpenClawConfig = {
+          ...cfg,
+          agents: { defaults: { voiceModel: { primary: "streaming-stt/saved-model" } } },
+        };
+        const context = {
+          getRuntimeConfig: () => config,
+          broadcastToConnIds: vi.fn(),
+          logGateway: { warn: vi.fn() },
+        };
+        const call = createTalkHandlerCaller(talkHandlers);
+        const catalog = vi.fn();
+        await call("talk.catalog", { params: {}, context, respond: catalog });
+        expect(expectRespondOk(catalog)).toMatchObject({
+          transcription: { ready: true, activeProvider: "streaming-stt" },
+        });
+        const respond = vi.fn();
+        await call("talk.session.create", {
+          params: { mode: "transcription" },
+          context,
+          respond,
+        });
+        expectRespondOk(respond, { provider: "streaming-stt" });
+        expect(createSession).toHaveBeenCalledWith(
+          expect.objectContaining({ providerConfig: { model: "saved-model" } }),
+        );
+        expect(requests).toHaveLength(0);
+      },
+      undefined,
+      {
+        id: "streaming-stt",
+        label: "Streaming STT",
+        models: ["saved-model"],
+        isConfigured: () => true,
+        createSession,
+      },
+    );
+  });
+
+  it.each(["unknown provider", "missing credentials", "missing CLI", "malformed CLI"])(
+    "does not advertise or admit file transcription with %s",
+    async (reason) => {
+      await withFileProvider(async (requests) => {
+        const config: OpenClawConfig = {
+          ...cfg,
+          models:
+            reason === "missing credentials"
+              ? { providers: { "local-stt": { baseUrl: "https://unused.invalid", models: [] } } }
+              : cfg.models,
+          tools: {
+            media: {
+              ...cfg.tools?.media,
+              models:
+                reason === "unknown provider"
+                  ? [{ provider: "missing-stt", model: "whisper", capabilities: ["audio"] }]
+                  : reason === "missing credentials"
+                    ? cfg.tools?.media?.models
+                    : [
+                        {
+                          type: "cli",
+                          command:
+                            reason === "missing CLI" ? "/missing/speech-command" : process.execPath,
+                          args: reason === "missing CLI" ? ["{{AttachmentPath}}"] : [],
+                          capabilities: ["audio"],
+                        },
+                      ],
+            },
+          },
+        };
+        const call = createTalkHandlerCaller(talkHandlers);
+        const catalog = vi.fn();
+        await call("talk.catalog", { params: {}, config, respond: catalog });
+        const result = expectRespondOk(catalog);
+        expect(result).toMatchObject({ transcription: { ready: false } });
+        expect(result).not.toHaveProperty("transcription.activeProvider");
+        if (reason === "unknown provider" || reason === "missing credentials") {
+          expect(result).toMatchObject({
+            transcription: { providers: [expect.objectContaining({ configured: false })] },
+          });
+        }
+        const respond = vi.fn();
+        await call("talk.session.create", {
+          params: { mode: "transcription" },
+          config,
+          respond,
+        });
+        expectRespondError(respond, {
+          message: expect.stringContaining("No configured audio transcription provider"),
+        });
+        expect(requests).toHaveLength(0);
+      });
+    },
+  );
+
+  it("advertises and uses a viable file fallback after an unknown provider", async () => {
+    await withFileProvider(async (requests) => {
+      const config: OpenClawConfig = {
+        ...cfg,
+        tools: {
+          media: {
+            ...cfg.tools?.media,
+            models: [
+              { provider: "missing-stt", model: "missing", capabilities: ["audio"] },
+              { provider: "local-stt", model: "whisper", capabilities: ["audio"] },
+            ],
+          },
+        },
+      };
+      const context = {
+        getRuntimeConfig: () => config,
+        broadcastToConnIds: vi.fn(),
+        logGateway: { warn: vi.fn() },
+      };
+      const call = createTalkHandlerCaller(talkHandlers);
+      const catalog = vi.fn();
+      await call("talk.catalog", { params: {}, context, respond: catalog });
+      expect(expectRespondOk(catalog)).toMatchObject({
+        transcription: {
+          ready: true,
+          activeProvider: "local-stt",
+          providers: [
+            expect.objectContaining({ id: "missing-stt", configured: false }),
+            expect.objectContaining({ id: "local-stt", configured: true }),
+          ],
+        },
+      });
+      const created = vi.fn();
+      await call("talk.session.create", {
+        params: { mode: "transcription" },
+        context,
+        respond: created,
+      });
+      const sessionId = expectRecordFields(expectRespondOk(created), {
+        sessionId: expect.any(String),
+      }).sessionId;
+      await call("talk.session.appendAudio", {
+        params: { sessionId, audioBase64: Buffer.alloc(1600, 0xff).toString("base64") },
+        respond: vi.fn(),
+        context,
+      });
+      const closed = vi.fn();
+      await call("talk.session.close", { params: { sessionId }, context, respond: closed });
+      expectRespondOk(closed);
+      expect(requests).toHaveLength(1);
+      expect(requests[0]?.model).toBe("whisper");
     });
   });
 

@@ -206,22 +206,21 @@ export async function buildTalkTranscriptionConfig(
   const streamingConfig = getVoiceCallStreamingConfig(config);
   const provider = normalizeOptionalString(requestedProvider) ?? streamingConfig.provider;
   const providerConfigs = streamingConfig.providers ?? {};
+  const configuredProviderIds = [provider, ...Object.keys(providerConfigs)];
+  const voiceModelDefault = await resolveConfiguredVoiceModelDefaultRef({
+    config,
+    provider,
+    providerConfigs,
+    providers: listTalkTranscriptionProviders(config, configuredProviderIds),
+    requestedModel: normalizeOptionalString(requestedModel),
+  });
   const file =
     !provider &&
+    !voiceModelDefault &&
     !normalizeOptionalString(requestedModel) &&
     Object.keys(providerConfigs).length === 0
       ? await resolveTalkFileTranscriptionConfig(config)
       : undefined;
-  const configuredProviderIds = [provider, ...Object.keys(providerConfigs)];
-  const voiceModelDefault = file
-    ? undefined
-    : await resolveConfiguredVoiceModelDefaultRef({
-        config,
-        provider,
-        providerConfigs,
-        providers: listTalkTranscriptionProviders(config, configuredProviderIds),
-        requestedModel: normalizeOptionalString(requestedModel),
-      });
   return {
     provider: provider ?? voiceModelDefault?.provider,
     providers: providerConfigs,

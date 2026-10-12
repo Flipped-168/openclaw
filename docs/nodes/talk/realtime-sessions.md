@@ -20,8 +20,10 @@ For local transcription, configure an audio entry in `tools.media.models` as
 described in [Audio and voice notes](/nodes/audio). The browser uses the existing
 Gateway transcription session; the Gateway passes the completed recording to
 the file-transcription owner. Its provider selection, input limits, timeout, and
-fallback policy also apply here. Explicit streaming-provider selections take
-precedence. File transcription produces a final transcript after the utterance ends.
+fallback policy also apply here. Explicit streaming-provider selections and a
+matching `agents.defaults.voiceModel` take precedence. File transcription produces
+a final transcript after the utterance ends. The catalog marks file transcription
+ready only when a configured provider or CLI command is available.
 
 Capture pauses during the agent response and speech playback, then resumes for
 the next utterance. Stop cancels the call's own chat run and playback. Split Talk

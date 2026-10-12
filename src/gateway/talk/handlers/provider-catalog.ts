@@ -31,7 +31,7 @@ export async function resolveCatalogProviderSelection(
 export async function buildTalkTranscriptionCatalog(config: OpenClawConfig) {
   const transcriptionConfig = await buildTalkTranscriptionConfig(config);
   const transcriptionSelection = transcriptionConfig.file
-    ? { ready: true, activeProvider: transcriptionConfig.file.provider }
+    ? { ready: transcriptionConfig.file.ready, activeProvider: transcriptionConfig.file.provider }
     : await resolveCatalogProviderSelection(
         canonicalizeRealtimeTranscriptionProviderId(transcriptionConfig.provider, config),
         async () =>
@@ -52,7 +52,6 @@ export async function buildTalkTranscriptionCatalog(config: OpenClawConfig) {
       ? transcriptionConfig.file.providers.map((provider) => ({
           ...provider,
           label: provider.id,
-          configured: true,
           modes: ["transcription"],
           transports: ["gateway-relay"],
           brains: ["none"],

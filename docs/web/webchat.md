@@ -94,8 +94,10 @@ Hold the microphone button for dictation. Explicit audio models in
 `tools.media.models` use the same transcription owner as uploaded voice notes,
 including local OpenAI-compatible `/v1/audio/transcriptions` endpoints and local
 CLI models. Audio is transcribed when capture ends; file-based providers do not
-produce partial captions. An explicit Talk transcription provider or Voice Call
-streaming configuration keeps the streaming path.
+produce partial captions. An explicit Talk transcription provider, matching
+`agents.defaults.voiceModel`, or Voice Call streaming configuration keeps the
+streaming path. Dictation is unavailable when none of the configured file
+providers or CLI commands can run.
 Loopback and private-network endpoints use the existing provider opt-in:
 `models.providers.<id>.request.allowPrivateNetwork: true`.
 
