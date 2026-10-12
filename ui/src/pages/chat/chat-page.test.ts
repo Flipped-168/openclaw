@@ -46,7 +46,7 @@ const sessionPath = (sessionKey: string) =>
   sessionNavigationTarget({ face: "chat", sessionKey, fallbackAgentId: "main" }).options.pathname;
 import type { ChatMessageCache } from "./session-message-cache.ts";
 import type { ChatSplitLayout } from "./split-layout-types.ts";
-import { setPaneSession } from "./split-layout.ts";
+import { insertPane, setPaneSession, singlePaneLayout } from "./split-layout.ts";
 
 type RenderedPane = HTMLElement & {
   paneId: string;
@@ -546,6 +546,22 @@ describe("chat page split layout host", () => {
     expect(navigation.replace).toHaveBeenCalledOnce();
     itemAt(cells, 0, "split cell").dispatchEvent(new Event("focusin", { bubbles: true }));
     expect(navigation.replace).toHaveBeenCalledOnce();
+
+    await setLayout(page, insertPane(singlePaneLayout("c1", "p1", "main"), "p1", "main", "down"));
+    await settleChatPage(page);
+    const horizontal = expectDefined(
+      page.querySelector<RenderedDivider>("resizable-divider"),
+      "horizontal divider",
+    );
+    expect(horizontal.orientation).toBe("horizontal");
+    horizontal.focus();
+    expect(document.activeElement).toBe(horizontal);
+    horizontal.dispatchEvent(new CustomEvent("resize", { detail: { splitRatio: 0.65 } }));
+    await settleChatPage(page);
+    expect(page.querySelector("resizable-divider")).toBe(horizontal);
+    expect(document.activeElement).toBe(horizontal);
+    expect(getLayout(page)?.columns[0]?.paneWeights[0]).toBeCloseTo(0.65);
+    expect(getLayout(page)?.columns[0]?.paneWeights[1]).toBeCloseTo(0.35);
   });
 
   it.each(["command", "close"] as const)(

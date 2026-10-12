@@ -542,6 +542,7 @@ function ChatContent(input: { props: ChatProps }) {
                         view={ChatTranscript}
                       />
                     </Show>
+                    {/* Keep the affordance mounted so showing it never changes transcript layout. */}
                     <Show when={input.props.onScrollToBottom}>
                       <div class="chat-scroll-to-bottom-wrap">
                         <button

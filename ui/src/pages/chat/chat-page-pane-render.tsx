@@ -301,28 +301,36 @@ function ChatPagePaneCell(props: { options: ChatPagePaneRenderOptions }) {
   );
 }
 
-function SplitLayout(props: { content: ChatPageSnapshot["content"] }) {
-  const layout = () => props.content.layout;
-  const options = () => props.content.options;
-  const divider = (index: number, column?: ChatSplitColumn): SolidJSX.Element => (
+function SplitDivider(props: {
+  index: number;
+  column?: ChatSplitColumn;
+  layout: ChatSplitLayout;
+  options: SplitRenderOptions;
+}): SolidJSX.Element {
+  return (
     <resizable-divider
-      prop:orientation={column ? "horizontal" : "vertical"}
+      prop:orientation={props.column ? "horizontal" : "vertical"}
       prop:splitRatio={splitRatio(
-        column?.paneWeights ?? layout().columnWeights,
-        index,
-        column ? "split pane weight" : "split column weight",
+        props.column?.paneWeights ?? props.layout.columnWeights,
+        props.index,
+        props.column ? "split pane weight" : "split column weight",
       )}
       prop:minRatio={0.15}
       prop:maxRatio={0.85}
       prop:label={t("nav.resize")}
       onResize={(event) =>
-        column
-          ? options().onResizePanes(column.id, index, event.detail.splitRatio)
-          : options().onResizeColumns(index, event.detail.splitRatio)
+        props.column
+          ? props.options.onResizePanes(props.column.id, props.index, event.detail.splitRatio)
+          : props.options.onResizeColumns(props.index, event.detail.splitRatio)
       }
-      onResize-end={() => options().onResizeEnd()}
+      onResize-end={() => props.options.onResizeEnd()}
     />
   );
+}
+
+function SplitLayout(props: { content: ChatPageSnapshot["content"] }) {
+  const layout = () => props.content.layout;
+  const options = () => props.content.options;
   return (
     <div
       class={[
@@ -362,14 +370,19 @@ function SplitLayout(props: { content: ChatPageSnapshot["content"] }) {
                       )}
                     />
                     <Show when={!options().pane.narrow && paneIndex() < column().panes.length - 1}>
-                      {divider(paneIndex(), column())}
+                      <SplitDivider
+                        index={paneIndex()}
+                        column={column()}
+                        layout={layout()}
+                        options={options()}
+                      />
                     </Show>
                   </>
                 )}
               </For>
             </div>
             <Show when={!options().pane.narrow && columnIndex() < layout().columns.length - 1}>
-              {divider(columnIndex())}
+              <SplitDivider index={columnIndex()} layout={layout()} options={options()} />
             </Show>
           </>
         )}
