@@ -25,7 +25,9 @@ import {
 } from "../../../config/sessions/session-accessor.js";
 import { readTranscriptEventRows } from "../../../config/sessions/session-accessor.sqlite-read.js";
 import { waitForSessionTranscriptIndexReconcile } from "../../../config/sessions/session-transcript-reconcile.js";
+import { runWithRetainedGatewayRootWork } from "../../../process/gateway-work-admission.js";
 import { onInternalSessionTranscriptUpdate } from "../../../sessions/transcript-events.js";
+import { runOutsideAsyncWorkScope } from "../../../shared/async-work-scope.js";
 import { createDeferredCore } from "../../../shared/deferred.js";
 import {
   closeOpenClawAgentDatabaseByPathAsync,
@@ -166,7 +168,10 @@ describe("native Talk action ownership through public plugin registration", () =
       });
       const unsubscribe = onInternalSessionTranscriptUpdate((update) => {
         if ((update.target?.sessionId ?? update.sessionId) === SESSION_ID) {
-          const publication = publish(update);
+          // Match production subscription ownership: committed broadcasts outlive the producer.
+          const publication = runOutsideAsyncWorkScope(() =>
+            runWithRetainedGatewayRootWork(() => publish(update)),
+          );
           void publication.catch(() => {});
           publications.push(publication);
         }
