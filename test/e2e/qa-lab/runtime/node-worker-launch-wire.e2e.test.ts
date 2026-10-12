@@ -109,7 +109,7 @@ describe("node worker launch wire", () => {
       let testFailure: { error: unknown } | undefined;
       let cleanupFailures: unknown[];
       let workspaceAwaitingReconciliation: string | undefined;
-      const workspaceReconciled = createDeferred();
+      let workspaceReconciled = createDeferred();
 
       try {
         gateway = await startPairedNodeWorkerGateway({
@@ -328,6 +328,7 @@ describe("node worker launch wire", () => {
             code: "ENOENT",
           });
         }
+        workspaceReconciled = createDeferred();
         const permissionRunId = `node-worker-permission-${Date.now()}`;
         await expect(
           operator.request<{ runId?: string; status?: string }>("chat.send", {
@@ -372,6 +373,7 @@ describe("node worker launch wire", () => {
         );
         expect(permissionReplies).toHaveLength(1);
         expect(wireMessageText(permissionReplies?.[0])).toContain(provider.execOutput);
+        await withinTest(workspaceReconciled.promise, signal);
         const permissionDescribed = (await gateway.call("sessions.describe", {
           key: SESSION_KEY,
         })) as { session?: { execCwd?: string; spawnedCwd?: string } };
