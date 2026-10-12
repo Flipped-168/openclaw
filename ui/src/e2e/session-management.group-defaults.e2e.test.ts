@@ -506,7 +506,9 @@ suite.define(() => {
       await expect
         .poll(() => page.getByRole("button", { name: "Start session" }).isDisabled())
         .toBe(true);
-      expect(await page.locator(".new-session-page__message").inputValue()).toBe("keep this draft");
+      await expect
+        .poll(() => page.locator(".new-session-page__message").inputValue())
+        .toBe("keep this draft");
     } finally {
       await context.close();
     }

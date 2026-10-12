@@ -1,4 +1,4 @@
-import { createEffect, createMemo, For, Match, Show, Switch, untrack } from "solid-js";
+import { createMemo, For, Match, Show, Switch, untrack } from "solid-js";
 import { pathForRoute } from "../app-route-paths.ts";
 import type { ApplicationContext } from "../app/context-types.ts";
 import type { ExecApprovalDecision } from "../app/exec-approval.ts";
@@ -33,8 +33,8 @@ import {
 } from "./sidebar-issue-item.tsx";
 import { ISSUE_TABS, type IssueTab } from "./sidebar-issues-tabs.ts";
 import { renderSidebarOutboxItem as SidebarOutboxItem } from "./sidebar-outbox-item.tsx";
+import { HubTabs } from "./solid/hub-tabs.tsx";
 import { Icon } from "./solid/icon.tsx";
-import { syncTabGroupLabel } from "./web-awesome-tabs.ts";
 import "./menu-surface.ts";
 import "./tooltip.ts";
 
@@ -240,11 +240,6 @@ export function SidebarAttentionPanel(props: SidebarAttentionPanelParams) {
     const offset = position.anchor === "top" ? position.top : position.bottom;
     return `left:${position.left}px;${position.anchor}:${offset}px;--sidebar-issues-panel-${position.anchor}:${offset}px`;
   });
-  let tabGroup: HTMLElement | undefined;
-  createEffect(
-    () => t("attention.tabs.label"),
-    (label) => syncTabGroupLabel(tabGroup, label),
-  );
   const readContext = () => {
     gateway.revision();
     overlays?.revision();
@@ -334,56 +329,20 @@ export function SidebarAttentionPanel(props: SidebarAttentionPanelParams) {
               </button>
             </div>
           </header>
-          <wa-tab-group
-            ref={(element) => {
-              tabGroup = element;
-            }}
-            class="hub-tabs hub-tabs--sub sidebar-issues-hub-tabs sidebar-issues-panel__tabs"
-            aria-label={t("attention.tabs.label")}
-            prop:active={props.selectedTab}
-            activation="manual"
-            without-scroll-controls
-          >
-            <For each={ISSUE_TABS}>
-              {(tab) => {
-                const activate = (event: Event, keyboard = false) => {
-                  if (tab === props.selectedTab) {
-                    return;
-                  }
-                  if (keyboard) {
-                    event.preventDefault();
-                  }
-                  props.onSelectTab(tab);
-                };
-                return (
-                  <wa-tab
-                    id={`sidebar-issues-tab-${tab}`}
-                    panel={tab}
-                    aria-controls="sidebar-issues-tabpanel"
-                    class="hub-tab"
-                    prop:active={props.selectedTab === tab}
-                    tabindex={props.selectedTab === tab ? 0 : -1}
-                    aria-selected={props.selectedTab === tab ? "true" : "false"}
-                    onClick={(event) => {
-                      if (event.detail > 0 || event.isTrusted) {
-                        activate(event);
-                      }
-                    }}
-                    onKeyDown={(event) => {
-                      if (!event.repeat && (event.key === "Enter" || event.key === " ")) {
-                        activate(event, true);
-                      }
-                    }}
-                  >
-                    {t(`attention.tabs.${tab}`)}
-                    <Show when={tabCounts()[tab] > 0}>
-                      <span class="hub-tab__badge hub-tab__badge--count">{tabCounts()[tab]}</span>
-                    </Show>
-                  </wa-tab>
-                );
-              }}
-            </For>
-          </wa-tab-group>
+          <HubTabs
+            id="sidebar-issues"
+            active={props.selectedTab}
+            ariaLabel={t("attention.tabs.label")}
+            panelId="sidebar-issues-tabpanel"
+            className="sidebar-issues-panel__tabs"
+            variant="sub"
+            tabs={ISSUE_TABS.map((tab) => ({
+              value: tab,
+              label: t(`attention.tabs.${tab}`),
+              count: tabCounts()[tab] || undefined,
+            }))}
+            onSelect={(tab) => props.onSelectTab(tab)}
+          />
           <div class="sidebar-issues-panel__list-wrap">
             <div
               id="sidebar-issues-tabpanel"

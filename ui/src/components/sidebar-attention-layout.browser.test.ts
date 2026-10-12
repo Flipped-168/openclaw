@@ -22,7 +22,7 @@ import {
   SidebarAttentionPanel,
   type SidebarAttentionPanelParams,
 } from "./sidebar-attention-panel.runtime.tsx";
-import { HubTabs } from "./solid/hub-tabs.tsx";
+import { HubTabs, type HubTabsProps } from "./solid/hub-tabs.tsx";
 import layoutCss from "../styles/layout.css?inline";
 import floatingCss from "../styles/sidebar-attention-floating.css?inline";
 
@@ -354,7 +354,7 @@ describe.runIf("__vitest_browser__" in globalThis)("Inbox panel layout", () => {
               count: index || undefined,
             })),
             onSelect: () => undefined,
-          }),
+          } satisfies HubTabsProps<string>),
           listWrap,
         ],
         fixture,

@@ -16,7 +16,7 @@ import { gatewayHelloForMethods } from "../test-helpers/gateway-methods.ts";
 import { settleLitElement } from "../test-helpers/lit-settle.ts";
 import { getAppSidebarOwner } from "./app-sidebar.tsx";
 import { installTitleTooltips } from "./tooltip-title.ts";
-import { dispatchMousePointer } from "./tooltip.test-support.ts";
+import { dispatchMousePointer, settleTooltip } from "./tooltip.test-support.ts";
 
 async function fixture() {
   const gateway = createGatewayHarness({} as GatewayBrowserClient);
@@ -348,7 +348,9 @@ describe("personal navigation rail", () => {
     const hovered = sidebar.querySelector<HTMLAnchorElement>(
       '.sidebar-rail [data-sidebar-entry="session:agent:main:other"] a',
     )!;
-    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    vi.useFakeTimers({
+      toFake: ["setTimeout", "clearTimeout", "requestAnimationFrame", "cancelAnimationFrame"],
+    });
     source.focus();
     onTestFinished(installTitleTooltips(document));
     dispatchMousePointer(hovered, "pointerover");
@@ -383,9 +385,12 @@ describe("personal navigation rail", () => {
     await tooltip.updateComplete;
     dispatchMousePointer(hovered.closest(".sidebar-rail__pin")!, "pointerleave");
     dispatchMousePointer(hovered, "pointerover");
-    await tooltip.updateComplete;
-    vi.advanceTimersByTime(100);
-    expect(tooltip.hasAttribute("open")).toBe(true);
+    const reopened = document.body.querySelector<HTMLElementTagNameMap["openclaw-tooltip"]>(
+      ":scope > openclaw-tooltip",
+    )!;
+    vi.advanceTimersByTime(150);
+    await settleTooltip(reopened);
+    expect(reopened.hasAttribute("open")).toBe(true);
   });
 
   it("toggles the panel from the active view and expands it when switching views", async () => {
