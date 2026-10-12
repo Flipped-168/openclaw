@@ -225,10 +225,7 @@ it.each(["openai", undefined])(
     expect(tracks).toHaveLength(1);
     audios[0].onended?.();
     await h.nextCapture.promise;
-    expect(h.state.realtimeTalkConversationState.entries.map((entry) => entry.text)).toEqual([
-      "Tell me something local",
-      "The local model answered.",
-    ]);
+    expect(h.state.realtimeTalkConversationState.entries).toEqual([]);
     await h.state.toggleRealtimeTalk();
   },
 );

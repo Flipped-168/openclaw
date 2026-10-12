@@ -22,7 +22,6 @@ export class SplitTalkTransport implements RealtimeTalkTransport {
   private closed = false;
   private runId: string | undefined;
   private settleChat: ((result: string | Error) => void) | undefined;
-  private turn = 0;
 
   constructor(
     private readonly client: GatewayBrowserClient,
@@ -88,24 +87,11 @@ export class SplitTalkTransport implements RealtimeTalkTransport {
       }
       this.capture = null;
       if (text) {
-        const turn = ++this.turn;
-        this.callbacks.onTranscript?.({
-          role: "user",
-          text,
-          final: true,
-          itemId: `split-${turn}:user`,
-        });
         const answer = await this.send(text);
         if (this.closed) {
           return;
         }
         if (answer) {
-          this.callbacks.onTranscript?.({
-            role: "assistant",
-            text: answer,
-            final: true,
-            itemId: `split-${turn}:assistant`,
-          });
           await this.playback.speak(
             this.client,
             answer,

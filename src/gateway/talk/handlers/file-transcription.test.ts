@@ -7,10 +7,20 @@ import { createEmptyPluginRegistry } from "../../../plugins/registry-empty.js";
 import { withPluginRuntimeGenerationScope } from "../../../plugins/runtime/generation-scope.js";
 import { cleanupTalkConnection } from "../session-registry.js";
 import { createTalkHandlerCaller } from "./handler-invocation.test-support.js";
+import { talkHandlers } from "./index.js";
 import { expectRespondError, expectRespondOk } from "./responses.test-support.js";
 import { talkSessionHandlers } from "./session.js";
 
 const cfg: OpenClawConfig = {
+  models: {
+    providers: {
+      "local-stt": {
+        baseUrl: "https://unused.invalid",
+        apiKey: "synthetic-fixture-key",
+        models: [],
+      },
+    },
+  },
   tools: {
     media: {
       audio: { enabled: true, maxBytes: 8192 },
@@ -31,7 +41,6 @@ function withFileProvider(
     provider: {
       id: "local-stt",
       capabilities: ["audio"],
-      resolveAuth: () => ({ kind: "none", source: "synthetic local provider" }),
       transcribeAudio: async (request) => {
         requests.push(request);
         await beforeTranscription?.();
@@ -62,7 +71,7 @@ describe("configured file transcription through Talk RPCs", () => {
     onTestFinished(() => release.resolve());
     await withFileProvider(
       async (requests) => {
-        const call = createTalkHandlerCaller(talkSessionHandlers);
+        const call = createTalkHandlerCaller(talkHandlers);
         const events: Array<{ type?: string; text?: string }> = [];
         const context = {
           getRuntimeConfig: () => cfg,
@@ -70,6 +79,25 @@ describe("configured file transcription through Talk RPCs", () => {
             events.push(payload),
           logGateway: { warn: vi.fn() },
         };
+        const catalog = vi.fn();
+        await call("talk.catalog", { params: {}, respond: catalog, context });
+        expectRespondOk(catalog, {
+          transcription: {
+            ready: true,
+            activeProvider: "local-stt",
+            providers: [
+              {
+                id: "local-stt",
+                label: "local-stt",
+                models: ["whisper"],
+                configured: true,
+                modes: ["transcription"],
+                transports: ["gateway-relay"],
+                brains: ["none"],
+              },
+            ],
+          },
+        });
         const respond = vi.fn();
         await call("talk.session.create", {
           params: { mode: "transcription", transport: "gateway-relay", brain: "none" },
@@ -85,6 +113,7 @@ describe("configured file transcription through Talk RPCs", () => {
         });
         expect(requests).toHaveLength(0);
         const closed = vi.fn();
+        vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
         const closing = call("talk.session.close", {
           params: { sessionId },
           respond: closed,
@@ -95,7 +124,6 @@ describe("configured file transcription through Talk RPCs", () => {
           closing,
           "close settled before transcription",
         );
-        vi.useFakeTimers();
         await vi.advanceTimersByTimeAsync(6000);
         expect(closed).not.toHaveBeenCalled();
         expect(events.some((event) => event.type === "close")).toBe(false);

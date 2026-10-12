@@ -21,7 +21,7 @@ described in [Audio and voice notes](/nodes/audio). The browser uses the existin
 Gateway transcription session; the Gateway passes the completed recording to
 the file-transcription owner. Its provider selection, input limits, timeout, and
 fallback policy also apply here. Explicit streaming-provider selections take
-precedence. File transcription produces final captions after the utterance ends.
+precedence. File transcription produces a final transcript after the utterance ends.
 
 Capture pauses during the agent response and speech playback, then resumes for
 the next utterance. Stop cancels the call's own chat run and playback. Split Talk
