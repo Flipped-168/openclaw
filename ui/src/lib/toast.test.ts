@@ -80,7 +80,7 @@ describe("shared toast", () => {
     expect(appHost.textContent).toContain("Above overlay");
   });
 
-  it("routes through an active modal inside a shadow root", async () => {
+  it("routes successive notices through an active modal inside a shadow root", async () => {
     const appHost = await mountHost();
     const shadowOwner = document.createElement("div");
     const shadowRoot = shadowOwner.attachShadow({ mode: "open" });
@@ -95,6 +95,10 @@ describe("shared toast", () => {
 
     expect(appHost.parentElement).toBe(modal.getOverlayContainer());
     expect(appHost.textContent).toContain("Critical session notice");
+
+    expect(showToast({ message: "Follow-up session notice" })).toBe(true);
+    await settleHost(appHost);
+    expect(appHost.textContent).toContain("Follow-up session notice");
   });
 
   it("presents toasts in the outer modal after a nested modal closes", async () => {

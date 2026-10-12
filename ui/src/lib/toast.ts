@@ -264,7 +264,12 @@ export function showToast(options: ToastOptions): boolean {
   if (typeof document === "undefined") {
     return false;
   }
-  const host = document.querySelector<OpenClawToastHost>("openclaw-toast-host");
+  // A modal can carry the host into a shadow root, outside document queries.
+  const host =
+    document.querySelector<OpenClawToastHost>("openclaw-toast-host") ??
+    [...(document.openClawModalLayers ?? [])]
+      .map((layer) => layer.querySelector<OpenClawToastHost>("openclaw-toast-host"))
+      .find((candidate) => candidate?.isConnected);
   if (!host) {
     queuedToast = options;
     return false;
