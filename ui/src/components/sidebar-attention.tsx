@@ -7,7 +7,7 @@ import { registerSidebarAttentionEnglish } from "../i18n/locales/en-sidebar-atte
 import { canCallGatewayMethod } from "../lib/gateway-methods.ts";
 import { createIdleImport } from "../lib/idle-import.ts";
 import { projectGateway, projectSidebarAttention } from "../lib/reactive/application.ts";
-import { useApplication } from "../lib/reactive/context.ts";
+import { useApplication, useOptionalApplication } from "../lib/reactive/context.ts";
 import { registerEnglishCatalog, t } from "../lib/reactive/i18n.ts";
 import { defineSolidBridge } from "../lit/solid-bridge.ts";
 import "../styles/sidebar-attention-floating.css";
@@ -317,19 +317,26 @@ function renderSidebarAttentionContent(props: SidebarAttentionProps, host: HTMLE
 export const SidebarAttention = defineSolidBridge<
   SidebarAttentionProps,
   { dismissPanel(): boolean }
->("openclaw-sidebar-attention", renderSidebarAttentionContent, {
-  properties: {
-    activeRouteId: { default: undefined, attribute: false },
-    onNavigate: { default: undefined, attribute: false },
-    watchUpdateProgress: { default: undefined, attribute: false },
+>(
+  "openclaw-sidebar-attention",
+  (props, host) =>
+    untrack(() =>
+      useOptionalApplication() ? renderSidebarAttentionContent(props, host) : props.children,
+    ),
+  {
+    properties: {
+      activeRouteId: { default: undefined, attribute: false },
+      onNavigate: { default: undefined, attribute: false },
+      watchUpdateProgress: { default: undefined, attribute: false },
+    },
+    methods: { dismissPanel: (host) => panelDismissals.get(host)?.() ?? false },
+    disconnected: (host) => {
+      queueMicrotask(() => {
+        // A same-turn sidebar move retains intent; a detached Inbox retires it.
+        if (!host.isConnected) {
+          panelDismissals.get(host)?.();
+        }
+      });
+    },
   },
-  methods: { dismissPanel: (host) => panelDismissals.get(host)?.() ?? false },
-  disconnected: (host) => {
-    queueMicrotask(() => {
-      // A same-turn sidebar move retains intent; a detached Inbox retires it.
-      if (!host.isConnected) {
-        panelDismissals.get(host)?.();
-      }
-    });
-  },
-});
+);

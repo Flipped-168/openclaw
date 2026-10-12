@@ -22,7 +22,7 @@ import {
   normalizeAgentId,
   parseAgentSessionKey,
 } from "../lib/sessions/session-key.ts";
-import { renderHoverMarquee } from "../lib/solid/hover-marquee.tsx";
+import { HoverMarquee } from "../lib/solid/hover-marquee.tsx";
 import type { PersonActivityData } from "./person-activity-data.ts";
 import { personActivityLink, type PersonActivityRouting } from "./person-activity-link.ts";
 import { Icon } from "./solid/icon.tsx";
@@ -144,14 +144,11 @@ function Sessions(props: {
                           </span>
                         }
                       >
-                        <Show when={{ name: displayName() }} keyed>
-                          {(name) =>
-                            renderHoverMarquee(name.name, "person-activity-card__session-name", {
-                              delay: 250,
-                              speed: 80,
-                            })
-                          }
-                        </Show>
+                        <HoverMarquee
+                          content={displayName()}
+                          class="person-activity-card__session-name"
+                          options={{ delay: 250, speed: 80 }}
+                        />
                       </Show>
                       <Show when={session().row.updatedAt != null}>
                         <span class="person-activity-card__session-age">

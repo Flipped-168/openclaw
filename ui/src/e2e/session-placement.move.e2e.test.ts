@@ -2,7 +2,6 @@ import path from "node:path";
 import type { Locator, Page } from "playwright";
 import { expect, it } from "vitest";
 import type { ApplicationContext } from "../app/context.ts";
-import { childSessionListQuery } from "../lib/sessions/child-session-data.ts";
 import { selectChatLayoutAction } from "../test-helpers/chat-layout-menu.ts";
 import {
   chatSessionListResponse,
@@ -86,6 +85,25 @@ function activeSession(placementMove?: {
     },
     ...(placementMove ? { placementMove } : {}),
   };
+}
+
+function observedRunnerStatus(page: Page, key: string) {
+  return page.evaluate(
+    (target) => {
+      const app = document.querySelector<
+        HTMLElement & { runtime?: { context: ApplicationContext } }
+      >("openclaw-app");
+      // Descriptor admission can precede every list while chat.startup is held.
+      const observation = app?.runtime?.context.sessions.observeRow(target, () => undefined);
+      try {
+        const placement = observation?.row?.placement;
+        return placement?.state === "active" ? placement.runner?.status : undefined;
+      } finally {
+        observation?.dispose();
+      }
+    },
+    { key, agentId: "main" },
+  );
 }
 
 suite.define(() => {
@@ -572,18 +590,7 @@ suite.define(() => {
       await page.goto(controlUiSessionUrl(suite.server.baseUrl, "agent:main:placement-move"));
       await gateway.waitForRequest("chat.startup");
       await page.getByRole("button", { name: "Runs on device" }).waitFor();
-      await expect
-        .poll(() =>
-          page.evaluate((scope) => {
-            const app = document.querySelector<
-              HTMLElement & { runtime?: { context: ApplicationContext } }
-            >("openclaw-app");
-            const placement =
-              app?.runtime?.context.sessions.listSnapshot(scope).result?.sessions[0]?.placement;
-            return placement?.state === "active" ? placement.runner?.status : undefined;
-          }, childSessionListQuery(parent.key)),
-        )
-        .toBe("available");
+      await expect.poll(() => observedRunnerStatus(page, available.key)).toBe("available");
       await page.evaluate(() => {
         const state = { returnedOnline: false, seenOffline: false };
         const inspect = () => {
@@ -637,17 +644,7 @@ suite.define(() => {
         match: descriptorMatch,
       });
       await page.getByRole("button", { name: "Device offline" }).waitFor();
-      expect(
-        await page.evaluate((key) => {
-          const app = document.querySelector<
-            HTMLElement & { runtime?: { context: ApplicationContext } }
-          >("openclaw-app");
-          const placement = app?.runtime?.context.sessions.presentation.result?.sessions.find(
-            (row) => row.key === key,
-          )?.placement;
-          return placement?.state === "active" ? placement.runner?.status : undefined;
-        }, available.key),
-      ).toBe("offline");
+      expect(await observedRunnerStatus(page, available.key)).toBe("offline");
       expect(await gateway.getSocketCount()).toBe(1);
 
       await selectChatLayoutAction(page, "Open split view");
