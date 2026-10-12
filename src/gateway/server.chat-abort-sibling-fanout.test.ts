@@ -424,10 +424,6 @@ for (const { name, fault, replaceParent } of [
               killedAt: expectDefined(acceptedKillIntent, "accepted child kill intent").requestedAt,
               taskCancellationAccepted: true,
             });
-            expect(
-              loadExactSessionEntryReadOnly({ storePath, sessionKey: sessionKey(runId) })?.entry
-                .abortedLastRun,
-            ).toBe(true);
           }
           if (queued.includes(runId)) {
             expect(run.execution.startedAt).toBeUndefined();

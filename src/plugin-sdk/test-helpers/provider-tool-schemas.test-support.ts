@@ -1,4 +1,10 @@
 import { afterAll, afterEach, beforeAll, beforeEach, expect, vi } from "vitest";
+import {
+  clearRuntimeConfigSnapshot,
+  getRuntimeConfigSnapshot,
+  getRuntimeConfigSourceSnapshot,
+  setRuntimeConfigSnapshot,
+} from "../runtime-config-snapshot.js";
 
 /** Reuses real provider registrations while each case retains its own tool-schema inputs. */
 export function useProviderToolSchemaRuntimeForTest(pluginIds: readonly string[]): void {
@@ -29,15 +35,28 @@ export function useProviderToolSchemaRuntimeForTest(pluginIds: readonly string[]
       expect((await caches.retirePluginCache(cache)).failures).toEqual([]);
     };
     close = closeCache;
-    const prepared = caches.withPluginCache(cache, () => ({
-      metadataSnapshot: metadata.loadPluginMetadataSnapshot({ config }),
-      pluginRegistry: loader.loadOpenClawPlugins({
-        config,
-        onlyPluginIds: [...pluginIds],
-        activate: false,
-        throwOnLoadError: true,
-      }),
-    }));
+    const prepared = caches.withPluginCache(cache, () => {
+      const previousConfig = getRuntimeConfigSnapshot();
+      const previousSourceConfig = getRuntimeConfigSourceSnapshot();
+      setRuntimeConfigSnapshot(config);
+      try {
+        return {
+          metadataSnapshot: metadata.loadPluginMetadataSnapshot({ config }),
+          pluginRegistry: loader.loadOpenClawPlugins({
+            config,
+            onlyPluginIds: [...pluginIds],
+            activate: false,
+            throwOnLoadError: true,
+          }),
+        };
+      } finally {
+        if (previousConfig) {
+          setRuntimeConfigSnapshot(previousConfig, previousSourceConfig ?? undefined);
+        } else {
+          clearRuntimeConfigSnapshot();
+        }
+      }
+    });
     const normalize = runtime.normalizeProviderToolSchemasWithPlugin;
     const inspect = runtime.inspectProviderToolSchemasWithPlugin;
     const prepare = (params: Parameters<typeof normalize>[0]) => {

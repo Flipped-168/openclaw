@@ -33,7 +33,7 @@ it("hands only deleted agent sessions to browser cleanup after their producers s
   await withOpenClawTestState({ label: "deletion-browser-scope" }, async (state) => {
     const cfg = {
       agents: { entries: { keeper: {}, doomed: {} } },
-      session: { store: state.path("agents/keeper/sessions/sessions.json") },
+      session: { store: state.path("shared-sessions.sqlite") },
     };
     setRuntimeConfigSnapshot(cfg);
     vi.spyOn(sessionInventory, "readSessionEntrySummariesInWorker").mockResolvedValue([

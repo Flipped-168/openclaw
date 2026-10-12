@@ -52,6 +52,16 @@ import { prepareSessionLifecycleDrain } from "./sessions-lifecycle-drain.js";
 
 afterEach(() => vi.restoreAllMocks());
 
+function hasOnlyAuthorityFailures(error: unknown, message: string): boolean {
+  if (error instanceof AggregateError) {
+    return (
+      error.errors.length > 0 &&
+      error.errors.every((failure: unknown) => hasOnlyAuthorityFailures(failure, message))
+    );
+  }
+  return error instanceof Error && error.message.includes(message);
+}
+
 it.each(["rollback", "rollback during recovery"] as const)(
   "keeps session writes fenced after a draining deletion fails until %s",
   async (rollbackPath) => {
@@ -120,7 +130,7 @@ it.each(["rollback", "rollback during recovery"] as const)(
 
 it("preserves another agent's replacement run and admissions in a shared store during inventory", async () => {
   await withOpenClawTestState({ label: "deletion-run-identity" }, async (state) => {
-    const storePath = state.path("agents/keeper/sessions/sessions.json");
+    const storePath = state.path("shared-sessions.sqlite");
     const cfg = {
       agents: { entries: { keeper: {}, doomed: {} } },
       session: { store: storePath },
@@ -307,6 +317,10 @@ it.each(authorityLossCases)(
       const prefix = `${owner}-${transition}`;
       const firstId = `${prefix}-first`;
       const laterId = `${prefix}-later`;
+      const authorityMessage =
+        transition === "revoked"
+          ? "agent deletion core:agent-deletion/doomed was lost"
+          : "Agent doomed deletion no longer owns database cleanup.";
       const sessionKey = "agent:doomed:protected";
       const completion = createDeferred();
       const authorityRejected = createDeferred<unknown>();
@@ -469,7 +483,9 @@ it.each(authorityLossCases)(
                       embeddedJoined.promise,
                       "deletion joined an uncancelled replacement sharing the run id",
                     ),
-                  ).rejects.toThrow("Agent doomed deletion no longer owns database cleanup.");
+                  ).rejects.toSatisfy((error: unknown) =>
+                    hasOnlyAuthorityFailures(error, authorityMessage),
+                  );
                   expect(backendAbort.signal.aborted).toBe(false);
                   expect(embeddedTarget?.isActive()).toBe(true);
                 } else {
@@ -509,10 +525,6 @@ it.each(authorityLossCases)(
               "cancellation did not recheck live deletion authority",
             );
             expect(rejection).toBeInstanceOf(Error);
-            const authorityMessage =
-              transition === "revoked"
-                ? "agent deletion core:agent-deletion/doomed was lost"
-                : "Agent doomed deletion no longer owns database cleanup.";
             expect(String(rejection)).toContain(authorityMessage);
             expect(changedRows).toBe(1);
             expect(wasFirstCancelled()).toBe(true);
@@ -527,9 +539,13 @@ it.each(authorityLossCases)(
               expect(settled).not.toHaveBeenCalled();
             }
             settleFirst();
-            await expect(draining).rejects.toThrow(
-              owner === "unkeyed" ? "deletion is still draining" : authorityMessage,
-            );
+            if (owner === "unkeyed") {
+              await expect(draining).rejects.toThrow("deletion is still draining");
+            } else {
+              await expect(draining).rejects.toSatisfy((error: unknown) =>
+                hasOnlyAuthorityFailures(error, authorityMessage),
+              );
+            }
             expect(wasLaterCancelled()).toBe(false);
             if (owner === "unkeyed") {
               traces.push(

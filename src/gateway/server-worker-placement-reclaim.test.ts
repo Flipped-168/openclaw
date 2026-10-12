@@ -563,13 +563,15 @@ it("an idempotent failed-cleanup result does not cancel work already on the loca
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "failed-already-local-"));
   roots.push(root);
   const storePath = path.join(root, "sessions.sqlite");
+  const cfg = { session: { store: storePath } };
+  setRuntimeConfigSnapshot(cfg);
   const entry = { sessionId: REQUEST.sessionId, updatedAt: Date.now() };
   await replaceSessionEntry(
     { storePath, sessionKey: REQUEST.sessionKey, agentId: REQUEST.agentId },
     entry,
   );
   const target = await resolveGatewaySessionStoreTargetWithStoreAsync({
-    cfg: { session: { store: storePath } },
+    cfg,
     key: REQUEST.sessionKey,
     agentId: REQUEST.agentId,
     exactRead: true,
@@ -635,20 +637,22 @@ it.each(["missing", "local"] as const)(
     const database = openOpenClawStateDatabase({ env: { OPENCLAW_STATE_DIR: root } });
     const placements = createWorkerSessionPlacementStore({ database });
     const storePath = path.join(root, "sessions.sqlite");
+    const cfg = { session: { store: storePath } };
+    setRuntimeConfigSnapshot(cfg);
     const entry = { sessionId: REQUEST.sessionId, updatedAt: Date.now() };
     await replaceSessionEntry(
       { storePath, sessionKey: REQUEST.sessionKey, agentId: REQUEST.agentId },
       entry,
     );
     const target = await resolveGatewaySessionStoreTargetWithStoreAsync({
-      cfg: { session: { store: storePath } },
+      cfg,
       key: REQUEST.sessionKey,
       agentId: REQUEST.agentId,
       exactRead: true,
       readOnly: true,
       clone: false,
     });
-    lookup.value = { ...target, cfg: {}, entry, legacyKey: undefined };
+    lookup.value = { ...target, cfg, entry, legacyKey: undefined };
     if (state === "local") {
       await placements.releaseTurn(
         await placements.claimTurn({
