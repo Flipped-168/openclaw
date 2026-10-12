@@ -16,6 +16,7 @@ import { resolveAgentModelPrimaryValue } from "../config/model-input.js";
 import { acquireGatewayLock } from "../infra/gateway-lock.js";
 import type { GatewayScheduler } from "../infra/gateway-scheduler.js";
 import { resolveRuntimeWorkerArgv, resolveRuntimeWorkerUrl } from "../infra/runtime-worker-url.js";
+import * as logging from "../logging.js";
 import * as pluginLifecycleLease from "../plugins/plugin-lifecycle-lease.js";
 import { OpenClawStateLeaseAcquisitionError } from "../state/openclaw-state-lease-error.js";
 import {
@@ -49,6 +50,24 @@ it("publishes agent mutations before acknowledging immediate session and roster 
   const overlapPhases: string[] = [];
   let reloadScheduler: GatewayScheduler | undefined;
   const reloadFailures: string[] = [];
+  const cronWarnings: unknown[][] = [];
+  const toPinoLikeLogger = logging.toPinoLikeLogger;
+  const cronLoggerSpy = vi.spyOn(logging, "toPinoLikeLogger").mockImplementation((...args) => {
+    const logger = toPinoLikeLogger(...args);
+    return {
+      ...logger,
+      warn: (...warningArgs: unknown[]) => {
+        if (
+          warningArgs.some(
+            (value) => typeof value === "string" && value.startsWith("cron-heartbeat:"),
+          )
+        ) {
+          cronWarnings.push(warningArgs);
+        }
+        logger.warn(...warningArgs);
+      },
+    };
+  });
   const reloadWarn = vi.spyOn(gatewayKernelLogs.logReload, "warn");
   const reloadInfo = vi.spyOn(gatewayKernelLogs.logReload, "info");
   const reloadError = vi.spyOn(gatewayKernelLogs.logReload, "error");
@@ -63,6 +82,7 @@ it("publishes agent mutations before acknowledging immediate session and roster 
         creationBookkeepingFinished,
         overlapPhases,
         reloadFailures,
+        cronWarnings,
       }),
     );
   });
@@ -141,6 +161,7 @@ it("publishes agent mutations before acknowledging immediate session and roster 
     reloadWarn.mockRestore();
     reloadInfo.mockRestore();
     reloadError.mockRestore();
+    cronLoggerSpy.mockRestore();
   });
   await withOpenClawTestState(
     {
