@@ -32,7 +32,6 @@ import {
 import { createSqliteDatabaseWriteReceipts } from "./sqlite-database-write-receipts.js";
 import { getSqliteNativeAdmissionFacts } from "./sqlite-native-admission.js";
 import { stageSqliteTransactionState } from "./sqlite-post-commit.js";
-import { schemaAdmission } from "./sqlite-schema-admission.js";
 import type { DatabaseFileIdentity } from "./sqlite-worker-identity.js";
 
 export {
@@ -202,6 +201,15 @@ function pathAdmission(location: string): Admission | undefined {
   }
 }
 
+/** Resolve SQLite's absolute URLs and encoded filename form at filesystem boundaries. */
+export function resolveSqliteDatabaseFilePath(location: string): string {
+  if (!location.startsWith("file:")) {
+    return location;
+  }
+  const [uriFilename = ""] = location.slice("file:".length).split(/[?#]/u, 1);
+  return uriFilename.startsWith("/") ? fileURLToPath(location) : decodeURIComponent(uriFilename);
+}
+
 /** Bracket native open so a pathname swap cannot lend the replacement file's admission. */
 export function prepareSqliteDatabaseAdmission(
   location: string,
@@ -220,9 +228,7 @@ export function prepareSqliteDatabaseAdmission(
     if (["ro", "rw"].includes(url.searchParams.get("mode") ?? "")) {
       create = false;
     }
-    // SQLite also accepts relative filenames and encoded Windows namespaces, not only file URLs.
-    const [uriFilename = ""] = filename.slice("file:".length).split(/[?#]/u, 1);
-    filename = uriFilename.startsWith("/") ? fileURLToPath(url) : decodeURIComponent(uriFilename);
+    filename = resolveSqliteDatabaseFilePath(filename);
     if (!filename || filename === ":memory:") {
       return undefined;
     }
