@@ -7,6 +7,7 @@ import type {
   SqliteWorkerOperationAdmission,
 } from "../../infra/sqlite-worker-operation-admission.js";
 import type { RetainedWorkerTransactionAdmission } from "../../infra/sqlite-worker-operation-settlement.js";
+import { createSqliteWorkerTransferCollector } from "../../infra/sqlite-worker-transfer.js";
 import { freezeJsonSnapshot } from "../../shared/immutable-data.js";
 import type {
   SessionActorAuthority,
@@ -94,7 +95,7 @@ export function createSqliteSessionActorExecutor(
   let fenced = false;
   const authorize = (
     authority: SessionActorAuthority,
-    observe?: (native: NativeAdmission) => void,
+    observe?: (native: NativeAdmission, publication: unknown) => void,
   ) => {
     let actorAdmissionSeen = false;
     return (
@@ -121,8 +122,15 @@ export function createSqliteSessionActorExecutor(
         }
         // SAFETY: The private MessagePort already detached this snapshot from the paired kernel.
         const snapshot = freezeJsonSnapshot(facts.snapshot as SessionActorAuthorityFacts);
-        authority.authorize(request.stage, snapshot, facts.publication);
-        observe?.(native);
+        const publication = facts.publication;
+        observe?.(native, publication);
+        authority.authorize(
+          request.stage,
+          snapshot,
+          isRecord(publication) && publication.kind === "session-actor-outcome"
+            ? publication.publication
+            : publication,
+        );
       } else if (
         actorAdmissionSeen &&
         (request.stage === "commit" || (request.stage === "transaction" && facts !== undefined))
@@ -176,6 +184,13 @@ export function createSqliteSessionActorExecutor(
     let native: NativeAdmission | undefined;
     let running: Promise<Outcome> | undefined;
     let committed: Extract<Outcome, { kind: "committed" }> | undefined;
+    let candidate: unknown;
+    const transfer = createSqliteWorkerTransferCollector("outcome", (value) => {
+      if (candidate !== undefined) {
+        throw new Error("Session actor transferred more than one outcome");
+      }
+      candidate = value;
+    });
     const unknown = (error: unknown): Outcome => ({
       kind: "unknown",
       target,
@@ -216,7 +231,13 @@ export function createSqliteSessionActorExecutor(
             let result: Outcome;
             if (native) {
               const settled = await native.retained.settled;
-              const evidence = native.admission.committed?.facts;
+              const witness = native.admission.committed?.facts;
+              const evidence =
+                isRecord(witness) && witness.kind === "session-actor-committed-transfer"
+                  ? transfer.completed && witness.transferId === transfer.id
+                    ? candidate
+                    : undefined
+                  : witness;
               const receipt = isRecord(evidence) ? evidence.receipt : undefined;
               if (
                 isRecord(evidence) &&
@@ -245,7 +266,7 @@ export function createSqliteSessionActorExecutor(
                   result = preserveFailure(error);
                 }
               } else if (
-                evidence === undefined &&
+                witness === undefined &&
                 reply.ok &&
                 (reply.value.kind === "rolled-back" || reply.value.kind === "stale-version") &&
                 (settled.kind === "not-entered" ||
@@ -302,8 +323,11 @@ export function createSqliteSessionActorExecutor(
           })();
           return running;
         },
-        authorize(authority, (admission) => {
+        authorize(authority, (admission, publication) => {
           native = admission;
+          if (isRecord(publication) && publication.kind === "session-actor-outcome") {
+            transfer.accept(publication.transfer);
+          }
         }),
       );
     } catch (error) {

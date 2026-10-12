@@ -128,7 +128,8 @@ function pruneTerminalReceipts(
       .orderBy("finished_at_ms", "desc")
       .orderBy("started_at_ms", "desc")
       .orderBy("receipt_id", "desc")
-      .limit(-1)
+      // SQLite requires a LIMIT for OFFSET; this bound exceeds any realizable receipt set.
+      .limit(Number.MAX_SAFE_INTEGER)
       .offset(CRON_RUN_RECEIPT_TERMINAL_RETENTION),
   ).rows;
   for (let index = 0; index < terminalIds.length; index += CRON_RUN_RECEIPT_DELETE_BATCH_SIZE) {

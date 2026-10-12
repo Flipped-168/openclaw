@@ -15,6 +15,7 @@ import type {
   WorkerEnvironmentAttachmentRecord,
   WorkerEnvironmentSessionIdentity,
 } from "./session-attachment.js";
+import { executeWorkerEnvironmentWrite } from "./store-write.js";
 import type { WorkerEnvironmentMutationMethods } from "./store.types.js";
 
 type AttachmentTable = {
@@ -139,7 +140,7 @@ export function createWorkerEnvironmentSessionAttachmentStore(options: {
         last_used_at_ms: at,
         closed_at_ms: null,
       };
-      const row = executeSqliteQueryTakeFirstSync(
+      const row = executeWorkerEnvironmentWrite(
         db,
         query(db)
           .insertInto("worker_environment_session_attachments")
@@ -151,7 +152,7 @@ export function createWorkerEnvironmentSessionAttachmentStore(options: {
           })
           .onConflict((oc) => oc.column("session_id").doUpdateSet(values))
           .returningAll(),
-      );
+      ).rows[0];
       return { attachment: fromRow(row!), environment };
     },
     closeSessionAttachment(this: void, sessionId) {
@@ -159,14 +160,14 @@ export function createWorkerEnvironmentSessionAttachmentStore(options: {
       if (!current || current.closedAtMs !== null) {
         return current;
       }
-      const row = executeSqliteQueryTakeFirstSync(
+      const row = executeWorkerEnvironmentWrite(
         db,
         query(db)
           .updateTable("worker_environment_session_attachments")
           .set({ closed_at_ms: now() })
           .where("session_id", "=", sessionId)
           .returningAll(),
-      );
+      ).rows[0];
       return row ? fromRow(row) : undefined;
     },
     cancelSessionAttachmentReservation(this: void, record) {
@@ -183,7 +184,7 @@ export function createWorkerEnvironmentSessionAttachmentStore(options: {
         throw new Error("Conversation environment reservation changed before cancellation");
       }
       const at = now();
-      executeSqliteQuerySync(
+      executeWorkerEnvironmentWrite(
         db,
         query(db)
           .updateTable("worker_environment_session_attachments")
@@ -192,7 +193,7 @@ export function createWorkerEnvironmentSessionAttachmentStore(options: {
       );
       // Closing and cancelling the intent commit together: recovery must never allocate an
       // environment whose required requester presentation was rejected before provisioning.
-      executeSqliteQuerySync(
+      executeWorkerEnvironmentWrite(
         db,
         query(db)
           .updateTable("worker_environments")
@@ -206,7 +207,7 @@ export function createWorkerEnvironmentSessionAttachmentStore(options: {
       );
     },
     touchSessionAttachment(this: void, record) {
-      const result = executeSqliteQuerySync(
+      const result = executeWorkerEnvironmentWrite(
         db,
         query(db)
           .updateTable("worker_environment_session_attachments")
