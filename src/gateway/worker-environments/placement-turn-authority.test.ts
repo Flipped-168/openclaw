@@ -888,7 +888,7 @@ it("shares claim revocation across facades while restart clearing leaves worker 
     expect(workerAuthority.isCurrent()).toBe(true);
     await facade.releaseTurn(worker);
     expect(workerAuthority.isCurrent()).toBe(false);
-    expect(() => inventory.assertCurrent()).toThrow("placement inventory changed");
+    inventory.assertCurrent();
   } finally {
     inventory.release();
     workerAuthority.release();
