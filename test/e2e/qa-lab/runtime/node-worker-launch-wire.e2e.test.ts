@@ -110,6 +110,7 @@ describe("node worker launch wire", () => {
       let cleanupFailures: unknown[];
       let workspaceAwaitingReconciliation: string | undefined;
       let workspaceReconciled = createDeferred();
+      const loadTerminals = new Map<string, (payload: Record<string, unknown>) => void>();
       let phase = "gateway and node startup";
       onTestFailed(() => {
         const invocations = [workerNode, legacyWorkerNode].map((node) => ({
@@ -130,7 +131,25 @@ describe("node worker launch wire", () => {
           executionIdentity: true,
           useRepoCli: false,
         });
-        operator = await connectWireClient({ gateway, role: "operator", identity: null });
+        operator = await connectWireClient({
+          gateway,
+          role: "operator",
+          identity: null,
+          onEvent: (event) => {
+            const payload = event.payload;
+            if (
+              event.event === "chat" &&
+              isRecord(payload) &&
+              typeof payload.runId === "string" &&
+              (payload.state === "final" ||
+                payload.state === "error" ||
+                payload.state === "aborted")
+            ) {
+              loadTerminals.get(payload.runId)?.(payload);
+              loadTerminals.delete(payload.runId);
+            }
+          },
+        });
         workerNode = await createPairedNodeWorkerHost({
           gateway,
           operator,
@@ -545,9 +564,11 @@ describe("node worker launch wire", () => {
             const waveFinalizationStarted = new Promise<number>((resolve) => {
               resolveWaveFinalizationStarted = resolve;
             });
-            const loadRunIds = await Promise.all(
+            const loadRuns = await Promise.all(
               loadSessions.map(async (sessionKey, index) => {
                 const loadRunId = `node-worker-finalization-load-${wave}-${index}-${Date.now()}`;
+                const terminal = createDeferred<Record<string, unknown>>();
+                loadTerminals.set(loadRunId, terminal.resolve);
                 const loadStarted = await operator!.request<{ runId?: string; status?: string }>(
                   "chat.send",
                   {
@@ -558,21 +579,18 @@ describe("node worker launch wire", () => {
                   },
                 );
                 expect(loadStarted).toMatchObject({ runId: loadRunId, status: "started" });
-                return loadRunId;
+                return { runId: loadRunId, terminal: terminal.promise };
               }),
             );
             const waveGateway = gateway;
             const waits = Promise.all(
-              loadRunIds.map(async (loadRunId) => {
-                const completedLoad = await operator!.request<{ status?: string }>(
-                  "agent.wait",
-                  { runId: loadRunId, timeoutMs: PROOF_TIMEOUT_MS },
-                  { timeoutMs: PROOF_TIMEOUT_MS + 5_000 },
-                );
+              loadRuns.map(async ({ runId: loadRunId, terminal }) => {
+                // agent.wait reports queued turns immediately; chat publishes their completion.
+                const completedLoad = await withinTest(terminal, signal);
                 expect(
                   completedLoad,
                   `load run ${loadRunId} failed\n${redactSensitiveText(JSON.stringify(completedLoad)).slice(0, 4000)}\n${waveGateway.logs().slice(-12_000)}`,
-                ).toMatchObject({ status: "ok" });
+                ).toMatchObject({ state: "final" });
               }),
             );
             // Failed turns may never upload; observe their failure while waiting for finalization.
