@@ -330,13 +330,15 @@ suite.define(() => {
             await group.locator('.sidebar-agent-roster__signals [aria-label="Unread"]').count(),
           ).toBe(1);
           const summary = group.locator(".sidebar-agent-roster__signals [data-session-attention]");
-          await expect.poll(() => summary.isVisible()).toBe(true);
-          const summaryBounds = (await summary.boundingBox())!;
+          let summaryBounds: Awaited<ReturnType<typeof summary.boundingBox>> = null;
+          await expect
+            .poll(async () => (summaryBounds = await summary.boundingBox()))
+            .not.toBeNull();
           const summaryActions = (await group
             .locator(".sidebar-agent-roster__actions")
             .boundingBox())!;
-          expect(summaryBounds.y).toBeGreaterThanOrEqual(summaryActions.y + summaryActions.height);
-          expect(summaryBounds.x + summaryBounds.width).toBeLessThanOrEqual(
+          expect(summaryBounds!.y).toBeGreaterThanOrEqual(summaryActions.y + summaryActions.height);
+          expect(summaryBounds!.x + summaryBounds!.width).toBeLessThanOrEqual(
             beforeFocus.rows[0]!.right,
           );
           expect(summaryActions.x + summaryActions.width).toBeCloseTo(
