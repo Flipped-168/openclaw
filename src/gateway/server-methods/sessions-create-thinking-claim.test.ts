@@ -151,8 +151,8 @@ test.each(["later-read", "delivered-event", "ui-patch"])(
     const sessions = createTestSessionCapability(gateway);
     try {
       await initializeSessionReadContext(context);
-      // Thinking settings belong to full rows, not the default sidebar projection.
-      await sessions.refresh({ agentId: "main", rowMode: "full", force: true });
+      // Thinking reconciliation needs compact detail facts, not the sidebar display projection.
+      await sessions.refresh({ agentId: "main", rowMode: "compact", force: true });
       expect(sessions.state.result?.sessions.some((row) => row.key === key)).toBe(false);
       const created = await withTimeout(
         sessions.createResult(
@@ -228,7 +228,7 @@ test.each(["later-read", "delivered-event", "ui-patch"])(
         await patched;
       }
       if (mode !== "ui-patch") {
-        const refresh = sessions.refresh({ agentId: "main", rowMode: "full", force: true });
+        const refresh = sessions.refresh({ agentId: "main", rowMode: "compact", force: true });
         releaseFirstList.resolve(undefined);
         await refresh;
       }

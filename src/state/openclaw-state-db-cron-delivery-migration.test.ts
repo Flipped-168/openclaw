@@ -126,7 +126,8 @@ it.each(["runtime open", "doctor repair"] as const)(
     });
     expect(db.prepare("PRAGMA integrity_check").get()).toEqual({ integrity_check: "ok" });
     db.exec("UPDATE cron_run_receipts SET delivery_attempt_state = 'started'");
-    const retained = openOpenClawStateReadOnlyLocation(database.path, database.path);
+    // Reuse remains valid while a sibling is live; final close requires readmission.
+    const survivingReader = openOpenClawStateReadOnlyLocation(database.path, database.path);
     closeOpenClawStateDatabaseForTest();
     const observation = observeSqliteReadSql(StatementSync.prototype);
     try {
@@ -144,7 +145,7 @@ it.each(["runtime open", "doctor repair"] as const)(
       ).toEqual([]);
     } finally {
       observation.restore();
-      retained.close();
+      survivingReader.close();
     }
     closeOpenClawStateDatabaseForTest();
     const preflight = await preflightOpenClawDatabaseSchemas({
