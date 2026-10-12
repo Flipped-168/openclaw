@@ -4,7 +4,6 @@ import type { SessionExactEntriesWorkerResult } from "../config/sessions/session
 import type { SessionEntry } from "../config/sessions/types.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import type { AgentDatabaseRegistryChange } from "../state/openclaw-agent-db-contract.js";
-import type { PreparedSessionMutationFacts } from "./session-sharing-policy.js";
 import type { GatewaySessionStoreTarget } from "./session-utils-store.types.js";
 
 export type SessionSharingTarget = {
@@ -16,6 +15,11 @@ export type SessionSharingTarget = {
   storePath: string;
   /** Physical source selected by the store reader, independent of its configured locator. */
   readSource?: CapturedSessionEntryReadSource;
+};
+
+export type PreparedSessionMutationFacts = {
+  target: SessionSharingTarget | null;
+  membership: ReadonlySet<string>;
 };
 
 export type PreparedSessionSourceFacts = PreparedSessionMutationFacts & {

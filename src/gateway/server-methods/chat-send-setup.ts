@@ -110,16 +110,6 @@ export async function prepareAndAdmitChatSend(
         ? { sessionKey: loadedSession.value.sessionKey, agentId: loadedSession.value.agentId }
         : { agentId: loadedSession.value.agentId },
       normalizedRequest.value.mentions.map((mention) => mention.profileId),
-      loadedSession.value.entry
-        ? {
-            agentId: loadedSession.value.agentId,
-            canonicalKey: loadedSession.value.sessionKey,
-            storeKey: loadedSession.value.legacyKey ?? loadedSession.value.sessionKey,
-            storeKeys: [loadedSession.value.legacyKey ?? loadedSession.value.sessionKey],
-            storePath: loadedSession.value.storePath,
-            entry: loadedSession.value.entry,
-          }
-        : undefined,
     );
     if (!mentions?.ok) {
       respond(

@@ -112,7 +112,7 @@ export function createGatewayWorkerPlacementReclaimBarriers(
     const readCurrentTarget = () => {
       assertActive();
       if (nativeIncognito) {
-        return resolveNativeGatewaySessionStoreTargetWithStore({
+        const current = resolveNativeGatewaySessionStoreTargetWithStore({
           cfg: getRuntimeConfig(),
           key: sessionKey,
           agentId,
@@ -120,6 +120,13 @@ export function createGatewayWorkerPlacementReclaimBarriers(
           clone: false,
           exactRead: true,
         });
+        return {
+          ...current,
+          entry: sessionRuntime.resolveCanonicalSessionEntryFromStoreKeys(
+            current.store,
+            current.storeKeys,
+          ),
+        };
       }
       if (!metadata) {
         assertRoutingCurrent(getRuntimeConfig());
@@ -132,10 +139,8 @@ export function createGatewayWorkerPlacementReclaimBarriers(
         ? memory.actor.snapshot(memory.authority)?.entry
         : metadata
           ? metadata.readCurrent()
-          : generation
-            ? { ...preparedEntry, ...generation }
-            : undefined;
-      return { ...target, store: entry ? { [selectedKey]: entry } : {} };
+          : generation;
+      return { ...target, entry };
     };
     const lifecycleIdentities = [sessionKey, target.canonicalKey, ...target.storeKeys, sessionId];
     const cancelAndDrain = async (
@@ -249,10 +254,7 @@ export function createGatewayWorkerPlacementReclaimBarriers(
     const revision = entry?.lifecycleRevision ?? null;
     const assertTargetCurrent = () => {
       const current = readCurrentTarget();
-      const currentEntry = sessionRuntime.resolveCanonicalSessionEntryFromStoreKeys(
-        current.store,
-        current.storeKeys,
-      );
+      const currentEntry = current.entry;
       if (
         current.storePath !== target.storePath ||
         current.canonicalKey !== target.canonicalKey ||
@@ -428,14 +430,10 @@ export function createGatewayWorkerPlacementReclaimBarriers(
         sessionKey,
         agentId,
       });
-      const { sessionRuntime, target, readCurrentTarget, lifecycleIdentities, cancelAndDrain } =
-        context;
+      const { target, readCurrentTarget, lifecycleIdentities, cancelAndDrain } = context;
       const assertCurrent = () => {
         const currentTarget = readCurrentTarget();
-        const currentEntry = sessionRuntime.resolveCanonicalSessionEntryFromStoreKeys(
-          currentTarget.store,
-          currentTarget.storeKeys,
-        );
+        const currentEntry = currentTarget.entry;
         if (
           currentTarget.storePath !== target.storePath ||
           currentTarget.canonicalKey !== target.canonicalKey ||

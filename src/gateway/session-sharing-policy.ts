@@ -32,7 +32,10 @@ import {
   captureSessionActorMutationFacts,
   captureSessionSharingActorBinding,
 } from "./session-sharing-incognito.js";
-import type { SessionSharingTarget } from "./session-sharing-target.types.js";
+import type {
+  PreparedSessionMutationFacts,
+  SessionSharingTarget,
+} from "./session-sharing-target.types.js";
 import { resolveSessionStoreIdentity } from "./session-store-key.js";
 import type { GatewaySessionStoreDiscoveryCache } from "./session-utils-store-candidates.js";
 import {
@@ -48,7 +51,10 @@ import {
 import { findCanonicalStoreMatch } from "./session-utils-store-selection.js";
 import type { GatewaySessionStoreTargetWithStore } from "./session-utils-store.types.js";
 
-export type { SessionSharingTarget } from "./session-sharing-target.types.js";
+export type {
+  PreparedSessionMutationFacts,
+  SessionSharingTarget,
+} from "./session-sharing-target.types.js";
 
 export function resolveSessionVisibility(
   entry: Pick<SessionEntry, "visibility">,
@@ -472,11 +478,6 @@ export async function authorizeResolvedSessionMutationAsync(params: {
     );
   });
 }
-
-export type PreparedSessionMutationFacts = {
-  target: SessionSharingTarget | null;
-  membership: ReadonlySet<string>;
-};
 
 /** Prepared facts carry no decision; current caller and configuration still determine access. */
 export function authorizePreparedSessionMutation(

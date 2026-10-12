@@ -33,11 +33,15 @@ import {
   captureIncognitoSessionMutationFacts,
   captureSessionActorMutationFacts,
 } from "../session-sharing-incognito.js";
-import { captureSessionMutationRouting } from "../session-sharing-preparation.js";
+import {
+  captureSessionMutationRouting,
+  prepareSessionMutationFacts,
+  type PreparedSessionSourceFacts,
+  type SessionFactsRead,
+} from "../session-sharing-preparation.js";
 import { prepareSessionSharingSource } from "../session-sharing-source.js";
 import {
   resolveSessionSharingTargetAsync,
-  resolveSessionSharingTarget,
   SessionMutationAuthorizationChangedError,
 } from "../session-sharing.js";
 import { gatewayClientSessionCreator } from "./gateway-client-identity.js";
@@ -55,6 +59,7 @@ async function handleSessionGoalMutation(
   let targetRead:
     | Awaited<ReturnType<typeof captureSessionEntryCurrentCheckAsyncInternal>>
     | undefined;
+  let incognitoRead: SessionFactsRead<PreparedSessionSourceFacts> | undefined;
   try {
     const authorization = options.sessionMutationAuthorization
       ? { authorization: options.sessionMutationAuthorization, error: null }
@@ -108,12 +113,21 @@ async function handleSessionGoalMutation(
     const actorFacts = memory
       ? captureSessionActorMutationFacts(memory, target.storeKey, false)
       : binding && captureIncognitoSessionMutationFacts(binding, target.storeKey, false);
-    if (!actorFacts && !isIncognitoSessionKey(target.canonicalKey)) {
-      targetRead = await captureSessionEntryCurrentCheckAsyncInternal({
-        ...actorTarget,
-        fields: ["pluginOwnerId"],
-        errorMessage: "Session changed before its Goal update; retry.",
-      });
+    if (!actorFacts) {
+      if (isIncognitoSessionKey(target.canonicalKey)) {
+        incognitoRead = await prepareSessionMutationFacts({
+          cfg,
+          sessionKey: request.sessionKey,
+          agentId: requestedAgent.agentId,
+          allowMissing: true,
+        });
+      } else {
+        targetRead = await captureSessionEntryCurrentCheckAsyncInternal({
+          ...actorTarget,
+          fields: ["pluginOwnerId"],
+          errorMessage: "Session changed before its Goal update; retry.",
+        });
+      }
     }
     const assertRouting = captureSessionMutationRouting(cfg, sessionChanged, [request]);
     const assertTarget = (
@@ -159,11 +173,7 @@ async function handleSessionGoalMutation(
             ? targetRead.entry
               ? { ...target, entry: targetRead.entry }
               : null
-            : resolveSessionSharingTarget({
-                cfg: context.getRuntimeConfig(),
-                sessionKey: request.sessionKey,
-                agentId: requestedAgent.agentId,
-              }),
+            : (incognitoRead?.readCurrent(context.getRuntimeConfig()).target ?? null),
       );
     };
     if (!memory) {
@@ -330,6 +340,7 @@ async function handleSessionGoalMutation(
       );
     }
   } finally {
+    incognitoRead?.release();
     targetRead?.release();
   }
 }

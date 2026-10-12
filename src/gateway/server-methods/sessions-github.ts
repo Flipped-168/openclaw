@@ -206,7 +206,7 @@ export const sessionsGitHubHandlers: GatewayRequestHandlers = {
         agentId,
         assertCurrent: () => sessionMutationAuthorization?.assertCurrent(),
       });
-      const loaded = selectedSession.initial;
+      const loaded = selectedSession.loaded;
       if (!loaded.entry?.sessionId) {
         respond(
           false,
@@ -327,7 +327,7 @@ export const sessionsGitHubHandlers: GatewayRequestHandlers = {
         options.respond(false, undefined, publicationStateUnavailableError());
         return;
       }
-      using prepared =
+      const prepared =
         read.personal.kind === "eligible"
           ? await service.preparePersonalStatus(options.params.requestId)
           : undefined;

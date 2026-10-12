@@ -9,7 +9,6 @@ import { useAutoCleanupTempDirTracker } from "../../test/helpers/temp-dir.js";
 import { createAgent } from "../agents/agent-create.js";
 import { withAgentDeletion } from "../agents/agent-lifecycle-registry.js";
 import { listAgentEntries } from "../agents/agent-scope.js";
-import { setRuntimeConfigSnapshot } from "../config/runtime-snapshot.js";
 import {
   clearRuntimeConfigSnapshot,
   setRuntimeConfigSnapshot,
