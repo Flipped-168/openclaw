@@ -645,37 +645,42 @@ export async function loadConversationRegistryOperations() {
 }
 
 export async function loadUsageCacheOperations() {
+  const {
+    acquireSessionCostUsageRefreshLockInDatabase,
+    deleteSessionCostUsageRefreshLockInDatabase,
+    pruneSessionCostUsageRollupsInDatabase,
+    writeSessionCostUsageRollupInDatabase,
+  } = await import("../infra/session-cost-usage-cache.kernel.js");
   // Usage cache and partition writes do not change resident session facts.
-  const kernel = await import("../infra/session-cost-usage-cache.kernel.js");
   return {
     "usageCache.writeRollup": (
-      input: Parameters<typeof kernel.writeSessionCostUsageRollupInDatabase>[1],
+      input: Parameters<typeof writeSessionCostUsageRollupInDatabase>[1],
       { writeTransaction, admit },
     ) =>
       writeTransaction("session-cost-usage.rollup.write", "Usage cache", ({ db }) => {
         const result = withSqliteDatabaseWriteScope(db, [], () =>
-          kernel.writeSessionCostUsageRollupInDatabase(db, input),
+          writeSessionCostUsageRollupInDatabase(db, input),
         );
         admit("commit");
         return result;
       }),
     "usageCache.prune": (
-      input: Parameters<typeof kernel.pruneSessionCostUsageRollupsInDatabase>[1],
+      input: Parameters<typeof pruneSessionCostUsageRollupsInDatabase>[1],
       { writeTransaction, admit },
     ) =>
       writeTransaction("session-cost-usage.rollup.prune", "Usage cache", ({ db }) => {
         withSqliteDatabaseWriteScope(db, [], () =>
-          kernel.pruneSessionCostUsageRollupsInDatabase(db, input),
+          pruneSessionCostUsageRollupsInDatabase(db, input),
         );
         admit("commit");
       }),
     "usageCache.acquireLock": (
-      input: Parameters<typeof kernel.acquireSessionCostUsageRefreshLockInDatabase>[1],
+      input: Parameters<typeof acquireSessionCostUsageRefreshLockInDatabase>[1],
       { writeTransaction, admit },
     ) =>
       writeTransaction("session-cost-usage.refresh-lock.acquire", "Usage cache", ({ db }) => {
         const result = withSqliteDatabaseWriteScope(db, [], () =>
-          kernel.acquireSessionCostUsageRefreshLockInDatabase(db, input),
+          acquireSessionCostUsageRefreshLockInDatabase(db, input),
         );
         admit("commit");
         return result;
@@ -683,7 +688,7 @@ export async function loadUsageCacheOperations() {
     "usageCache.releaseLock": (input: string, { writeTransaction, admit }) =>
       writeTransaction("session-cost-usage.refresh-lock.delete", "Usage cache", ({ db }) => {
         withSqliteDatabaseWriteScope(db, [], () =>
-          kernel.deleteSessionCostUsageRefreshLockInDatabase(db, input),
+          deleteSessionCostUsageRefreshLockInDatabase(db, input),
         );
         admit("commit");
       }),

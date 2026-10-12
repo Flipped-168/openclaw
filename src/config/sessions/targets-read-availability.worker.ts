@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
-import { formatErrorMessage } from "../../infra/errors.js";
+import type { NativeErrorResponse } from "../../infra/native-error-response-schema.js";
+import { serializeNativeErrorResponse } from "../../infra/native-error-response.js";
 import { normalizeAgentId, parseAgentSessionKey } from "../../routing/session-key.js";
 import {
   withOpenClawAgentDatabaseReadOnly,
@@ -32,7 +33,7 @@ export type SessionStoreTargetsReadResult =
   | {
       available: false;
       reason: "database-missing" | "schema-missing" | "read-failed";
-      error?: string;
+      error?: NativeErrorResponse;
     };
 type SessionStoreReadSnapshot<T> =
   | {
@@ -107,7 +108,11 @@ function readSessionStoreTargetSnapshot<T>(
         : { available: false, reason: result.reason };
     } catch (error) {
       // An unreadable candidate cannot prove absence for cleanup or placement.
-      snapshot = { available: false, reason: "read-failed", error: formatErrorMessage(error) };
+      snapshot = {
+        available: false,
+        reason: "read-failed",
+        error: serializeNativeErrorResponse(error),
+      };
     }
   }
   params.cache?.set(cacheKey, snapshot);
@@ -194,7 +199,7 @@ function resolveFixedSessionStoreTargetsReadOnly(
     if (error instanceof SessionStoreRegistryReadRequired) {
       throw error;
     }
-    return { available: false, reason: "read-failed", error: formatErrorMessage(error) };
+    return { available: false, reason: "read-failed", error: serializeNativeErrorResponse(error) };
   }
 }
 

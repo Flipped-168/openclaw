@@ -28,6 +28,9 @@ import { prepareSessionStoreTargetInventory } from "../config/sessions/session-s
 import { prepareSessionStoreTargetInventoryRead } from "../config/sessions/session-store-target-runtime.js";
 import { isConfiguredSessionStoreAgentId } from "../config/sessions/targets-configured-agents.js";
 import type { SessionEntry } from "../config/sessions/types.js";
+import { attachErrorDiagnostic } from "../infra/error-diagnostics.js";
+import { formatErrorMessageWithCode } from "../infra/errors.js";
+import type { NativeErrorResponse } from "../infra/native-error-response-schema.js";
 import { throwSqliteLifecycleErrors } from "../infra/sqlite-lifecycle-errors.js";
 import { readDatabasePathIdentitySync } from "../infra/sqlite-worker-identity.js";
 import { isIncognitoSessionKey, parseAgentSessionKey } from "../routing/session-key.js";
@@ -48,6 +51,26 @@ import {
   omitInternalSessionEffectsEntries,
 } from "./session-utils-store-selection.js";
 import type { GatewaySessionStoreTargetWithStore } from "./session-utils-store.types.js";
+
+class SessionStoreUnavailableError extends Error {
+  constructor(
+    agentId: string,
+    readonly reason: "schema-missing" | "read-failed",
+    readonly readError?: NativeErrorResponse,
+  ) {
+    const nativeKind = readError?.code ?? readError?.name;
+    const suffix =
+      nativeKind && /^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(nativeKind) ? `: ${nativeKind}` : "";
+    super(
+      `Session stores for agent ${agentId} are unavailable (${reason}${suffix}); retry after storage is available.`,
+    );
+    this.name = "SessionStoreUnavailableError";
+    // Native messages can contain private paths; keep them out of message/cause and RPC JSON.
+    if (readError) {
+      attachErrorDiagnostic(this, `${readError.name}: ${formatErrorMessageWithCode(readError)}`);
+    }
+  }
+}
 
 type GatewaySessionStoreReadPlan = {
   reads: readonly SessionEntryWorkerRead[];
@@ -216,10 +239,11 @@ async function prepareGatewaySessionStoreReadInWorker(
     const targetDiscoveryCache: GatewaySessionStoreDiscoveryCache = new Map();
     for (const source of sources.agents) {
       if (!source.result.available && source.result.reason !== "database-missing") {
-        const detail = source.result.error
-          ? `${source.result.reason}: ${source.result.error}`
-          : source.result.reason;
-        throw new Error(`Session stores for agent ${source.agentId} are unavailable (${detail})`);
+        throw new SessionStoreUnavailableError(
+          source.agentId,
+          source.result.reason,
+          source.result.error,
+        );
       }
       targetDiscoveryCache.set(source.agentId, {
         existing: source.result.available ? source.result.targets : [],
