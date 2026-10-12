@@ -14,8 +14,11 @@ type SessionFilterHost = Pick<SessionListHost, "sessionsStatusFilter">;
 
 /** The Sessions title owns the sidebar owner choice. */
 function SidebarOwnerPicker(props: { host: SessionListHost }) {
-  const owners = () =>
-    props.host.sessionOwnershipVisibility.filters ? props.host.sessionOwnerOptions : [];
+  const owners = createMemo(() => {
+    // The row projection resolves the owner facet before its visibility is read.
+    const options = props.host.sessionOwnerOptions;
+    return props.host.sessionOwnershipVisibility.filters ? options : [];
+  });
   const ownerId = () => props.host.sessionOwnerFilterId;
   const selfId = () =>
     props.host.sidebarSnapshot?.footer?.id ??

@@ -198,7 +198,12 @@ export abstract class AppSidebarSessionNavigationElement extends AppSidebarBase 
     return personalSidebarOwnerFilterId(this);
   }
 
-  sessionOwnerOptions: readonly SessionOwnerOption[] = [];
+  private ownerOptions: readonly SessionOwnerOption[] = [];
+
+  get sessionOwnerOptions(): readonly SessionOwnerOption[] {
+    this.selectedAgentSessionRows(this.getSessionNavigationState());
+    return this.ownerOptions;
+  }
   protected activeSessionOwnerId: string | null = null;
   get sessionOwnerFilterActive() {
     return this.sessionOwnerFilterId !== null;
@@ -313,7 +318,7 @@ export abstract class AppSidebarSessionNavigationElement extends AppSidebarBase 
     const result = personalSidebarOwnerProjection(this, projected, ownerFacet);
     const agentId = this.sidebarAgentsMode === "roster" ? "*" : this.expandedAgentId();
     this.sessionOwnerFilter.observeOwnerFacet(agentId, ownerFacet && result.ownershipVisibility);
-    this.sessionOwnerOptions = result.ownerOptions;
+    this.ownerOptions = result.ownerOptions;
     this.sessionOwnershipVisibility = result.ownershipVisibility;
     this.activeSessionOwnerId = result.activeOwnerId;
     return result.rows;
