@@ -1,7 +1,7 @@
 import { createMemo, For, Match, Show, Switch } from "solid-js";
 import type { MessageGroup as MessageGroupData } from "../../../lib/chat/chat-types.ts";
 import { extractChatSourcePreviews } from "../../../lib/chat/source-previews.ts";
-import { LitContent } from "../../../lit/solid-content.tsx";
+import { LitContent } from "../../../lit/solid-bridge.ts";
 import {
   agentRunFrameActiveStatusParts,
   chatItemGroups,
@@ -220,7 +220,7 @@ function RunFrame(props: FrameProps) {
               {(group) => (
                 <>
                   <MessageGroupContent group={group()} options={groupOptions(group())} />
-                  <LitContent value={state().workPreviews.get(group().key)} />
+                  <LitContent render={() => state().workPreviews.get(group().key)} />
                 </>
               )}
             </Match>
@@ -228,7 +228,7 @@ function RunFrame(props: FrameProps) {
         );
       }}
     </For>,
-    <LitContent value={state().sourcePreviews} />,
+    <LitContent render={() => state().sourcePreviews} />,
   ];
   return (
     <MessageGroup

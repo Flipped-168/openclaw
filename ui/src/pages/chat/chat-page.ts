@@ -64,7 +64,7 @@ export const ChatPageView = defineSolidBridge<ChatPageProps, ChatPageMethods>(
       (next) => {
         const changed = lastPresented !== next.presented;
         lastPresented = next.presented;
-        untrack(() => state.afterCommit(changed, frame));
+        untrack(() => state.afterCommit(changed, next.frame));
       },
     );
     onCleanup(() => {

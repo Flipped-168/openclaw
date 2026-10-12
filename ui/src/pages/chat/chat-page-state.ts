@@ -205,8 +205,10 @@ export class ChatPageState extends ControllerHost {
 
   private updateQueued = false;
   private presentationChanged = false;
+  private committedSnapshot: ChatPageSnapshot | null = null;
 
-  afterCommit(presentationChanged: boolean, readSnapshot: () => ChatPageSnapshot | null): void {
+  afterCommit(presentationChanged: boolean, snapshot: ChatPageSnapshot | null): void {
+    this.committedSnapshot = snapshot;
     this.presentationChanged ||= presentationChanged;
     if (this.updateQueued) {
       return;
@@ -217,7 +219,7 @@ export class ChatPageState extends ControllerHost {
       const changed = this.presentationChanged;
       this.presentationChanged = false;
       if (this.isConnected) {
-        this.updated(changed, readSnapshot());
+        this.updated(changed, this.committedSnapshot);
       }
     });
   }
@@ -237,14 +239,12 @@ export class ChatPageState extends ControllerHost {
     }
     const layout = this.layout ?? this.classicLayout();
     resumeStagedPanes(this.host, layout, this.narrow);
-    if (this.isConnected) {
-      this.viewerPresence.sync(
-        this.context?.gateway,
-        layout,
-        this.narrow,
-        this.retainedSessions.unboundPaneIds,
-      );
-    }
+    this.viewerPresence.sync(
+      this.context?.gateway,
+      layout,
+      this.narrow,
+      this.retainedSessions.unboundPaneIds,
+    );
     this.closeFocus.restore(this.layout, this.mcpAppUnmountGate.retiring);
     const data = this.paneData;
     const activePane = this.layout ? findPane(this.layout, this.layout.activePaneId)?.pane : null;
