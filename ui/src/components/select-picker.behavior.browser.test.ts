@@ -6,6 +6,7 @@ import {
   type PickerOption,
   type SelectPicker,
 } from "./select-picker.ts";
+import overlayStyles from "./solid/overlay.css?inline";
 
 const options: PickerOption[] = [
   { value: "fixture/anchor", label: "Anchor", description: "Fixture provider" },
@@ -66,6 +67,42 @@ async function mount(overrides: Partial<PickerParams<PickerOption>> = {}) {
 }
 
 describe("renderPicker", () => {
+  it("keeps grouped choices clickable near the viewport edge when overlay styles load later", async () => {
+    const { page } = await import("vitest/browser");
+    const initialViewport = { width: innerWidth, height: innerHeight };
+    try {
+      await page.viewport(1280, 1000);
+      const lateOverlayStyles = document.createElement("style");
+      lateOverlayStyles.textContent = overlayStyles;
+      document.body.append(lateOverlayStyles);
+      const p = await mount({
+        value: "inherited",
+        options: [
+          { value: "inherited", label: "Use global default" },
+          { value: "", label: "Disabled" },
+          { value: "fixture/one", label: "One" },
+          { value: "fixture/two", label: "Two" },
+        ],
+        groupBy: (option) =>
+          option.value.startsWith("fixture/") ? { id: "fixture", label: "Fixture" } : undefined,
+        searchable: "always",
+      });
+      p.container.style.cssText = "position:fixed;right:12px;top:calc(100vh - 50px);width:240px";
+      await page.elementLocator(p.trigger).click();
+      const row = p.picker.querySelector<HTMLElement>('[role="option"][data-value=""]')!;
+      const menu = p.picker.querySelector<HTMLElement>(".picker-select__menu")!;
+      const bounds = menu.getBoundingClientRect();
+      const optionBounds = row.getBoundingClientRect();
+      expect(optionBounds.top).toBeGreaterThanOrEqual(bounds.top);
+      expect(optionBounds.bottom).toBeLessThanOrEqual(bounds.bottom);
+      expect(bounds.bottom).toBeLessThanOrEqual(innerHeight);
+      await page.elementLocator(row).click();
+      expect(p.params.onChange).toHaveBeenCalledExactlyOnceWith("");
+    } finally {
+      await page.viewport(initialViewport.width, initialViewport.height);
+    }
+  });
+
   it("keeps reserved option values distinct from the popup and trigger IDs", async () => {
     const p = await mount({
       value: "content",
