@@ -16,12 +16,11 @@ import type {
 } from "../../config/sessions/session-accessor.js";
 import { mutateSessionAtMessageWithPreconditions } from "../../config/sessions/session-accessor.sqlite-message-cut.js";
 import {
-  captureSessionActorStorageOwner,
   getSessionActorStorageBinding,
   runWithSessionActorStorage,
 } from "../../config/sessions/session-actor-storage-binding.js";
-import { readRetainedSessionEntryFacts } from "../../config/sessions/session-entry-read-facts.js";
-import { captureSessionEntryMetadataRead } from "../../config/sessions/session-entry-source-authority.js";
+import { captureSessionEntryCurrentCheckAsyncInternal } from "../../config/sessions/session-entry-current-check.js";
+import { readSessionEntryReadOnlyInWorker } from "../../config/sessions/session-entry-read-runtime.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { isIncognitoSessionKey } from "../../routing/session-key.js";
 import { ModelSelectionLockedError } from "../../sessions/model-overrides.js";
@@ -419,6 +418,7 @@ async function mutatePreparedSessionAtMessage({
         return;
       }
       let result: MessageCutMutationResult;
+      let repositoryForkCommitted = false;
       let forkRepository:
         | {
             workspaceId: string;
@@ -427,37 +427,9 @@ async function mutatePreparedSessionAtMessage({
             source: ReturnType<typeof captureOpenClawStateWorkerContext>;
           }
         | undefined;
-      const repositoryEntrySource = captureSessionEntryMetadataRead({
-        agentId: current.agentId,
-        sessionKey: current.canonicalKey,
-        storePath: current.storePath,
-      });
-      const memoryOwner = memory && captureSessionActorStorageOwner(memory);
-      const readRepositoryEntry = (key: string) => {
-        if (memory) {
-          return memoryOwner?.owner?.readSession(key, memory.authority)?.entry;
-        }
-        if (repositoryEntrySource) {
-          if (key === current.canonicalKey) {
-            return repositoryEntrySource.readCurrent();
-          }
-          return captureSessionEntryMetadataRead({
-            agentId: current.agentId,
-            sessionKey: key,
-            storePath: current.storePath,
-          })?.readCurrent();
-        }
-        const facts = readRetainedSessionEntryFacts(
-          {
-            agentId: current.readSource?.agentId ?? current.agentId,
-            path: current.readSource?.path ?? current.storePath,
-          },
-          { sessionKeys: [key] },
-        );
-        if (!facts) {
-          throw new Error("Repository session facts are unavailable. Retry.");
-        }
-        return facts.entries.find((row) => row.sessionKey === key)?.entry;
+      const repositoryEntryScope = {
+        agentId: current.readSource?.agentId ?? current.agentId,
+        storePath: current.readSource?.path ?? current.storePath,
       };
       const mutationParams = {
         agentId: current.agentId,
@@ -502,16 +474,18 @@ async function mutatePreparedSessionAtMessage({
           const assertRepositoryCurrent = () => {
             assertRepositoryOwnerCurrent();
             assertLocalUpstreamCurrent();
-            const sourceEntry = readRepositoryEntry(current.canonicalKey);
-            if (
-              sourceEntry?.sessionId !== initialSessionId ||
-              sourceEntry.lifecycleRevision !== initialLifecycleRevision ||
-              sourceEntry.repositoryWorkspaceId !== source.workspaceId
-            ) {
-              throw new Error("Repository workspace changed before session fork");
-            }
           };
-          assertRepositoryCurrent();
+          const sourceEntry = await readSessionEntryReadOnlyInWorker(
+            { ...repositoryEntryScope, sessionKey: current.canonicalKey, projection: "list" },
+            assertRepositoryCurrent,
+          );
+          if (
+            sourceEntry?.sessionId !== initialSessionId ||
+            sourceEntry.lifecycleRevision !== initialLifecycleRevision ||
+            sourceEntry.repositoryWorkspaceId !== source.workspaceId
+          ) {
+            throw new Error("Repository workspace changed before session fork");
+          }
           const forked = await forkSessionRepositoryWorkspace({
             sourceWorkspaceId: current.entry.repositoryWorkspaceId,
             agentId: current.agentId,
@@ -543,6 +517,7 @@ async function mutatePreparedSessionAtMessage({
             assertUpstreamCurrent: assertLocalUpstreamCurrent,
           },
         );
+        repositoryForkCommitted = result.status === "created";
       } catch (error) {
         if (error === upstreamChanged) {
           respond(false, undefined, upstreamChanged.error);
@@ -558,16 +533,24 @@ async function mutatePreparedSessionAtMessage({
         reject(`Failed to ${action} the local session. Try again.`, ErrorCodes.UNAVAILABLE);
         return;
       } finally {
-        if (forkRepository) {
+        if (forkRepository && !repositoryForkCommitted) {
           const { workspaceId, store, source } = forkRepository;
-          const forkEntry = () => readRepositoryEntry(targetKey);
-          if (forkEntry()?.repositoryWorkspaceId !== workspaceId) {
+          const child = await captureSessionEntryCurrentCheckAsyncInternal({
+            ...repositoryEntryScope,
+            sessionKey: targetKey,
+            fields: ["repositoryWorkspaceId"],
+            matchGeneration: false,
+            errorMessage: "Repository fork changed before cleanup",
+          });
+          if (child.entry?.repositoryWorkspaceId !== workspaceId) {
             await store.delete({
               workspaceId,
+              sessionEntryCurrent: child.entryCurrent,
               assertCurrent: () => {
                 source.admission.assertCurrent();
-                if (forkEntry()?.repositoryWorkspaceId === workspaceId) {
-                  throw new Error("Repository fork was committed before cleanup");
+                // Incognito retains its actor predicate; file-backed checks run in the writer.
+                if (!child.entryCurrent) {
+                  child.source();
                 }
               },
             });

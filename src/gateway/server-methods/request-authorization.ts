@@ -32,7 +32,7 @@ import {
   prepareGatewaySessionAccessAuthority,
   type GatewaySessionAccessAuthority,
 } from "../session-access-authority.js";
-import { mayCreateSessionTarget, sessionMutationTargetFields } from "../session-method-policy.js";
+import { sessionMutationTargetFields } from "../session-method-policy.js";
 import { resolveRequestedSessionAgentId } from "../session-request-agent.js";
 import type { SessionRowReadView } from "../session-row-prepared-read.js";
 import { getSessionRowProjection } from "../session-row-projection-access.js";
@@ -437,10 +437,9 @@ export async function authorizeGatewayRequestPreDispatch(params: {
     params.markSessionSubscribePhase?.(
       subscriptionAccessOnly ? "accessFacts" : "projectionReadiness",
     );
-    // Resident rows retain projection authority; missing creation targets retain their absence.
-    const needsRetainedCreationFacts =
+    // Resident rows retain projection authority; missing targets retain their absence.
+    const needsRetainedTargetFacts =
       projection &&
-      mayCreateSessionTarget(params.method) &&
       !params.consumeSessionTurn &&
       resolveDirectIncognitoTargets(params.method, requestParams).length === 0 &&
       resolveDirectSessionTargets(params.method, requestParams).some((target) => {
@@ -457,7 +456,7 @@ export async function authorizeGatewayRequestPreDispatch(params: {
       });
     const preparedSessionMutation =
       projection &&
-      !needsRetainedCreationFacts &&
+      !needsRetainedTargetFacts &&
       !subscriptionAccessOnly &&
       !params.method.startsWith("talk.")
         ? await projection.withPreparedExactRows((cfg) => {
