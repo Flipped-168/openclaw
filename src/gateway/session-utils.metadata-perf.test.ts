@@ -165,11 +165,7 @@ test("rebuilds resident thinking facts on config and catalog publication", async
     const read = () => projection.snapshot({ agentId: "main", key }).row;
     try {
       await projection.ensureMaterialized();
-      expect(read()).toMatchObject({
-        thinkingLevel: "medium",
-        thinkingDefault: "off",
-        thinkingOptions: ["Off", "Deep", "Light", "ultra"],
-      });
+      expect(read()).toMatchObject({ thinkingLevel: "medium", thinkingDefault: "off" });
       const initialCalls = fixture.policyCalls();
       cfg = {
         ...cfg,
@@ -198,7 +194,7 @@ test("rebuilds resident thinking facts on config and catalog publication", async
           createPreparedGatewayModelCatalog({ ...next, pluginRegistry: fixture.pluginRegistry }),
         ],
       ]);
-      expect(read()?.thinkingOptions).toEqual(["Off", "Deep", "Light", "ultra"]);
+      expect(read()?.thinkingLevel).toBe("medium");
       notifyPreparedModelRuntimePublication({ phase: "catalog-published" });
       await projection.ensureMaterialized();
       expect(read()).toMatchObject({

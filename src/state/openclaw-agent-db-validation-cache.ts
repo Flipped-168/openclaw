@@ -201,6 +201,8 @@ export function getOpenClawAgentDatabaseValidation(
   if (
     !entry?.integrityVerified ||
     !entry.validation ||
+    (entry.validation.schema &&
+      Atomics.load(new Int32Array(entry.validation.schema.valid), 0) !== 1) ||
     !matchesValidation(database, entry.validation)
   ) {
     const validation = getSqliteDatabaseAdmission(database.db, agentDatabaseValidationKey);
