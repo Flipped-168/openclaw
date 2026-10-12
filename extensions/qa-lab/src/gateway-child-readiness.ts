@@ -1,7 +1,7 @@
 import { setTimeout as sleep } from "node:timers/promises";
-import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import { resolveTimerTimeoutMs } from "openclaw/plugin-sdk/number-runtime";
 import { fetchWithSsrFGuard } from "openclaw/plugin-sdk/ssrf-runtime";
+import { isRecord } from "openclaw/plugin-sdk/string-coerce-runtime";
 import { QaSuiteInfraError } from "./errors.js";
 import {
   hasQaGatewayChildExited,
