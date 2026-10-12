@@ -17,6 +17,7 @@ export type PreparedRepositoryPublicationStatus = {
   requestId: string;
   workspaceId: string;
   repository: Awaited<ReturnType<typeof prepareReceiptOwner>>;
+  [Symbol.dispose](): void;
 };
 
 type PersonalPublicationReceipt =
@@ -37,13 +38,16 @@ function isPendingPersonalPublication(receipt: PersonalPublicationReceipt, execu
 
 export async function preparePersonalRepositoryPublicationStatus(requestId: string) {
   const row = await readRepositoryGitHubPublicationAsync(requestId);
-  return row && row.owner_profile_id !== null && !terminalRepositoryGitHubPublication(row)
-    ? {
-        requestId: row.request_id,
-        workspaceId: row.workspace_id,
-        repository: await prepareReceiptOwner(row),
-      }
-    : undefined;
+  if (!row || row.owner_profile_id === null || terminalRepositoryGitHubPublication(row)) {
+    return undefined;
+  }
+  const repository = await prepareReceiptOwner(row);
+  return {
+    requestId: row.request_id,
+    workspaceId: row.workspace_id,
+    repository,
+    [Symbol.dispose]: () => repository[Symbol.dispose](),
+  };
 }
 
 /** Source owners supply liveness; personal status never grants execution authority. */

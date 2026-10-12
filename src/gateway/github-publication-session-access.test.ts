@@ -10,8 +10,11 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { getRuntimeConfig, setRuntimeConfigSnapshot } from "../config/config.js";
+import { upsertSessionEntryCore } from "../config/sessions/session-accessor.js";
+import * as entryReadFacts from "../config/sessions/session-entry-read-facts.js";
 import { addSessionMember } from "../config/sessions/session-sharing-store.js";
 import { ensureCanonicalUserProfileForEmail } from "../state/user-profile-writes.js";
+import { prepareGitHubPublicationSession } from "./github-publication-availability.js";
 import {
   createRequesterPublicationFixture,
   guestScopes,
@@ -158,4 +161,25 @@ describe("registered session GitHub publication access", () => {
       }
     },
   );
+
+  it("retains publication metadata through actor-cache misses and committed updates", async () => {
+    await createRequesterPublicationFixture(vi.fn(), "local", {
+      sessionId: SESSION_ID,
+      sessionKey: SESSION_KEY,
+    });
+    using session = await prepareGitHubPublicationSession(SESSION_KEY, { agentId: "main" });
+    const initial = session.initial.entry!;
+    vi.spyOn(entryReadFacts, "readRetainedSessionEntryFacts").mockReturnValue(undefined);
+    expect(session.current().entry?.sessionId).toBe(SESSION_ID);
+    const scope = {
+      agentId: "main",
+      sessionKey: SESSION_KEY,
+      storePath: session.initial.storePath,
+    };
+    const worktree = { ...initial.worktree!, branch: "updated-publication-branch" };
+    await upsertSessionEntryCore(scope, { worktree });
+    expect(session.current().entry?.worktree).toEqual(worktree);
+    await upsertSessionEntryCore(scope, { lifecycleRevision: "replacement-publication" });
+    expect(() => session.current()).toThrow("GitHub publication session lifecycle changed.");
+  });
 });

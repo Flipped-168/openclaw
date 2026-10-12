@@ -20,7 +20,7 @@ import { withSessionRepositoryCheckpoint } from "./worker-environments/session-r
 
 export async function prepareRepositoryOwner(session: PublicationSessionIdentity) {
   const current = await prepareGitHubPublicationWorkspaceOwner(session);
-  return current.currentRepository;
+  return Object.assign(current.currentRepository, { [Symbol.dispose]: current.release });
 }
 
 type ReceiptSession = Pick<
@@ -35,8 +35,13 @@ type ReceiptSession = Pick<
 
 export async function prepareReceiptOwner(row: ReceiptSession) {
   const session = await prepareGitHubPublicationSession(row.session_key, { agentId: row.agent_id });
-  const repository = await getSessionRepositoryWorkspaceStore().prepare(row.workspace_id);
-  return { session: session.current, repository };
+  try {
+    const repository = await getSessionRepositoryWorkspaceStore().prepare(row.workspace_id);
+    return { session: session.current, repository, [Symbol.dispose]: session.release };
+  } catch (error) {
+    session.release();
+    throw error;
+  }
 }
 
 export function resolveReceiptOwner(
@@ -96,8 +101,8 @@ export async function captureCheckpoint<T>(
 ): Promise<T | SessionGitHubPublicationResult> {
   let checkpointRef = row.checkpoint_ref;
   let assertSelected = assertCurrent;
-  if (!checkpointRef) {
-    const preparedOwner = await prepareReceiptOwner(row);
+  using preparedOwner = checkpointRef ? undefined : await prepareReceiptOwner(row);
+  if (preparedOwner) {
     assertCurrent();
     const { workspace } = assertReceiptOwner(row, preparedOwner);
     checkpointRef = workspace.checkpointRef ?? null;

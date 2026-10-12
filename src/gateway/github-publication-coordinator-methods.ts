@@ -165,16 +165,17 @@ export function createGitHubPublicationCoordinatorMethods(params: {
       throw new Error("GitHub publication requires an authoritative session.");
     }
     assertRequester();
-    const { initial: initialLoaded } = await prepareGitHubPublicationSession(input.sessionKey, {
+    using selectedSession = await prepareGitHubPublicationSession(input.sessionKey, {
       cfg: params.getCommittedRuntimeConfig(),
       agentId: input.agentId,
       assertCurrent: params.assertCurrent,
     });
+    const initialLoaded = selectedSession.initial;
     const sessionId = initialLoaded.entry?.sessionId;
     if (!sessionId) {
       throw new Error("GitHub publication session changed.");
     }
-    const initialAuthority = await readGitHubPublicationWorktreeOwner({
+    using initialAuthority = await readGitHubPublicationWorktreeOwner({
       sessionId,
       sessionKey: input.sessionKey,
       agentId: input.agentId,

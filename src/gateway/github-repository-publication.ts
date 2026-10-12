@@ -170,11 +170,12 @@ export function createRepositoryGitHubPublicationCoordinator(params: {
     if (!input.sessionKey) {
       throw new Error("GitHub publication requires an authoritative session.");
     }
-    const { initial: loaded } = await prepareGitHubPublicationSession(input.sessionKey, {
+    using selectedSession = await prepareGitHubPublicationSession(input.sessionKey, {
       cfg: getCommittedRuntimeConfig(),
       agentId: input.agentId,
       assertCurrent: params.assertCurrent,
     });
+    const loaded = selectedSession.initial;
     requester.assertCurrent();
     if (!loaded.entry?.sessionId) {
       throw new Error("GitHub publication session changed.");
@@ -185,7 +186,7 @@ export function createRepositoryGitHubPublicationCoordinator(params: {
       sessionKey: loaded.canonicalKey,
       agentId: input.agentId,
     };
-    const currentOwner = await prepareRepositoryOwner(session);
+    using currentOwner = await prepareRepositoryOwner(session);
     const initial = currentOwner();
     const assertCurrent = () => {
       requester.assertCurrent();
@@ -301,11 +302,12 @@ export function createRepositoryGitHubPublicationCoordinator(params: {
       if (input.selection?.source === "personal") {
         throw new Error("My GitHub publication requires direct personal authorization.");
       }
-      const { initial: loaded } = await prepareGitHubPublicationSession(input.sessionKey!, {
+      using selectedSession = await prepareGitHubPublicationSession(input.sessionKey!, {
         cfg: getCommittedRuntimeConfig(),
         agentId: input.agentId,
         assertCurrent: params.assertCurrent,
       });
+      const loaded = selectedSession.initial;
       const placement = loaded.entry?.sessionId
         ? await placements.getAsync(loaded.entry.sessionId)
         : undefined;
@@ -354,7 +356,7 @@ export function createRepositoryGitHubPublicationCoordinator(params: {
       action.assertCurrent();
       if (existing) {
         assertPersonalGitHubPublicationReplay(existing, input, selected);
-        const prepared = await preparePersonalStatus(existing.request_id);
+        using prepared = await preparePersonalStatus(existing.request_id);
         action.assertCurrent();
         return (await personalStatus(existing, action, action, prepared)).result;
       }
@@ -365,7 +367,7 @@ export function createRepositoryGitHubPublicationCoordinator(params: {
       return await placements.withRepositoryWorkspaceReservation(
         action,
         async (assertReservation) => {
-          const currentOwner = await prepareRepositoryOwner(action);
+          using currentOwner = await prepareRepositoryOwner(action);
           const initial = currentOwner();
           const assertCurrent = () => {
             action.assertCurrent();
@@ -472,9 +474,9 @@ export function createRepositoryGitHubPublicationCoordinator(params: {
         action.assertCurrent();
         return null;
       }
-      const prepared = await preparePersonalStatus(row.request_id);
+      using prepared = await preparePersonalStatus(row.request_id);
       action.assertCurrent();
-      return personalStatus(row, action, session, prepared);
+      return await personalStatus(row, action, session, prepared);
     },
     async confirmPersonalV2(
       input: SessionGitHubConfirmParams,

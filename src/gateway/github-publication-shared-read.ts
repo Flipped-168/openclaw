@@ -132,7 +132,7 @@ export async function readSharedGitHubPublication(
       return row;
     });
   }
-  const selected = await prepareGitHubPublicationSession(session.sessionKey, {
+  using selected = await prepareGitHubPublicationSession(session.sessionKey, {
     agentId: session.agentId,
   });
   const entry = selected.initial.entry;

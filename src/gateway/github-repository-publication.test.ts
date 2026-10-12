@@ -472,7 +472,7 @@ describe("repository checkpoint GitHub publication", () => {
       if (boundary === "move") {
         if (person) {
           const requestId = listRepositoryGitHubPublications()[0]!.request_id;
-          const prepared = await person.coordinator.preparePersonalStatus(requestId);
+          using prepared = await person.coordinator.preparePersonalStatus(requestId);
           expect(
             await person.coordinator.personalStatusAsync(
               person.action,

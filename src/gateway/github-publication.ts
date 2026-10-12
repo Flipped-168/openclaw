@@ -117,7 +117,7 @@ export function createGitHubPublicationCoordinator(params: {
     ) {
       throw new Error("GitHub publication session identity changed.");
     }
-    const admitted = await readGitHubPublicationWorktreeOwner({
+    using admitted = await readGitHubPublicationWorktreeOwner({
       sessionId: request.claim.sessionId,
       sessionKey: request.sessionKey,
       agentId: request.agentId,
@@ -464,13 +464,12 @@ export function createGitHubPublicationCoordinator(params: {
         throw new Error("GitHub publication requires a host-prepared V2 requester.");
       }
       assertCurrent();
-      return (
-        await prepareGitHubPublicationWorkspaceOwner({
-          sessionId: request.claim.sessionId,
-          sessionKey: request.sessionKey,
-          agentId: request.agentId,
-        })
-      ).initial.kind === "repository"
+      using workspace = await prepareGitHubPublicationWorkspaceOwner({
+        sessionId: request.claim.sessionId,
+        sessionKey: request.sessionKey,
+        agentId: request.agentId,
+      });
+      return workspace.initial.kind === "repository"
         ? repository.requestForClaimV2(request)
         : requestForClaim(request);
     },
@@ -529,7 +528,8 @@ export function createGitHubPublicationCoordinator(params: {
     async requestPersonalForSessionV2(
       ...args: Parameters<typeof personal.requestPersonalForSessionV2>
     ) {
-      return (await prepareGitHubPublicationWorkspaceOwner(args[1])).initial.kind === "repository"
+      using workspace = await prepareGitHubPublicationWorkspaceOwner(args[1]);
+      return workspace.initial.kind === "repository"
         ? repository.requestPersonalForSessionV2(...args)
         : personal.requestPersonalForSessionV2(...args);
     },

@@ -23,7 +23,7 @@ export async function prepareGitHubPublicationFact(
     if (params.assertCurrent?.() === false) {
       return undefined;
     }
-    const currentWorkspace = await prepareGitHubPublicationWorkspaceOwner(params);
+    using currentWorkspace = await prepareGitHubPublicationWorkspaceOwner(params);
     const workspace = currentWorkspace.initial;
     const identity = await prepareCurrentGitHubPublicationIdentity(params.agentId);
     const originUrl =

@@ -153,52 +153,58 @@ export async function prepareGitHubPublicationOptionsRead(
     agentId: requestedAgentId,
     assertCurrent: assertConnection,
   });
-  const readSession = () => {
-    const loaded = preparedSession.current();
-    const filter = createSessionListEntryFilter({
-      cfg: options.context.getRuntimeConfig(),
-      client: currentClient(),
-    });
-    return loaded.entry && filter?.(loaded.canonicalKey, loaded.entry) !== false
-      ? {
-          sessionId: loaded.entry.sessionId,
-          sessionKey: loaded.canonicalKey,
-          agentId: loaded.agentId,
-          lifecycleRevision: loaded.entry.lifecycleRevision ?? null,
-          archivedAt: loaded.entry.archivedAt ?? null,
-        }
-      : null;
-  };
-  const session = readSession();
-  if (!session) {
-    throw new Error("GitHub publication session was not found.");
-  }
-  // sessionId/lifecycleRevision pin the incarnation; archivedAt is re-read below because
-  // archiving flips it without touching either identity field.
-  const readCurrent = () => {
-    const current = readSession();
-    if (
-      !current ||
-      current.sessionId !== session.sessionId ||
-      current.lifecycleRevision !== session.lifecycleRevision
-    ) {
-      throw new Error("GitHub publication session access changed; select the session again.");
+  try {
+    const readSession = () => {
+      const loaded = preparedSession.current();
+      const filter = createSessionListEntryFilter({
+        cfg: options.context.getRuntimeConfig(),
+        client: currentClient(),
+      });
+      return loaded.entry && filter?.(loaded.canonicalKey, loaded.entry) !== false
+        ? {
+            sessionId: loaded.entry.sessionId,
+            sessionKey: loaded.canonicalKey,
+            agentId: loaded.agentId,
+            lifecycleRevision: loaded.entry.lifecycleRevision ?? null,
+            archivedAt: loaded.entry.archivedAt ?? null,
+          }
+        : null;
+    };
+    const session = readSession();
+    if (!session) {
+      throw new Error("GitHub publication session was not found.");
     }
-    return current;
-  };
-  return {
-    personal,
-    session,
-    sessionScoped: authority.sessionScope === "operator.sessions.read",
-    currentSession: readCurrent,
-    // Callbacks may refresh live facts, but must not replace the response's archive snapshot.
-    assertSessionUnchanged: (snapshot: ReturnType<typeof readCurrent>): void => {
-      const current = readCurrent();
-      if (current.archivedAt !== snapshot.archivedAt) {
+    // sessionId/lifecycleRevision pin the incarnation; archivedAt is re-read below because
+    // archiving flips it without touching either identity field.
+    const readCurrent = () => {
+      const current = readSession();
+      if (
+        !current ||
+        current.sessionId !== session.sessionId ||
+        current.lifecycleRevision !== session.lifecycleRevision
+      ) {
         throw new Error("GitHub publication session access changed; select the session again.");
       }
-    },
-  };
+      return current;
+    };
+    return {
+      personal,
+      session,
+      [Symbol.dispose]: preparedSession.release,
+      sessionScoped: authority.sessionScope === "operator.sessions.read",
+      currentSession: readCurrent,
+      // Callbacks may refresh live facts, but must not replace the response's archive snapshot.
+      assertSessionUnchanged: (snapshot: ReturnType<typeof readCurrent>): void => {
+        const current = readCurrent();
+        if (current.archivedAt !== snapshot.archivedAt) {
+          throw new Error("GitHub publication session access changed; select the session again.");
+        }
+      },
+    };
+  } catch (error) {
+    preparedSession.release();
+    throw error;
+  }
 }
 
 /** Prepare canonical role facts off-thread; live checks consume the profile owner's revisions. */

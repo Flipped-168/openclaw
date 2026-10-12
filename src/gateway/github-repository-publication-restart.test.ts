@@ -85,7 +85,7 @@ describe("repository checkpoint GitHub publication", () => {
       await f.capture("later unselected change\n", "later");
       const retiredCoordinator = person.coordinator;
       await restartPersonalPublicationFixture(person);
-      const preparedStatus = await person.coordinator.preparePersonalStatus(first.requestId);
+      using preparedStatus = await person.coordinator.preparePersonalStatus(first.requestId);
       const pending = await person.coordinator.personalStatusAsync(
         person.action,
         person.action,

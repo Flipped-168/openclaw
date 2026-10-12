@@ -195,7 +195,7 @@ export function createPersonalGitHubPublicationCoordinator(
   ): Promise<T> => {
     action.assertCurrent();
     return await placements.withLocalWorkspaceReservation(action, async (assertReservation) => {
-      const worktreeOwner = await readGitHubPublicationWorktreeOwner(action);
+      using worktreeOwner = await readGitHubPublicationWorktreeOwner(action);
       const { worktree } = worktreeOwner;
       action.assertCurrent();
       assertReservation();
@@ -348,7 +348,8 @@ export function createPersonalGitHubPublicationCoordinator(
           workspace.assertCurrent();
           bound.assertCurrent();
         };
-        const { worktree } = await readGitHubPublicationWorktreeOwner(action);
+        using worktreeOwner = await readGitHubPublicationWorktreeOwner(action);
+        const { worktree } = worktreeOwner;
         assertCurrent();
         const identity = await preparePersonalGitHubPublicationSelection(
           bound,

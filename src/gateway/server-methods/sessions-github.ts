@@ -206,10 +206,11 @@ export const sessionsGitHubHandlers: GatewayRequestHandlers = {
         }
         return;
       }
-      const { initial: loaded } = await prepareGitHubPublicationSession(sessionKey, {
+      using selectedSession = await prepareGitHubPublicationSession(sessionKey, {
         agentId,
         assertCurrent: () => sessionMutationAuthorization?.assertCurrent(),
       });
+      const loaded = selectedSession.initial;
       if (!loaded.entry?.sessionId) {
         respond(
           false,
@@ -247,7 +248,7 @@ export const sessionsGitHubHandlers: GatewayRequestHandlers = {
       const deadline = new AbortController();
       await raceWithTimeout(
         async () => {
-          const read = await prepareGitHubPublicationOptionsRead(
+          using read = await prepareGitHubPublicationOptionsRead(
             options,
             options.params,
             deadline.signal,
@@ -332,13 +333,13 @@ export const sessionsGitHubHandlers: GatewayRequestHandlers = {
     "sessions.github.status",
     validateSessionGitHubStatusParams,
     async (options) => {
-      const read = await prepareGitHubPublicationOptionsRead(options, options.params);
+      using read = await prepareGitHubPublicationOptionsRead(options, options.params);
       const service = options.context.githubPublicationService;
       if (!service) {
         options.respond(false, undefined, publicationStateUnavailableError());
         return;
       }
-      const prepared =
+      using prepared =
         read.personal.kind === "eligible"
           ? await service.preparePersonalStatus(options.params.requestId)
           : undefined;

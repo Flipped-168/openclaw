@@ -32,7 +32,7 @@ export async function prepareGitHubPublicationClaimWorkspace(
   }
   await params.placements.prepareWorkspaceResultClaim(claim);
   const first = rows[0]!;
-  const worktreeOwner = await readGitHubPublicationWorktreeOwner({
+  using worktreeOwner = await readGitHubPublicationWorktreeOwner({
     sessionId: first.session_id,
     sessionKey: first.session_key,
     agentId: first.agent_id,

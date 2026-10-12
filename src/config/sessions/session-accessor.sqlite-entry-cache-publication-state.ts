@@ -358,6 +358,7 @@ export function retainPreparedSessionEntryPredicate(params: {
   return {
     isCurrent: () =>
       canRefresh() && predicate.state === "current" && !retained.hasPendingPublication(),
+    readRetainedEntry: () => predicate.entry,
     canRefresh,
     captureRevision: () => predicate.revision,
     acknowledge: (entry: SessionEntry | undefined, revision: number) => {

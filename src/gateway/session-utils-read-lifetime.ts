@@ -199,9 +199,10 @@ export async function withGatewaySessionEntryReadOnly<T>(
 /** Retain the selected row and physical owner through asynchronous metadata preparation. */
 export async function retainGatewaySessionEntryReadOnly(
   sessionKey: string,
-  agentId: string,
+  agentId: string | undefined,
   allowMetadataChanges?: (previous: SessionEntry, current: SessionEntry) => boolean,
   cfg: OpenClawConfig = getRuntimeConfig(),
+  options: { exactRead?: true } = {},
 ) {
   const memory = captureMemoryRead({ cfg, key: sessionKey, agentId, projection: "list" });
   if (memory) {
@@ -221,6 +222,7 @@ export async function retainGatewaySessionEntryReadOnly(
     };
     return {
       ...selected,
+      readRetainedEntry: memory.read,
       isCurrent,
       isCurrentAtResponse: () => {
         if (released) {
@@ -249,12 +251,16 @@ export async function retainGatewaySessionEntryReadOnly(
       },
     };
   }
-  const { canonicalKey } = resolveSessionStoreIdentity({ cfg, sessionKey, agentId });
+  const { canonicalKey, agentId: resolvedAgentId } = resolveSessionStoreIdentity({
+    cfg,
+    sessionKey,
+    agentId,
+  });
   const incognitoBinding = captureIncognitoSessionSource();
   if (incognitoBinding || isIncognitoSessionKey(canonicalKey)) {
     return retainNativeIncognitoSessionEntryReadOnly(
       canonicalKey,
-      agentId,
+      resolvedAgentId,
       allowMetadataChanges,
       cfg,
       incognitoBinding,
@@ -287,6 +293,7 @@ export async function retainGatewaySessionEntryReadOnly(
       key: sessionKey,
       agentId,
       projection: "list",
+      ...options,
     });
     const source = selected.capturedReadSource;
     const selectedPath = captureSessionStoreReadCandidate(selected.storePath);
@@ -314,6 +321,7 @@ export async function retainGatewaySessionEntryReadOnly(
     }
     return {
       ...selected,
+      readRetainedEntry: () => (predicate ? predicate.readRetainedEntry() : selected.entry),
       isCurrent: () => !released,
       isCurrentAtResponse: () => {
         if (released || (predicate ? !predicate.isCurrent() : invalidated)) {
@@ -366,6 +374,7 @@ function retainNativeIncognitoSessionEntryReadOnly(
     // A missing saved session has no private selection and must stay absent until publication.
     return {
       ...selected,
+      readRetainedEntry: () => selected.entry,
       isCurrent: () => !released,
       isCurrentAtResponse: () =>
         !released &&
@@ -409,6 +418,7 @@ function retainNativeIncognitoSessionEntryReadOnly(
     return {
       ...selected,
       entry: read.entry,
+      readRetainedEntry: () => read.entry,
       // Catalog projection calls this per model; exact target reads belong at publication.
       isCurrent: () => !released && claim.isCurrent(),
       // Re-read canonical target facts and verify physical ownership before publishing.

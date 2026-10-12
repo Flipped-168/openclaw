@@ -19,6 +19,8 @@ vi.mock("../github-publication-availability.js", async (importOriginal) => ({
   prepareGitHubPublicationSession: async () => ({
     initial: mocks.readSession(),
     current: mocks.readSession,
+    release() {},
+    [Symbol.dispose]() {},
   }),
 }));
 vi.mock("../../agents/tools/gateway-caller-context.js", () => ({
@@ -106,7 +108,7 @@ describe("GitHub publication request discovery", () => {
     request.client.connect.scopes = [grant];
     mocks.roleScopes = [ceiling];
 
-    const read = await prepareGitHubPublicationOptionsRead(request, { sessionKey: "main" });
+    using read = await prepareGitHubPublicationOptionsRead(request, { sessionKey: "main" });
     expect(read.currentSession()).toEqual(read.session);
     expect(read.personal.kind).toBe("ineligible");
 
@@ -124,7 +126,7 @@ describe("GitHub publication request discovery", () => {
         ...loaded,
         entry: { ...loaded.entry, archivedAt: archivedAt ?? undefined },
       });
-      const read = await prepareGitHubPublicationOptionsRead(createRequest(), {
+      using read = await prepareGitHubPublicationOptionsRead(createRequest(), {
         sessionKey: "main",
       });
       const initial = read.currentSession();
