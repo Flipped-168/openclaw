@@ -172,13 +172,11 @@ async function withInProcessGatewayDispatch<T>(
         );
       }
     }
-    // A launched agent owns its transcript and execution authority independently
-    // of the caller whose tool invocation admitted it.
+    // Autonomous turns establish their own transcript writer and must not retain
+    // the caller's tool authority after that invocation closes.
     return method === "agent"
       ? await runWithoutOwnedSessionTranscriptWrites(() =>
-          readOperatorToolGatewayAuthority()
-            ? runOutsideOperatorToolGatewayAuthority(() => run(resolved))
-            : run(resolved),
+          runOutsideOperatorToolGatewayAuthority(() => run(resolved)),
         )
       : await run(resolved);
   } finally {
