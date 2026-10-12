@@ -192,10 +192,8 @@ export async function toSimpleContextMessages(params: {
 }): Promise<Message[]> {
   const contextMessages: Message[] = [];
   for (const message of params.messages) {
-    if (!isRecord(message)) {
-      continue;
-    }
-    const role = message.role;
+    // Read the role without narrowing `message`; the casts below are from the transcript entry.
+    const role = isRecord(message) ? message.role : undefined;
     if (role !== "user" && role !== "assistant") {
       continue;
     }

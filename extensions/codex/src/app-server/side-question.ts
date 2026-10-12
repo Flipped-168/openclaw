@@ -6,7 +6,6 @@ import {
   formatErrorMessage,
   resolveSandboxContext,
   type AgentHarnessSideQuestionParamsV2,
-  type NativeHookRelayEvent,
   type AgentHarnessSideQuestionResult,
 } from "openclaw/plugin-sdk/agent-harness-runtime";
 import { resolveAgentWorkspaceDir } from "openclaw/plugin-sdk/agent-runtime";
@@ -16,7 +15,7 @@ import {
   resolveCodexMcpToolOverridesForAgent,
 } from "openclaw/plugin-sdk/codex-mcp-projection";
 import { loadExecApprovalsReadOnlyAsync } from "openclaw/plugin-sdk/exec-approvals-runtime";
-import { registerNativeHookRelayForBundledRuntime } from "openclaw/plugin-sdk/native-hook-relay-runtime";
+import type { registerNativeHookRelayForBundledRuntime } from "openclaw/plugin-sdk/native-hook-relay-runtime";
 import { readStringField as readString } from "openclaw/plugin-sdk/string-coerce-runtime";
 import { resolveCodexAppServerForModelProvider } from "./app-server-policy.js";
 import { handleCodexAppServerApprovalRequest } from "./approval-bridge.js";
@@ -26,7 +25,6 @@ import {
   requireCodexSupervisionModelSelection,
   resolveCodexBindingAppServerConnection,
 } from "./binding-connection.js";
-import { requireCodexThreadForkSettings } from "./client-fork-settings.js";
 import {
   isCodexAppServerApprovalRequest,
   isCodexAppServerIndeterminateRequestCancellationError,
@@ -66,22 +64,8 @@ import { routeCodexAppServerElicitationRequest } from "./elicitation-bridge.js";
 import { createCodexElicitationResponse } from "./elicitation-response.js";
 import { CodexEphemeralTurn } from "./ephemeral-turn.js";
 import { CodexNativeToolLifecycleProjector } from "./event-projector-native-tool-lifecycle.js";
-import { CODEX_INFERENCE_GENERATION_KEY } from "./inference-context.js";
-import {
-  getCodexInferenceThread,
-  getCodexInferenceThreadQualification,
-} from "./inference-routing.js";
 import { prepareCodexNativeExecutionPolicyForRun } from "./native-execution-policy.js";
-import {
-  assertCodexNativeHookRelayAllowed,
-  buildCodexNativeHookRelayConfig,
-  buildCodexNativeHookRelayDisabledConfig,
-  resolveCodexNativeHookRelayEvents,
-  resolveCodexNativeHookRelayTtlMs,
-} from "./native-hook-relay.js";
 import { createCodexNativePreToolUseFailureBuffer } from "./native-pre-tool-use-failures.js";
-import type { ParentRegistrationHandle } from "./native-subagent-monitor-types.js";
-import { codexNativeSubagentMonitorRuntime } from "./native-subagent-monitor.js";
 import {
   mergeCodexThreadConfigs,
   refreshCodexPluginAppApprovalPolicy,
@@ -91,12 +75,7 @@ import {
   assertCodexTurnStartResponse,
   readCodexDynamicToolCallParams,
 } from "./protocol-validators.js";
-import {
-  isJsonObject,
-  type CodexThreadForkParams,
-  type JsonObject,
-  type JsonValue,
-} from "./protocol.js";
+import { isJsonObject, type JsonObject, type JsonValue } from "./protocol.js";
 import { resolveCodexProviderWebSearchSupportForClient } from "./provider-capabilities.js";
 import { readRecentCodexRateLimits } from "./rate-limit-cache.js";
 import { formatCodexUsageLimitErrorMessage } from "./rate-limits.js";
@@ -104,7 +83,6 @@ import {
   readCodexSupportedReasoningEfforts,
   resolveCodexAppServerReasoningEffort,
 } from "./reasoning-effort.js";
-import { isMissingCodexParentThreadError } from "./rpc-error.js";
 import { runCodexCleanupStep } from "./run-attempt-lifecycle.js";
 import type { CodexRunAttemptOptions } from "./run-attempt-types.js";
 import {
@@ -121,14 +99,21 @@ import {
   resolveCodexSessionPermissionCwd,
 } from "./session-permission-policy.js";
 import {
-  getLeasedSharedCodexAppServerClient,
   releaseCodexAppServerClientLease,
-  retainSharedCodexAppServerClientByInstanceId,
   withCodexAppServerClientRequestScope,
   type CodexAppServerClientLease,
   type CodexAppServerClientOptions,
 } from "./shared-client.js";
 import { cleanupCodexSideQuestion } from "./side-question-cleanup.js";
+import {
+  acquireCodexSideQuestionClient,
+  CodexSideQuestionFork,
+  DENIED_DYNAMIC_TOOL_RESPONSE,
+  forkCodexSideThread,
+  prepareCodexSideQuestionRelay,
+  registerCodexSideQuestionRelay,
+  resolveCodexSideQuestionRelayEvents,
+} from "./side-question-fork.js";
 import { SIDE_DEVELOPER_INSTRUCTIONS } from "./side-question-instructions.js";
 import {
   applySideQuestionModelSelection,
@@ -151,10 +136,6 @@ import { buildCodexUserInput } from "./user-input.js";
 import { resolveCodexWebSearchPlan, type CodexNativeWebSearchSupport } from "./web-search.js";
 
 const SIDE_QUESTION_COMPLETION_TIMEOUT_MS = 600_000;
-const DENIED_DYNAMIC_TOOL_RESPONSE: JsonValue = {
-  success: false,
-  contentItems: [{ type: "inputText", text: "Tool calls are denied for this side question." }],
-};
 
 class CodexSideQuestionTimeoutError extends Error {
   override name = "TimeoutError";
@@ -368,19 +349,11 @@ export async function runCodexAppServerSideQuestion(
     config: params.cfg,
     ...(params.opts?.abortSignal ? { abandonSignal: params.opts.abortSignal } : {}),
   } satisfies CodexAppServerClientOptions;
-  // A fresh acquisition can select another physical client (auth/profile/runtime key differs).
-  // Cache-parity state and private inference context belong to the parent's recorded owner.
-  const parentLease = denyToolCalls
-    ? await retainSharedCodexAppServerClientByInstanceId(binding.clientId, {
-        signal: params.opts?.abortSignal,
-      })
-    : undefined;
-  if (denyToolCalls && !parentLease) {
-    throw new Error(
-      "Cache-parity session fork requires the parent's live Codex client. Send a normal message first.",
-    );
-  }
-  const client = parentLease?.client ?? (await getLeasedSharedCodexAppServerClient(clientOptions));
+  const { client, parentLease } = await acquireCodexSideQuestionClient(
+    denyToolCalls,
+    binding.clientId,
+    clientOptions,
+  );
   const clientLease: CodexAppServerClientLease = { client };
   let collector: CodexEphemeralTurn | undefined;
   const runAbortController = new AbortController();
@@ -411,8 +384,7 @@ export async function runCodexAppServerSideQuestion(
   let nativeHookRelay: ReturnType<typeof registerNativeHookRelayForBundledRuntime> | undefined;
   const activeDynamicToolCalls = new Set<Promise<unknown>>();
   let primaryFailure: { error: unknown } | undefined;
-  let forkInferenceContext: { generation: string; release: () => void } | undefined;
-  let forkModelRegistration: ParentRegistrationHandle | undefined;
+  let fork: CodexSideQuestionFork | undefined;
   const releaseSandboxEnvironment = async () => {
     if (!sandboxEnvironment) {
       return;
@@ -524,9 +496,7 @@ export async function runCodexAppServerSideQuestion(
   }
 
   try {
-    const forkSettings = denyToolCalls
-      ? requireCodexThreadForkSettings(client, binding.threadId)
-      : undefined;
+    fork = denyToolCalls ? new CodexSideQuestionFork(client, binding.threadId) : undefined;
     assertCurrent();
     const autoApproveMcpTools = shouldAutoApproveCodexAppServerApprovals(appServer);
     const projectedMcpServers = loadCodexBundleMcpApprovalConfig({
@@ -663,46 +633,28 @@ export async function runCodexAppServerSideQuestion(
     };
 
     const serviceTier = binding.serviceTier ?? appServer.serviceTier;
-    const nativeHookRelayEvents: readonly NativeHookRelayEvent[] = denyToolCalls
-      ? ["pre_tool_use"]
-      : resolveCodexNativeHookRelayEvents({
-          configuredEvents: options.nativeHookRelay?.events,
-          appServer,
-        });
-    if (denyToolCalls) {
-      await assertCodexNativeHookRelayAllowed(
-        client,
-        runAbortController.signal,
-        appServer.requestTimeoutMs,
-      );
-      assertCurrent();
-    }
-    if (options.nativeHookRelay && options.nativeHookRelay.enabled !== false) {
-      const channelId = buildAgentHookContextChannelFields({
-        sessionKey: params.sessionKey,
-        messageChannel: params.messageChannel,
-        messageProvider: params.messageProvider,
-        currentChannelId: params.currentChannelId,
-      }).channelId;
-      nativeHookRelay = registerNativeHookRelayForBundledRuntime({
-        provider: "codex",
-        ...(sessionAgentId ? { agentId: sessionAgentId } : {}),
-        sessionId: params.sessionId,
-        ...(params.sessionKey ? { sessionKey: params.sessionKey } : {}),
-        ...(params.cfg ? { config: params.cfg } : {}),
+    const nativeHookRelayEvents = await resolveCodexSideQuestionRelayEvents({
+      denyToolCalls,
+      client,
+      signal: runAbortController.signal,
+      appServer,
+      options: options.nativeHookRelay,
+      assertCurrent,
+    });
+    nativeHookRelay = registerCodexSideQuestionRelay(
+      {
+        denyToolCalls,
+        appServer,
+        options: options.nativeHookRelay,
+        completionTimeoutMs: SIDE_QUESTION_COMPLETION_TIMEOUT_MS,
+        sideParams: params,
+        agentId: sessionAgentId,
+      },
+      {
         autoApproveMcpTools,
         projectedMcpServers,
         runId: sideRunParams.runId,
-        ...(channelId ? { channelId } : {}),
         allowedEvents: nativeHookRelayEvents,
-        preToolUseLoopDetection: appServer.loopDetectionPreToolUseRelay,
-        requirePreToolUse: denyToolCalls,
-        ttlMs: resolveCodexNativeHookRelayTtlMs({
-          explicitTtlMs: options.nativeHookRelay.ttlMs,
-          attemptTimeoutMs: SIDE_QUESTION_COMPLETION_TIMEOUT_MS,
-          startupTimeoutMs: appServer.requestTimeoutMs * 2,
-          turnStartTimeoutMs: appServer.requestTimeoutMs,
-        }),
         signal: runAbortController.signal,
         runBeforeToolCall: sideRunParams.hostCapabilities.runBeforeToolCall,
         assertActive: () => {
@@ -719,21 +671,14 @@ export async function runCodexAppServerSideQuestion(
             nativePreToolUseFailures.record(failure);
           }
         },
-        command: { timeoutMs: options.nativeHookRelay.gatewayTimeoutMs },
-      });
-    }
-    await nativeHookRelay?.prepareInvocation();
-    assertCurrent();
-    const nativeHookRelayConfig = nativeHookRelay
-      ? buildCodexNativeHookRelayConfig({
-          relay: nativeHookRelay,
-          events: nativeHookRelayEvents,
-          hookTimeoutSec: options.nativeHookRelay?.hookTimeoutSec,
-          clearOmittedEvents: true,
-        })
-      : options.nativeHookRelay?.enabled === false
-        ? buildCodexNativeHookRelayDisabledConfig()
-        : undefined;
+      },
+    );
+    const nativeHookRelayConfig = await prepareCodexSideQuestionRelay({
+      relay: nativeHookRelay,
+      events: nativeHookRelayEvents,
+      options: options.nativeHookRelay,
+      assertCurrent,
+    });
     const runtimeThreadConfig = buildCodexRuntimeThreadConfig(webSearchPlan.threadConfig, {
       nativeCodeModeEnabled: nativeToolSurfaceEnabled,
       nativeCodeModeOnlyEnabled: appServer.codeModeOnly,
@@ -808,22 +753,11 @@ export async function runCodexAppServerSideQuestion(
                 pluginAppsConfigPatch,
                 appServer.networkProxy?.configPatch,
               ) ?? runtimeThreadConfig;
-            const forkConfig = forkSettings
-              ? mergeCodexThreadConfigs(
-                  forkSettings.thread.config ?? undefined,
-                  nativeHookRelayConfig,
-                )
-              : undefined;
             const response = assertCodexThreadForkResponse(
               await forkCodexSideThread(
                 forkClient,
-                forkSettings
-                  ? {
-                      ...forkSettings.thread,
-                      ...(forkConfig ? { config: forkConfig } : {}),
-                      ephemeral: true,
-                      excludeTurns: true,
-                    }
+                fork
+                  ? fork.threadParams(nativeHookRelayConfig)
                   : {
                       threadId: binding.threadId,
                       model: modelSelection.model,
@@ -862,41 +796,14 @@ export async function runCodexAppServerSideQuestion(
               onNotification: (notification) =>
                 nativeToolLifecycleProjector?.handleNotification(notification),
             });
-            if (forkSettings) {
-              const inference = getCodexInferenceThread(forkClient, binding.threadId);
-              if (inference) {
-                forkInferenceContext = inference.context.fork({
-                  sourceThreadId: binding.threadId,
-                  threadId: childThreadId,
-                  signal: runAbortController.signal,
-                  assertCurrent,
-                });
-              }
-              // The prefix generation is not model authority. Admit this distinct
-              // root thread under the side run before its first native request.
-              const modelSource = sideRunParams.hostCapabilities.retainSourceAuthority?.();
-              try {
-                const configurationQualification = getCodexInferenceThreadQualification(
-                  forkClient,
-                  binding.threadId,
-                );
-                forkModelRegistration = await codexNativeSubagentMonitorRuntime.register({
-                  client: forkClient,
-                  parentThreadId: childThreadId,
-                  modelSource,
-                  configurationQualification,
-                  unqualifiedModelExecution:
-                    modelSource && !configurationQualification ? true : undefined,
-                  onUnqualifiedModelCancelled: (reason) => runAbortController.abort(reason),
-                  assertCurrent,
-                });
-                await forkModelRegistration.ready;
-                assertCurrentBinding();
-              } catch (error) {
-                modelSource?.release();
-                throw error;
-              }
-            }
+            await fork?.registerChild(
+              forkClient,
+              childThreadId,
+              sideRunParams.hostCapabilities,
+              runAbortController,
+              assertCurrent,
+              assertCurrentBinding,
+            );
             // A terminal answer may still be projecting after transport closure;
             // native hook authority ends with the route, not that projection.
             if (nativeHookRelay) {
@@ -958,19 +865,8 @@ export async function runCodexAppServerSideQuestion(
       await client
         .request(
           "turn/start",
-          forkSettings
-            ? {
-                ...forkSettings.turn,
-                threadId: sideThreadId,
-                input: buildCodexUserInput(params.question.trim(), params.images),
-                ...(forkInferenceContext
-                  ? {
-                      responsesapiClientMetadata: {
-                        [CODEX_INFERENCE_GENERATION_KEY]: forkInferenceContext.generation,
-                      },
-                    }
-                  : {}),
-              }
+          fork
+            ? fork.turnParams(sideThreadId, params)
             : {
                 threadId: sideThreadId,
                 input: buildCodexUserInput(params.question.trim(), params.images),
@@ -1027,15 +923,7 @@ export async function runCodexAppServerSideQuestion(
     );
     turnId = turnResponse.turn.id;
     assertCurrent();
-    if (forkSettings) {
-      forkModelRegistration?.bindTurn(turnId, {
-        nativeModel: {
-          provider: forkSettings.thread.modelProvider ?? params.provider,
-          model: forkSettings.turn.model ?? forkSettings.thread.model ?? modelSelection.model,
-        },
-        authorizedModel: { provider: params.provider, model: params.model },
-      });
-    }
+    fork?.bindTurn(turnId, params, modelSelection.model);
     nativeToolLifecycleProjector = new CodexNativeToolLifecycleProjector(
       { ...sideRunParams, agentId: sessionAgentId },
       sideThreadId,
@@ -1114,8 +1002,8 @@ export async function runCodexAppServerSideQuestion(
           }
         },
         () => collector?.route.release(),
-        () => forkInferenceContext?.release(),
-        () => forkModelRegistration?.unregister(),
+        () => fork?.releaseInferenceContext(),
+        () => fork?.unregisterModel(),
         () => nativeToolLifecycleProjector?.finalizeActive(nativeToolRunWasAbortedBeforeCleanup),
         () =>
           nativePreToolUseFailures.activateFallback(nativeToolRunWasAbortedBeforeCleanup === true),
@@ -1129,24 +1017,6 @@ export async function runCodexAppServerSideQuestion(
           }),
       ],
     });
-  }
-}
-
-async function forkCodexSideThread(
-  client: CodexAppServerClient,
-  params: CodexThreadForkParams,
-  options: { timeoutMs: number; signal?: AbortSignal },
-): Promise<unknown> {
-  try {
-    return await client.request("thread/fork", params, options);
-  } catch (error) {
-    if (isMissingCodexParentThreadError(error)) {
-      throw new Error(
-        "Codex /btw needs an active Codex thread. Send a normal message first, then try /btw again.",
-        { cause: error },
-      );
-    }
-    throw error;
   }
 }
 

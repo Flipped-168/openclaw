@@ -35,7 +35,9 @@ import {
 const isolated = vi.hoisted(() => vi.fn<typeof runIsolatedCompletion>());
 const sideQuestion = vi.hoisted(() => vi.fn<typeof runBtwSideQuestion>());
 const forkSessionLookup = vi.hoisted(() => vi.fn());
+// mock-isolation: forkSession admission is under test; the real side-question runtime loads the full agent stack.
 vi.mock("../agents/btw.js", () => ({ runBtwSideQuestion: sideQuestion }));
+// mock-isolation: the real lookup runs in the SQLite session worker; tests supply the session entry directly.
 vi.mock("./session-utils-store-worker.js", () => ({
   loadGatewaySessionEntryReadOnlyInWorker: forkSessionLookup,
 }));

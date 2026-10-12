@@ -21,7 +21,6 @@ vi.mock("./attempt-diagnostics.js", () => ({
   createCodexModelCallDiagnosticEmitter: () => ({ setRequestPayloadBytes: vi.fn() }),
   utf8JsonByteLength: () => 1,
 }));
-vi.mock("./client-fork-settings.js", () => ({ recordCodexTurnForkSettings: vi.fn() }));
 vi.mock("./client-runtime.js", () => ({
   prepareCodexWorkspaceReferences: () => ({
     include: !references.delivered,
