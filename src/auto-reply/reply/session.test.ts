@@ -1785,7 +1785,7 @@ describe("initSessionState reset policy", () => {
   let clearBootstrapSnapshotOnSessionRolloverSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
-    vi.useFakeTimers();
+    vi.useFakeTimers({ toFake: ["Date"] });
     clearBootstrapSnapshotOnSessionRolloverSpy = vi.spyOn(
       bootstrapCache,
       "clearBootstrapSnapshotOnSessionBoundary",
