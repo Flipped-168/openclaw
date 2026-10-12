@@ -28,6 +28,7 @@ export function installControlUiPaneRuntimeTestAdapter() {
       "historyIntentTimer",
       "sessionSnapshotStore",
       "presencePayload",
+      "boardProviderLease",
     ] as const) {
       Object.defineProperty(element, key, {
         configurable: true,

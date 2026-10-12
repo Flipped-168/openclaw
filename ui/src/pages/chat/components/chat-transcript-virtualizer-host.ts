@@ -296,9 +296,8 @@ export class ChatSessionVirtualizerHost implements ReactiveControllerHost, ChatT
     }
     this.connected = true;
     this.renderer.connect();
-    if (this.host instanceof HTMLElement) {
-      this.host.addEventListener(SIDEBAR_GEOMETRY_COMMIT_EVENT, this.handleGeometryCommit);
-    }
+    const target = this.callbacks.geometryEventTarget;
+    target?.addEventListener(SIDEBAR_GEOMETRY_COMMIT_EVENT, this.handleGeometryCommit);
     for (const controller of this.controllers) {
       controller.hostConnected?.();
     }
@@ -395,9 +394,8 @@ export class ChatSessionVirtualizerHost implements ReactiveControllerHost, ChatT
       return;
     }
     this.connected = false;
-    if (this.host instanceof HTMLElement) {
-      this.host.removeEventListener(SIDEBAR_GEOMETRY_COMMIT_EVENT, this.handleGeometryCommit);
-    }
+    const target = this.callbacks.geometryEventTarget;
+    target?.removeEventListener(SIDEBAR_GEOMETRY_COMMIT_EVENT, this.handleGeometryCommit);
     for (const controller of this.controllers) {
       controller.hostDisconnected?.();
     }

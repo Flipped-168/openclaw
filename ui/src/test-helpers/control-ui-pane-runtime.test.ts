@@ -57,6 +57,11 @@ it("keeps private pane probes on the reported runtime while composing stream ins
   expect(Reflect.get(element, "loadingOlder")).toBe(true);
   expect(Reflect.get(element, "historyIntentTimer")).toBe(37);
   expect(Reflect.get(element, "presencePayload")).toBe(presence);
+  const boardProviderLease = { update: vi.fn() };
+  Reflect.set(runtime, "boardProviderLease", boardProviderLease);
+  expect(Reflect.get(element, "boardProviderLease")).toBe(boardProviderLease);
+  Reflect.set(runtime, "boardProviderLease", undefined);
+  expect(Reflect.get(element, "boardProviderLease")).toBeUndefined();
   Reflect.set(runtime, "loadingOlder", false);
   Reflect.set(runtime, "historyIntentTimer", null);
   expect(Reflect.get(element, "loadingOlder")).toBe(false);
