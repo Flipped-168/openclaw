@@ -23,6 +23,7 @@ import type { SqliteWorkerAdmissionRequest } from "../../../infra/sqlite-worker-
 import { closeOpenClawAgentDatabasesAsync } from "../../../state/openclaw-agent-db-lifecycle.js";
 import { openOpenClawAgentDatabase } from "../../../state/openclaw-agent-db.js";
 import { resolveOpenClawAgentSqlitePath } from "../../../state/openclaw-agent-db.paths.js";
+import { prepareUserProfileCatalog } from "../../../state/user-profile-list.js";
 import { setDisplayName, setUserProfileRole } from "../../../state/user-profile-writes.worker.js";
 import { ensureProfileForEmail } from "../../../state/user-profiles.js";
 import * as voiceWriters from "../../../talk/client-voice-session-write.js";
@@ -58,6 +59,7 @@ export function registerClientCreateEnsureTests(harness: EnsureHarness) {
       const fixture = harness.configureProvider(async () => browserSession);
       const profile = ensureProfileForEmail("voice-entry-owner@example.test");
       setUserProfileRole(profile.id, "write");
+      using _ = { [Symbol.dispose]: (await prepareUserProfileCatalog()).release };
       Object.assign(fixture.client, sharingPolicyClient({ user: profile.id }));
       const cfg = { ...rolePolicyConfig(), ...fixture.context.getRuntimeConfig() };
       fixture.context.getRuntimeConfig = () => cfg;
@@ -133,6 +135,7 @@ export function registerClientCreateEnsureTests(harness: EnsureHarness) {
       const fixture = harness.configureProvider(async () => browserSession);
       const profile = ensureProfileForEmail("voice-entry-profile@example.test");
       setUserProfileRole(profile.id, "write");
+      using _ = { [Symbol.dispose]: (await prepareUserProfileCatalog()).release };
       Object.assign(fixture.client, sharingPolicyClient({ user: profile.id }));
       const policy = rolePolicyConfig();
       policy.gateway!.roles!.definitions.view!.agents = [];

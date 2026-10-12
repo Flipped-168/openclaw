@@ -523,6 +523,7 @@ describe("invocation-owned session mutations", () => {
     async (changed) => {
       await withOpenClawTestState({ scenario: "minimal" }, async () => {
         const client = roleClient("view", "batch-owner");
+        using _ = { [Symbol.dispose]: (await prepareUserProfileCatalog()).release };
         client.connect.scopes = ["operator.sessions.write"];
         const cfg = rolePolicyConfig();
         using _ = { [Symbol.dispose]: (await prepareUserProfileCatalog()).release };
