@@ -32,7 +32,9 @@ export function createAgentDatabaseHandleCloser(cache: {
     const delegated = isSqliteWalWorkerMaintained(database.db);
     const priorCheckpointError = database.walMaintenance.health?.state === "error";
     const publishSeal =
-      !alreadyClosed && !options.eviction ? prepareSqliteDatabaseCleanClose(database.db) : undefined;
+      !alreadyClosed && !options.eviction
+        ? prepareSqliteDatabaseCleanClose(database.db)
+        : undefined;
     let clean: { path: string; publishSeal: () => boolean } | undefined;
     let retainRuntimeProof: boolean;
     try {

@@ -8,6 +8,7 @@ import {
 import { openNodeSqliteDatabase, resolveExistingSqliteFileUri } from "../infra/node-sqlite.js";
 import { prepareSqliteDatabaseCleanClose } from "../infra/sqlite-database-admission.js";
 import { withSqliteNativeOpen } from "../infra/sqlite-error-diagnostics.js";
+import { isSqliteWalWorkerMaintained } from "../infra/sqlite-wal-write-admission.js";
 import {
   assertExistingDatabaseIdentity,
   readDatabasePathIdentitySync,
@@ -102,6 +103,8 @@ export function closeStateDatabaseHandle(
 ): { errors: unknown[]; cleanupPending: boolean } {
   const errors: unknown[] = [];
   const publishSeal = prepareSqliteDatabaseCleanClose(database.db);
+  const delegated = isSqliteWalWorkerMaintained(database.db);
+  const priorCheckpointError = database.walMaintenance?.health?.state === "error";
   let checkpointed = false;
   try {
     checkpointed =
@@ -128,7 +131,13 @@ export function closeStateDatabaseHandle(
       cleanupPending = true;
     }
   }
-  if (checkpointed && errors.length === 0 && !cleanupPending) {
+  if (
+    errors.length === 0 &&
+    !cleanupPending &&
+    options?.checkpointMode !== "PASSIVE" &&
+    (checkpointed || (delegated && !priorCheckpointError))
+  ) {
+    // Native last-close can drain delegated WAL; the seal owner still requires empty journals.
     publishSeal();
   }
   return { errors, cleanupPending };

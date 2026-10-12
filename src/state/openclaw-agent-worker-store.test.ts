@@ -310,9 +310,7 @@ it.each([false, true])(
       await closeOpenClawAgentDatabasesAsync(root);
       expect(prepare).not.toHaveBeenCalled();
       expect(exec).not.toHaveBeenCalled();
-      expect(readOpenClawAgentIntegrityVerification(options.path)?.clean_close).toBe(
-        pinned ? 0 : 1,
-      );
+      expect(readSqliteDatabaseCleanClose(options.path)).toBe(!pinned);
       resetGatewayWorkAdmission();
       const reopened = openOpenClawAgentDatabase(options);
       expect(reopened.db.prepare("SELECT value FROM worker_proof ORDER BY rowid").all()).toEqual([

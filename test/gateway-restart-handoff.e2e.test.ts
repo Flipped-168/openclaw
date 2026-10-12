@@ -325,8 +325,8 @@ it.skipIf(process.platform !== "linux")(
         const artifactSchema = createHash("sha256")
           .update(version)
           .update(
-            readBuildIdFromBuildInfoForModuleUrl(moduleUrl) ??
-              resolveLoadedCommitHash({ moduleUrl }) ??
+            resolveLoadedCommitHash({ moduleUrl }) ??
+              readBuildIdFromBuildInfoForModuleUrl(moduleUrl) ??
               "source",
           )
           .update(OPENCLAW_AGENT_SCHEMA_SQL)

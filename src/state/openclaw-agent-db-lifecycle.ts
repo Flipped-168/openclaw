@@ -5,9 +5,6 @@ import type { DatabaseSync } from "node:sqlite";
 import { isMainThread, threadId } from "node:worker_threads";
 import { isPathInside } from "../infra/path-guards.js";
 import { setSqliteBusyTimeout } from "../infra/sqlite-busy-timeout.js";
-import {
-  revokeSqliteDatabaseAdmissionsForPath,
-} from "../infra/sqlite-database-admission.js";
 import type { SqliteFileGeneration } from "../infra/sqlite-file-generation.js";
 import { SQLITE_IDLE_HANDLE_TTL_MS } from "../infra/sqlite-handle-lifecycle.js";
 import type { SqliteIntegrityDiagnostics } from "../infra/sqlite-integrity.js";
@@ -35,10 +32,7 @@ import type {
   OpenClawAgentDatabaseOptions,
   OpenClawAgentDatabaseOwnerInspection,
 } from "./openclaw-agent-db-contract.js";
-import {
-  findOpenClawAgentDatabaseIdentity,
-  isOpenClawAgentDatabasePathCurrent,
-} from "./openclaw-agent-db-identity.js";
+import { findOpenClawAgentDatabaseIdentity } from "./openclaw-agent-db-identity.js";
 import {
   assertAgentDatabaseMaintenanceAuthority,
   hasAgentDatabaseMaintenanceAuthority,

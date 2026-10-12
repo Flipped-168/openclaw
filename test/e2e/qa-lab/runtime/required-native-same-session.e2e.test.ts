@@ -622,6 +622,8 @@ it.skipIf(process.platform === "win32")(
             }
             continueQuiesce.resolve();
             await checkpoint(atResume.promise, "A never accepted its unchanged workspace result");
+            expect(await aWait).toMatchObject({ status: "ok" });
+            record("A-agent.wait-before-workspace-settlement", { creation, timing });
             finishReleased = true;
             continueResume.resolve();
             await checkpoint(changedClear.promise, "settled placement never published clear");
