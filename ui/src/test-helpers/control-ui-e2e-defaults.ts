@@ -1,4 +1,5 @@
 import type {
+  ChannelsPairingListResult,
   ChannelsStatusResult,
   UserProfile,
 } from "../../../packages/gateway-protocol/src/index.ts";
@@ -91,6 +92,12 @@ export function createControlUiDefaultResponses(scenario: {
     current: { id: "claw", mode: "system", scope: "gateway", overrides: {} },
   };
   return {
+    "channels.pairing.list": {
+      accounts: [],
+      requests: [],
+      commandOwnerConfigured: true,
+      limits: { pendingPerAccount: 3, ttlMs: 3_600_000 },
+    } satisfies ChannelsPairingListResult,
     "channels.status": {
       ts: 0,
       channelOrder: [],
