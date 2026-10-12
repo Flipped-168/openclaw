@@ -15,9 +15,12 @@ import {
   synchronizeInitialChatSnapshotConnection,
 } from "./chat-history-state.ts";
 import { loadChatHistory } from "./chat-history.ts";
+import { ChatPaneRuntime } from "./chat-pane-render.ts";
 import {
   createGatewayBrowserClientFixture,
   createInitializationContext,
+  createPaneTestHost,
+  getPaneTestRuntime,
   nativeHistoryMessage,
   type TestChatPane,
 } from "./chat-pane.test-support.ts";
@@ -56,7 +59,11 @@ function mountPane(
   if (!snapshotStore) {
     vi.spyOn(store, "read").mockReturnValue(read.promise);
   }
-  const pane = document.createElement("openclaw-chat-pane") as unknown as TestChatPane;
+  // SAFETY: The fixture uses the real pane runtime and its forwarded test surface.
+  const pane = createPaneTestHost(
+    "openclaw-chat-runtime-test",
+    ChatPaneRuntime,
+  ) as unknown as TestChatPane;
   panes.push(pane);
   vi.spyOn(pane, "requestUpdate").mockImplementation(() => undefined);
   vi.spyOn(pane, "performUpdate").mockImplementation(() => undefined);
@@ -77,7 +84,7 @@ function mountPane(
   vi.spyOn(pane.chatState, "attach").mockImplementation(() => {
     throw attached;
   });
-  expect(() => pane.connectedCallback()).toThrow(attached);
+  expect(() => getPaneTestRuntime(pane).connectedCallback()).toThrow(attached);
   const state = pane.state;
   const liveResult = {
     messages: liveMessages,

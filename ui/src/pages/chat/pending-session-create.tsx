@@ -49,7 +49,7 @@ function PendingSessionCreateContent(props: PendingSessionCreateProps) {
     () => ({ context: props.context, sessionKey: props.sessionKey }),
     ({ context }) => {
       if (!context) {
-        return;
+        return undefined;
       }
       const closeAndNotify = () => {
         closeImage();

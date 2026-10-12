@@ -28,6 +28,7 @@ import {
   WorkGroupSummary,
 } from "./chat-message-stream-view.tsx";
 import type { TranscriptLayoutProps } from "./chat-transcript-layout.ts";
+import { TranscriptMediaDisconnect } from "./chat-transcript-media-lifecycle.ts";
 import { transcriptArraysEqual } from "./chat-transcript-memo.ts";
 import {
   GuardedTranscriptItem,
@@ -170,6 +171,7 @@ export class ChatTranscriptRenderer {
   private binding?: PresentationBinding;
   private commitQueued = false;
   private readonly layoutEffects = new Set<() => void>();
+  private readonly mediaDisconnect = new Set<() => void>();
   private readonly presentationChanged = () => this.publishPresentation?.();
 
   private isPresented(): boolean {
@@ -182,6 +184,18 @@ export class ChatTranscriptRenderer {
 
   connect(): void {
     this.publishPresentation?.();
+  }
+
+  disconnect(isConnected: () => boolean): void {
+    for (const retire of this.mediaDisconnect) {
+      retire();
+    }
+    // Moving a retained pane disconnects and reconnects within one task.
+    queueMicrotask(() => {
+      if (!isConnected()) {
+        this.dispose();
+      }
+    });
   }
 
   afterCommit(effect: AfterCommitEffect, onCancel?: () => void): () => void {
@@ -270,9 +284,11 @@ export class ChatTranscriptRenderer {
           element.addEventListener("click", capture, true);
           onCleanup(() => element.removeEventListener("click", capture, true));
           return (
-            <SolidContentPresentation value={active}>
-              <TranscriptRows snapshot={snapshot()} />
-            </SolidContentPresentation>
+            <TranscriptMediaDisconnect value={this.mediaDisconnect}>
+              <SolidContentPresentation value={active}>
+                <TranscriptRows snapshot={snapshot()} />
+              </SolidContentPresentation>
+            </TranscriptMediaDisconnect>
           );
         }, element),
       );

@@ -41,7 +41,7 @@ export function BoardSessionSurface(props: BoardSessionSurfaceProps & { elementR
     () => props.active,
     (binding) => {
       if (typeof binding === "boolean") {
-        return;
+        return undefined;
       }
       const changed = () => {
         // Reveals wait for the parent's new props unless navigation explicitly previews the retained board.

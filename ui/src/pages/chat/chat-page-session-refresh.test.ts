@@ -57,7 +57,7 @@ describe("chat page session refresh", () => {
     layout.activePaneId = expectDefined(layout.columns[0]?.panes[0], "active main pane").id;
     const foreignPane = expectDefined(layout.columns[1]?.panes[0], "foreign-agent pane");
     foreignPane.sessionKey = "agent:research:dashboard:retained";
-    await setLayout(page, layout);
+    setLayout(page, layout);
     await settleChatPage(page);
 
     const presentationTitles = () =>
@@ -144,7 +144,7 @@ describe("chat page session refresh", () => {
     };
     page.data = { sessionKey: "main" };
     document.body.append(page);
-    await setLayout(page, createSplitLayout("main"));
+    setLayout(page, createSplitLayout("main"));
     await settleChatPage(page);
     const presentationTitles = () =>
       [...page.querySelectorAll<RenderedPane>("openclaw-chat-pane")].map(

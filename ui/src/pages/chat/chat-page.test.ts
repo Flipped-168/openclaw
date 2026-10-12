@@ -503,7 +503,7 @@ describe("chat page split layout host", () => {
     const navigation = setNavigationContext(page);
     page.data = { sessionKey: "main" };
     document.body.append(page);
-    await setLayout(page, createSplitLayout("main"));
+    setLayout(page, createSplitLayout("main"));
     await settleChatPage(page);
 
     const panes = [...page.querySelectorAll<RenderedPane>("openclaw-chat-pane")];
@@ -547,7 +547,7 @@ describe("chat page split layout host", () => {
     itemAt(cells, 0, "split cell").dispatchEvent(new Event("focusin", { bubbles: true }));
     expect(navigation.replace).toHaveBeenCalledOnce();
 
-    await setLayout(page, insertPane(singlePaneLayout("c1", "p1", "main"), "p1", "main", "down"));
+    setLayout(page, insertPane(singlePaneLayout("c1", "p1", "main"), "p1", "main", "down"));
     await settleChatPage(page);
     const horizontal = expectDefined(
       page.querySelector<RenderedDivider>("resizable-divider"),
@@ -571,7 +571,7 @@ describe("chat page split layout host", () => {
       const navigation = setNavigationContext(page);
       page.data = { sessionKey: "main", face: "chat" };
       document.body.append(page);
-      await setLayout(page, setPaneSession(createSplitLayout("main"), "p1", WORK_SESSION_KEY));
+      setLayout(page, setPaneSession(createSplitLayout("main"), "p1", WORK_SESSION_KEY));
       await settleChatPage(page);
       const [dashboard, chat] = [...page.querySelectorAll<RenderedPane>("openclaw-chat-pane")];
       expectDefined(dashboard, "dashboard pane").captureNavigationFace = () => "dashboard";
@@ -609,7 +609,7 @@ describe("chat page split layout host", () => {
     page.data = { sessionKey: "main" };
     document.body.append(page);
     await settleChatPage(page);
-    await setLayout(page, {
+    setLayout(page, {
       columns: [
         {
           id: "c1",
@@ -700,7 +700,7 @@ describe("chat page split layout host", () => {
     page.data = { sessionKey: "main" };
     const navigation = setNavigationContext(page);
     document.body.append(page);
-    await setLayout(page, createSplitLayout("main"));
+    setLayout(page, createSplitLayout("main"));
     await settleChatPage(page);
     dispatchSessionDrag(stubDropBounds(page), "drop", 200, 145);
 
@@ -723,7 +723,7 @@ describe("chat page split layout host", () => {
     const layout = createSplitLayout("main");
     const navigation = setNavigationContext(page);
     document.body.append(page);
-    await setLayout(page, layout);
+    setLayout(page, layout);
     await settleChatPage(page);
     dispatchSessionDrag(stubDropBounds(page), "drop", 200, 100, "main");
 
@@ -808,7 +808,7 @@ describe("chat page split layout host", () => {
       document.body.append(page);
       const layout = createSplitLayout("main");
       const state = chatPageState(page);
-      await setLayout(page, layout);
+      setLayout(page, layout);
       await settleChatPage(page);
 
       const pane = stubDropBounds(page);

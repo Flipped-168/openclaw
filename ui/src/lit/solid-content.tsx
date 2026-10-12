@@ -36,6 +36,11 @@ type NestedSolidRoot = { element: HTMLElement; dispose: () => void };
 let currentLitRoots: Set<NestedSolidRoot> | undefined;
 const litContentMounts = new WeakMap<HTMLElement | DocumentFragment, LitContentMount>();
 
+/** Retire the existing range without restoring a possibly disposed creator. */
+export function unmountLitContent(container: HTMLElement | DocumentFragment): void {
+  litContentMounts.get(container)?.dispose();
+}
+
 /** A top-level Lit caller settles now; nested Solid work settles with its owner. */
 export function flushLegacyContent(): void {
   if (!getOwner() && !currentLitRoots) {
@@ -56,15 +61,16 @@ export function mountLitContent(
   }
   const end = document.createComment("lit-content");
   container.append(end);
+  const owner = getOwner();
   const renderOptions = { ...options, renderBefore: end };
   const roots = new Set<NestedSolidRoot>();
-  // Legacy directives own their writes. Carry the synchronous handoff across the
-  // detached owner so nested roots register here without starting a reentrant flush.
+  // Restore the creator for nested resources; keep the handoff marked so those
+  // roots register here without starting a reentrant flush.
   const commit = <T,>(run: () => T): T => {
     const previous = currentLitRoots;
     currentLitRoots = roots;
     try {
-      return runWithOwner(null, run);
+      return runWithOwner(owner, run);
     } finally {
       currentLitRoots = previous;
     }
@@ -113,7 +119,7 @@ export function mountLitContent(
       }
       disposed = true;
       const nodes = readOwnedNodes();
-      commit(() => part.setConnected(false));
+      runWithOwner(null, () => part.setConnected(false));
       for (const root of roots) {
         root.dispose();
       }
@@ -166,6 +172,7 @@ export function LitContent(props: { value: unknown }): JSX.Element {
 }
 
 class SolidContent extends AsyncDirective {
+  private readonly owner = getOwner();
   private element?: HTMLSpanElement;
   private component?: Component<Record<string, unknown>>;
   private props: Record<string, unknown> = {};
@@ -210,7 +217,7 @@ class SolidContent extends AsyncDirective {
     if (!component || !element) {
       return;
     }
-    // The directive owns this root even when a plugin delegates from a Solid effect.
+    // The directive controls connection; its creator owns resources mounted by later effects.
     const withinOwner = Boolean(getOwner()) || Boolean(currentLitRoots);
     const view = () => {
       const [props, setProps] = createSignal(this.props, { ownedWrite: true });
@@ -232,7 +239,7 @@ class SolidContent extends AsyncDirective {
         </SolidContentPresentation>
       );
     };
-    this.dispose = runWithOwner(null, () =>
+    this.dispose = runWithOwner(this.owner, () =>
       withinOwner
         ? createRoot((dispose) => {
             insert(element, view());

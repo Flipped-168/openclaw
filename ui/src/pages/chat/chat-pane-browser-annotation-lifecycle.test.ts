@@ -12,8 +12,11 @@ import {
   registerChatAttachmentPayload,
   releaseChatAttachmentPayload,
 } from "./attachment-payload-store.ts";
+import { ChatPaneRuntime } from "./chat-pane-render.ts";
 import {
   createSessionCapabilityFixture,
+  createPaneTestHost,
+  getPaneTestRuntime,
   createSessionContext,
   createTestChatPane,
   type TestChatPane,
@@ -70,7 +73,11 @@ describe("staged attachment composer adoption", () => {
     paneId: string,
     sessionKey: string,
   ): TestChatPane {
-    const pane = document.createElement("openclaw-chat-pane") as unknown as TestChatPane;
+    // SAFETY: The fixture uses the real pane runtime and its forwarded test surface.
+    const pane = createPaneTestHost(
+      "openclaw-chat-runtime-test",
+      ChatPaneRuntime,
+    ) as unknown as TestChatPane;
     Object.defineProperty(pane, "isConnected", { configurable: true, value: true });
     pane.context = context;
     pane.paneId = paneId;
@@ -79,7 +86,7 @@ describe("staged attachment composer adoption", () => {
     vi.spyOn(pane.chatState.composerPersistence, "start").mockImplementation(() => {
       throw stopAfterRestore;
     });
-    expect(() => pane.connectedCallback()).toThrow(stopAfterRestore);
+    expect(() => getPaneTestRuntime(pane).connectedCallback()).toThrow(stopAfterRestore);
     return pane;
   }
 

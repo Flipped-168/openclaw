@@ -1,5 +1,5 @@
 import { html, LitElement } from "lit";
-import { createEffect, createSignal, onCleanup } from "solid-js";
+import { createEffect, createSignal, getOwner, onCleanup, runWithOwner } from "solid-js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type {
   ControlUiHost,
@@ -158,9 +158,12 @@ describe("native UI built-in delegation", () => {
       return button;
     }
     const view = mountSolid(() => {
+      const owner = getOwner();
       const target = document.createElement("div");
       createEffect(label, (value) =>
-        renderPluginTemplate(solidContent(DefaultView, { label: value }), target),
+        runWithOwner(owner, () =>
+          renderPluginTemplate(solidContent(DefaultView, { label: value }), target),
+        ),
       );
       onCleanup(() => renderPluginTemplate(undefined, target));
       return target;
@@ -175,6 +178,9 @@ describe("native UI built-in delegation", () => {
     view.unmount();
     expect(button.isConnected).toBe(false);
     expect(disposed).toHaveBeenCalledOnce();
+    expect(
+      warning.mock.calls.flat().some((value) => String(value).includes("RUN_WITH_DISPOSED_OWNER")),
+    ).toBe(false);
     warning.mockRestore();
   });
 

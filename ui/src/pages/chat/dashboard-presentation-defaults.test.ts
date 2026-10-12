@@ -661,7 +661,7 @@ describe("dashboard shared default in the real header Layout menu", () => {
     expect(patch).toHaveBeenCalledTimes(1);
     expect(showToast).toHaveBeenCalledWith({
       message: t("chat.sidePanel.defaultSaved"),
-      anchor: h.pane,
+      anchor: h.pane.element,
     });
   });
 
@@ -683,7 +683,7 @@ describe("dashboard shared default in the real header Layout menu", () => {
     expect(h.state.chatError).toContain("Dashboard default denied");
     expect(showToast).toHaveBeenCalledWith({
       message: t("chat.sidePanel.defaultSaveError", { error: "Dashboard default denied" }),
-      anchor: h.pane,
+      anchor: h.pane.element,
     });
     expect((await h.header()).querySelector(defaultAction)?.hasAttribute("disabled")).toBe(false);
     expect(h.saved()).toEqual(before);

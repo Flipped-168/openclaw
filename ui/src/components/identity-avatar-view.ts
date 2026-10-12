@@ -201,7 +201,7 @@ class IdentityAvatarImageDirective extends AsyncDirective {
     runWithOwner(null, () =>
       createRoot((dispose) => {
         this.dispose = dispose;
-        const [input, publish] = createSignal(this.input);
+        const [input, publish] = createSignal(this.input, { ownedWrite: true });
         this.publish = publish;
         bindIdentityAvatarImage(input)(this.image);
       }),

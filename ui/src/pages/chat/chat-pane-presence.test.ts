@@ -5,11 +5,11 @@ import { expect, it, onTestFinished, vi } from "vitest";
 import type { PresenceEntry } from "../../api/types.ts";
 import type { PresencePayload } from "../../app/user-profile.ts";
 import { settleLitElement } from "../../test-helpers/lit-settle.ts";
-import { ChatPaneBase } from "./chat-pane-base.ts";
 import {
   createGatewayBrowserClientFixture,
   createInitializationContext,
   createRenderTestChatPane,
+  connectPaneTestView,
 } from "./chat-pane.test-support.ts";
 
 const sessionKey = "agent:main:dashboard:presence";
@@ -40,10 +40,10 @@ async function createPane(presence: PresenceEntry[]) {
   state.sessionKey = sessionKey;
   state.chatMessages = [{ role: "assistant", content: "Retained conversation", timestamp: 1 }];
   pane.presencePayload = { presence };
-  ChatPaneBase.prototype.connectedCallback.call(pane);
+  connectPaneTestView(pane);
   await settleLitElement(pane);
-  onTestFinished(() => ChatPaneBase.prototype.disconnectedCallback.call(pane));
-  return { pane, context, state, update: vi.spyOn(pane, "performUpdate") };
+  onTestFinished(() => pane.disconnectedCallback());
+  return { pane, context, state, update: vi.spyOn(pane, "render") };
 }
 
 it.each([

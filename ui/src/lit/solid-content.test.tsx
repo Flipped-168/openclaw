@@ -2,14 +2,23 @@
 
 import { html, nothing, render } from "lit";
 import { AsyncDirective, directive } from "lit/async-directive.js";
-import { Show, createMemo, createSignal, onCleanup, onSettled } from "solid-js";
-import { describe, expect, it, vi } from "vitest";
+import {
+  Show,
+  createMemo,
+  createSignal,
+  getOwner,
+  onCleanup,
+  onSettled,
+  runWithOwner,
+} from "solid-js";
+import { describe, expect, it, onTestFinished, vi } from "vitest";
 import { mountSolid } from "../test-helpers/mount-solid.ts";
 import { flush } from "../test-helpers/solid-settle.ts";
 import { LitContent as LegacyOutlet } from "./solid-bridge.ts";
 import {
   LitContent,
   mountLitContent,
+  unmountLitContent,
   solidContent,
   SolidContentPresentation,
 } from "./solid-content.tsx";
@@ -37,8 +46,8 @@ describe("Lit and Solid content boundaries", () => {
       expect(button.textContent).toBe("Second");
       expect(disconnected).not.toHaveBeenCalled();
 
-      mounted.dispose();
-      mounted.dispose();
+      unmountLitContent(container);
+      unmountLitContent(container);
       expect(container.childNodes).toHaveLength(0);
       expect(disconnected).toHaveBeenCalledOnce();
 
@@ -207,9 +216,10 @@ describe("Lit and Solid content boundaries", () => {
       return <LitContent value={html`${solidContent(DefaultView, {})}`} />;
     }
     function PluginSlot() {
+      const owner = getOwner();
       let slot!: HTMLDivElement;
       onSettled(() => {
-        render(solidContent(DelegatedView, {}), slot);
+        runWithOwner(owner, () => render(solidContent(DelegatedView, {}), slot));
         return () => render(nothing, slot);
       });
       return (
@@ -266,6 +276,53 @@ describe("Lit and Solid content boundaries", () => {
     }
   });
 
+  it("mounts and reconnects Solid content introduced by a Lit content effect", async () => {
+    const warnings = vi.spyOn(console, "warn");
+    onTestFinished(() => warnings.mockRestore());
+    const disposed = vi.fn();
+    function Counter(props: { label: string }) {
+      const [count, setCount] = createSignal(0);
+      onCleanup(disposed);
+      return (
+        <button type="button" onClick={() => setCount((current) => current + 1)}>
+          {props.label}: {count()}
+        </button>
+      );
+    }
+    const [value, setValue] = createSignal<unknown>(nothing);
+    const [presented, setPresented] = createSignal(true);
+    const content = (label: string) => html`${solidContent(Counter, { label })}`;
+    const view = mountSolid(() => (
+      <SolidContentPresentation value={presented}>
+        <LitContent value={value()} />
+      </SolidContentPresentation>
+    ));
+
+    setValue(content("First"));
+    flush();
+    const button = view.getByRole("button", { name: "First: 0" });
+    button.click();
+    flush();
+    setValue(content("Second"));
+    flush();
+    expect(view.getByRole("button", { name: "Second: 1" })).toBe(button);
+
+    setPresented(false);
+    flush();
+    await Promise.resolve();
+    expect(disposed).not.toHaveBeenCalled();
+    setPresented(true);
+    flush();
+    expect(view.getByRole("button", { name: "Second: 1" })).toBe(button);
+    view.unmount();
+    await Promise.resolve();
+    expect(disposed).toHaveBeenCalledOnce();
+    expect(
+      warnings.mock.calls
+        .flat()
+        .some((message) => String(message).includes("RUN_WITH_DISPOSED_OWNER")),
+    ).toBe(false);
+  });
   it.each(["replace", "unmount"] as const)(
     "parks nested Solid content and retires it on %s",
     async (removal) => {

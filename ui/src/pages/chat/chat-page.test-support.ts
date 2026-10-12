@@ -5,26 +5,14 @@ import type { GatewayBrowserClient, GatewayHelloOk } from "../../api/gateway.ts"
 import { createChatSubmissions } from "../../app/chat-submissions.ts";
 import type { ApplicationContext } from "../../app/context.ts";
 import type { ApplicationGatewaySnapshot } from "../../app/gateway.ts";
-import {
-  createGatewayHarness,
-  createTestSessionCapability,
-} from "../../lib/sessions/session-capability.test-support.ts";
+import { createGatewayHarness } from "../../lib/sessions/session-capability.test-support.ts";
 import { createTestGatewayClient } from "../../test-helpers/gateway-client.ts";
+import { createChatPageSessions } from "./chat-page-sessions.test-support.ts";
 import { chatPageState, type ChatPage } from "./chat-page.ts";
 import type { ChatSplitLayout } from "./split-layout-types.ts";
 import { insertPane } from "./split-layout.ts";
 
-export function createChatPageSessions(
-  gateway: Parameters<typeof createTestSessionCapability>[0] = {
-    snapshot: { client: null, phase: "stopped", hello: null },
-    subscribe: () => () => undefined,
-    subscribeEvents: () => () => undefined,
-  },
-) {
-  const sessions = createTestSessionCapability(gateway);
-  onTestFinished(() => sessions.dispose());
-  return sessions;
-}
+export { createChatPageSessions } from "./chat-page-sessions.test-support.ts";
 
 export function createChatPageNavigationContext() {
   const router = createRouter({ routes: [] });

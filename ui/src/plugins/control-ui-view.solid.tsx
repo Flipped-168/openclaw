@@ -1,5 +1,13 @@
 import type { BoardGetParams } from "@openclaw/gateway-protocol";
-import { createEffect, createSignal, onCleanup, onSettled, Show } from "solid-js";
+import {
+  createEffect,
+  createSignal,
+  getOwner,
+  onCleanup,
+  onSettled,
+  runWithOwner,
+  Show,
+} from "solid-js";
 import type {
   ControlUiSurface,
   ControlUiSurfaceProps,
@@ -63,11 +71,12 @@ export function observePluginProperties<P extends object>(
 }
 
 function MountedContent(props: { value: unknown; host?: object }) {
+  const owner = getOwner();
   let container!: HTMLDivElement;
   createEffect(
     () => ({ value: props.value, host: props.host }),
     ({ value, host }) => {
-      renderPluginTemplate(value, container, host);
+      runWithOwner(owner, () => renderPluginTemplate(value, container, host));
     },
   );
   onCleanup(() => renderPluginTemplate(undefined, container));
@@ -84,6 +93,7 @@ function MountedContent(props: { value: unknown; host?: object }) {
 const views = new WeakMap<HTMLElement, { focus(options?: FocusOptions): void }>();
 
 function PluginViewContent(props: PluginViewProps, host: PluginViewElement) {
+  const owner = getOwner();
   const context = useOptionalApplication();
   const [revision, setRevision] = createSignal(0, { ownedWrite: true });
   const notify = () => setRevision((value) => value + 1);
@@ -220,7 +230,9 @@ function PluginViewContent(props: PluginViewProps, host: PluginViewElement) {
       };
       handle?.update?.(viewContext);
       for (const target of defaultContainers) {
-        renderPluginTemplate(host.defaultView, target, host.defaultHost ?? host);
+        runWithOwner(owner, () =>
+          renderPluginTemplate(host.defaultView, target, host.defaultHost ?? host),
+        );
       }
     } catch (failure) {
       fail(failure);
@@ -284,7 +296,9 @@ function PluginViewContent(props: PluginViewProps, host: PluginViewElement) {
             throw new Error("This plugin UI view has ended.");
           }
           defaultContainers.add(target);
-          renderPluginTemplate(host.defaultView, target, host.defaultHost ?? host);
+          runWithOwner(owner, () =>
+            renderPluginTemplate(host.defaultView, target, host.defaultHost ?? host),
+          );
           notify();
           return () => {
             if (!defaultContainers.delete(target)) {
@@ -303,9 +317,10 @@ function PluginViewContent(props: PluginViewProps, host: PluginViewElement) {
     }
   };
   function ViewRoot() {
+    const viewOwner = getOwner();
     let container!: HTMLDivElement;
     onSettled(() => {
-      mount(container);
+      runWithOwner(viewOwner, () => mount(container));
     });
     return (
       <div
