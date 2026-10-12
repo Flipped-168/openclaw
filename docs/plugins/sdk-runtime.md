@@ -91,16 +91,22 @@ The timeout defaults to 30 seconds.
 
 The fork uses the session's model and harness, with no model override. Codex
 inherits the conversation and tool definitions in an ephemeral thread, but denies
-every tool call at dispatch. It reuses the live parent's recorded native settings
-and admitted inference instructions rather than rebuilding the prompt. The fork
-keeps the parent's cache routing but has its own thread, session, and model
-authority for the background request's lifetime. Start a normal parent turn in
-the current runtime before requesting a fork. The native hook relay must be
+local tool calls at dispatch and disables provider-hosted web search. Disabling
+search can reduce prompt-cache reuse for a search-enabled parent. It reuses the
+parent's recorded native settings and prepared inference instructions, including
+after the parent turn completes, rather than rebuilding the prompt. The fork has
+its own thread, session, and current model authority. Start a normal parent turn
+in the current runtime before requesting a fork. The native hook relay must be
 enabled and available; otherwise the request fails closed.
 The built-in `openclaw` runtime replays the parent's recorded provider request
 with one appended user message, preserving its system prompt, tools, reasoning
-settings, and prompt-cache affinity for OpenAI and Anthropic. Tool calls are
-denied without execution, with at most two additional inference attempts.
+settings, and prompt-cache affinity for OpenAI and Anthropic. It reuses prepared
+payload data without re-running the parent's one-shot continuation hooks.
+Tool choice is set to `none` before dispatch to prevent hosted tool execution;
+local tool calls are also denied, with at most two additional inference attempts.
+On Anthropic, changing tool choice invalidates the messages cache, but preserves
+the tool and system caches. Other APIs without a supported hosted-tool prohibition
+are rejected when the recorded request contains tools.
 Snapshots stay in bounded process memory until expiry or session cleanup.
 Read-only forks do not acquire workspace placement authority, so a parent's
 pending placement publication does not block them. Session reset or deletion
@@ -112,10 +118,12 @@ tool-free context. CLI backends must explicitly declare tool-free side-question 
 
 Conversation access is required through
 `plugins.entries.<id>.hooks.allowConversationAccess` (enabled by default only for
-bundled plugins). Requests share the plugin background-work owner and are
-cancelled when its runtime is retired. A fork does not write a transcript, deliver
-an answer, fire agent-turn lifecycle hooks, or consume queued injections or
-steering. Missing session context and unsupported harnesses produce errors.
+bundled plugins). The caller must also have the target session's `sessions.get`
+read access. That authority, the Gateway binding, and conversation access remain
+live through inference and return. Requests share the plugin background-work
+owner and are cancelled when its runtime is retired. A fork does not write a
+transcript, deliver an answer, fire agent-turn lifecycle hooks, or consume queued
+injections or steering. Missing session context and unsupported harnesses produce errors.
 
 ## Storing runtime references
 

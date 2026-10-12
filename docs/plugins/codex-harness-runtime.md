@@ -24,6 +24,16 @@ cache writes, and every completed model call in the side thread's native tool
 loop; replayed response IDs are counted once. The visible reply still contains
 only the last answer, and the main session's usage and context snapshot stay unchanged.
 
+Tool-denied `/btw` forks reuse the parent's prepared thread and turn settings.
+On managed inference routes, the last prepared private instruction prefix stays
+in memory after the parent turn finishes: up to 256 thread prefixes per route,
+each at most 256 KiB. Closing the thread or client removes it. That snapshot is
+context only, not continuing authority from the completed parent; each fork uses
+the current side request's model authorization and cancellation lifetime.
+Native tools are denied through the required PreToolUse relay. Hosted web search
+bypasses that relay, so these forks explicitly set Codex `web_search: "disabled"`,
+even when search is enabled on the parent.
+
 For native connected apps, Codex also owns the final per-thread app and tool
 policy. OpenClaw caches a runtime-and-workspace-scoped `plugin/installed`
 snapshot, reads exact configured plugin details, provisionally admits only

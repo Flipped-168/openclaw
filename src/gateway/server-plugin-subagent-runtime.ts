@@ -23,6 +23,7 @@ import { resolvePluginSubagentCompletionRequester } from "../plugins/runtime/sub
 import type { LlmCompleteUsage } from "../plugins/runtime/types-core.js";
 import type { PluginRuntime } from "../plugins/runtime/types.js";
 import type { PluginOrigin } from "../plugins/types.js";
+import { createBackgroundWorkOwner } from "../process/background-work.js";
 import { enqueueCommandInLane } from "../process/command-queue.js";
 import { getGatewayRestartDrainSignal } from "../process/gateway-work-admission.js";
 import { CommandLane } from "../process/lanes.js";
@@ -32,6 +33,7 @@ import {
   dispatchGatewayMethodInProcess,
   getInProcessGatewayRequestContext,
   prepareInProcessAgentExecution,
+  withInProcessGatewayRead,
 } from "./server-plugin-in-process-dispatch.js";
 import { resolvePluginSubagentToolsAlsoAllow } from "./server-plugin-runtime-client.js";
 import { loadGatewaySessionEntryReadOnlyInWorker } from "./session-utils-store-worker.js";
@@ -238,85 +240,103 @@ export function createGatewaySubagentRuntime(
         resolveGatewayContext,
       });
       try {
-        const assertCurrent = () => {
+        const assertExecutionCurrent = () => {
           runtimeLifetime?.throwIfAborted();
           execution.assertCurrent();
           assertConversationAccess(execution.context.getRuntimeConfig());
         };
         await execution.authorize();
-        assertCurrent();
-        const signals = [params.signal, runtimeLifetime, execution.signal].filter(
-          (signal): signal is AbortSignal => signal !== undefined,
-        );
-        return await createBackgroundWorkOwner({
-          owner: `plugin:${pluginId}`,
-          maxConcurrent: 3,
-        }).enqueue(
-          async (signal) => {
-            await execution.authorize();
-            assertCurrent();
-            signal.throwIfAborted();
-            const cfg = execution.context.getRuntimeConfig();
-            const target = await loadGatewaySessionEntryReadOnlyInWorker({
-              cfg,
-              key: params.sessionKey,
-              agentId,
-              assertActive: assertCurrent,
-            });
-            assertCurrent();
-            signal.throwIfAborted();
-            if (!target.entry?.sessionId) {
-              throw new Error(`No active session context for "${params.sessionKey}".`);
-            }
-            const model = resolveSessionModelRef(cfg, target.entry, agentId);
-            assertOperatorModelAllowed(execution.operatorAuthority, model);
-            const timeoutMs = resolveTimerTimeoutMs(params.timeoutMs, 30_000);
-            const runSignal = AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]);
-            const sessionEntry = target.entry;
-            // Lazy: a static import pulls the agent runtime into the Gateway startup chunk
-            // and the build rejects it (INEFFECTIVE_DYNAMIC_IMPORT on subagent-registry).
-            const { runBtwSideQuestion } = await import("../agents/btw.js");
-            assertCurrent();
-            signal.throwIfAborted();
-            let usage: LlmCompleteUsage | undefined;
-            const result = await execution.run(() =>
-              runBtwSideQuestion({
-                cfg,
-                agentId,
-                agentDir: resolveAgentDir(cfg, agentId),
-                ...model,
-                question: params.message,
-                sessionEntry,
-                sessionKey: target.canonicalKey,
-                storePath: target.storePath,
-                isNewSession: false,
-                resolvedReasoningLevel: "off",
-                resolvedThinkLevel: normalizeThinkLevel(sessionEntry.thinkingLevel),
-                allowGatewaySubagentBinding: true,
-                toolCalls: "deny",
-                opts: { abortSignal: runSignal, timeoutOverrideMs: timeoutMs },
-                onUsage: (value) => {
-                  usage = value
-                    ? {
-                        inputTokens: value.input,
-                        outputTokens: value.output,
-                        cacheReadTokens: value.cacheRead,
-                        cacheWriteTokens: value.cacheWrite,
-                        totalTokens: value.total,
-                        costUsd: value.cost?.total,
-                      }
-                    : undefined;
-                },
-              }),
-            );
-            assertCurrent();
-            runSignal.throwIfAborted();
-            if (!result?.text) {
-              throw new Error("Session fork produced no answer.");
-            }
-            return { text: result.text, ...(usage ? { usage } : {}) };
+        assertExecutionCurrent();
+        return await withInProcessGatewayRead(
+          {
+            method: "sessions.get",
+            requestParams: { key: params.sessionKey },
+            scope,
+            resolveGatewayContext,
+            callerAuthorityError: "Plugin session fork caller authority expired.",
           },
-          { abortSignal: signals.length ? AbortSignal.any(signals) : undefined },
+          async (_resolved, assertReadCurrent) => {
+            const assertCurrent = () => {
+              assertExecutionCurrent();
+              assertReadCurrent();
+            };
+            assertCurrent();
+            const signals = [params.signal, runtimeLifetime, execution.signal].filter(
+              (signal): signal is AbortSignal => signal !== undefined,
+            );
+            return await createBackgroundWorkOwner({
+              owner: `plugin:${pluginId}`,
+              maxConcurrent: 3,
+            }).enqueue(
+              async (signal) => {
+                await execution.authorize();
+                assertCurrent();
+                signal.throwIfAborted();
+                const cfg = execution.context.getRuntimeConfig();
+                const target = await loadGatewaySessionEntryReadOnlyInWorker({
+                  cfg,
+                  key: params.sessionKey,
+                  agentId,
+                  assertActive: assertCurrent,
+                });
+                assertCurrent();
+                signal.throwIfAborted();
+                if (!target.entry?.sessionId) {
+                  throw new Error(`No active session context for "${params.sessionKey}".`);
+                }
+                const model = resolveSessionModelRef(cfg, target.entry, agentId);
+                assertOperatorModelAllowed(execution.operatorAuthority, model);
+                const timeoutMs = resolveTimerTimeoutMs(params.timeoutMs, 30_000);
+                const runSignal = AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]);
+                const sessionEntry = target.entry;
+                // Lazy: a static import pulls the agent runtime into the Gateway startup chunk
+                // and the build rejects it (INEFFECTIVE_DYNAMIC_IMPORT on subagent-registry).
+                const { runBtwSideQuestion } = await import("../agents/btw.js");
+                assertCurrent();
+                signal.throwIfAborted();
+                let usage: LlmCompleteUsage | undefined;
+                const result = await execution.run(() =>
+                  runBtwSideQuestion({
+                    cfg,
+                    agentId,
+                    agentDir: resolveAgentDir(cfg, agentId),
+                    ...model,
+                    question: params.message,
+                    sessionEntry,
+                    sessionKey: target.canonicalKey,
+                    storePath: target.storePath,
+                    isNewSession: false,
+                    resolvedReasoningLevel: "off",
+                    resolvedThinkLevel: normalizeThinkLevel(sessionEntry.thinkingLevel),
+                    allowGatewaySubagentBinding: true,
+                    assertCurrent,
+                    operatorAuthority: execution.operatorAuthority,
+                    toolCalls: "deny",
+                    opts: { abortSignal: runSignal, timeoutOverrideMs: timeoutMs },
+                    onUsage: (value) => {
+                      usage = value
+                        ? {
+                            inputTokens: value.input,
+                            outputTokens: value.output,
+                            cacheReadTokens: value.cacheRead,
+                            cacheWriteTokens: value.cacheWrite,
+                            totalTokens: value.total,
+                            costUsd: value.cost?.total,
+                          }
+                        : undefined;
+                    },
+                  }),
+                );
+                assertCurrent();
+                runSignal.throwIfAborted();
+                if (!result?.text) {
+                  throw new Error("Session fork produced no answer.");
+                }
+                return { text: result.text, ...(usage ? { usage } : {}) };
+              },
+              { abortSignal: signals.length ? AbortSignal.any(signals) : undefined },
+            );
+          },
         );
       } finally {
         execution.release();

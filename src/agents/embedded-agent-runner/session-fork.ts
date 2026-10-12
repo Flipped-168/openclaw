@@ -116,13 +116,13 @@ export function wrapStreamFnWithSessionFork(
       })),
     });
     const savedModel = structuredClone({ ...model, headers: safeHeaders(model.headers) });
-    const savedOptions = { ...requestOptions, headers: safeHeaders(headers), onPayload };
+    const savedOptions = { ...requestOptions, headers: safeHeaders(headers) };
     // Internal symbol carriers belong to the parent run, not the independent request.
     for (const key of Object.getOwnPropertySymbols(savedOptions)) {
       Reflect.deleteProperty(savedOptions, key);
     }
     for (const key of Object.keys(savedOptions)) {
-      if (key !== "onPayload" && typeof Reflect.get(savedOptions, key) === "function") {
+      if (typeof Reflect.get(savedOptions, key) === "function") {
         Reflect.deleteProperty(savedOptions, key);
       }
     }
@@ -187,7 +187,7 @@ function stripNewCacheMarkers(value: unknown): unknown {
   );
 }
 
-/** Reuse the prepared transport and its hook chain, never the agent or its tool executor. */
+/** Replay prepared payload data, never the parent's one-shot admission hooks or tool executor. */
 export async function runEmbeddedSessionFork(params: {
   sessionId: string;
   agentId: string;
@@ -234,16 +234,14 @@ export async function runEmbeddedSessionFork(params: {
       signal: params.signal,
       // Background reviews cannot advertise an asynchronous tool execution capability.
       asyncToolExecution: false,
-      onPayload: async (payload, payloadModel) => {
-        const replacement = await snapshot.options.onPayload?.(payload, payloadModel);
+      onPayload: (payload) => {
         assertCurrent();
-        const finalPayload = replacement === undefined ? payload : replacement;
-        if (!isRecord(finalPayload)) {
+        if (!isRecord(payload)) {
           throw new Error("Cache-parity session fork requires an object provider request.");
         }
         const key = Array.isArray(snapshot.payload.input) ? "input" : "messages";
         const prefix = snapshot.payload[key];
-        const messages = finalPayload[key];
+        const messages = payload[key];
         if (
           !Array.isArray(prefix) ||
           !Array.isArray(messages) ||
@@ -260,6 +258,21 @@ export async function runEmbeddedSessionFork(params: {
           [key]: [...prefix, ...messages.slice(prefix.length).map(stripNewCacheMarkers)],
         });
         delete replay.previous_response_id;
+        if (Array.isArray(replay.tools) && replay.tools.length > 0) {
+          // Keep schemas/cache breakpoints, but prevent provider-hosted execution.
+          // Anthropic invalidates its messages cache when tool_choice changes.
+          if (model.api === "anthropic-messages") {
+            replay.tool_choice = { type: "none" };
+          } else if (
+            model.api === "openai-responses" ||
+            model.api === "openai-chatgpt-responses" ||
+            model.api === "openai-completions"
+          ) {
+            replay.tool_choice = "none";
+          } else {
+            throw new Error("Session fork cannot disable hosted tools for this provider API.");
+          }
+        }
         return replay;
       },
     };

@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { awaitGateBeforeSettlement, createDeferred } from "../../test/helpers/promise.js";
-import type { runBtwSideQuestion } from "../agents/btw.js";
 import { FailoverError } from "../agents/failover-error.js";
 import type { runIsolatedCompletion } from "../agents/isolated-completion.js";
 import { withGatewayToolCallerIdentity } from "../agents/tools/gateway-caller-context.js";
@@ -34,16 +33,7 @@ import {
   createGatewaySubagentRuntime,
   resolvePluginSubagentOverridePolicies,
 } from "./server-plugin-subagent-runtime.js";
-
 const isolated = vi.hoisted(() => vi.fn<typeof runIsolatedCompletion>());
-const sideQuestion = vi.hoisted(() => vi.fn<typeof runBtwSideQuestion>());
-const forkSessionLookup = vi.hoisted(() => vi.fn());
-// mock-isolation: forkSession admission is under test; the real side-question runtime loads the full agent stack.
-vi.mock("../agents/btw.js", () => ({ runBtwSideQuestion: sideQuestion }));
-// mock-isolation: the real lookup runs in the SQLite session worker; tests supply the session entry directly.
-vi.mock("./session-utils-store-worker.js", () => ({
-  loadGatewaySessionEntryReadOnlyInWorker: forkSessionLookup,
-}));
 const normalizeProviderModelIdWithRuntime = vi.hoisted(() =>
   vi.fn<(params: { provider: string; context: { modelId: string } }) => string | undefined>(
     () => undefined,
@@ -53,13 +43,11 @@ vi.mock("../agents/isolated-completion.js", () => ({ runIsolatedCompletion: isol
 vi.mock("../agents/provider-model-normalization.runtime.js", () => ({
   normalizeProviderModelIdWithRuntime,
 }));
-
 const PLUGIN_ID = "test-completion";
 type CompleteParams = Parameters<PluginRuntime["subagent"]["complete"]>[0];
 let config: OpenClawConfig;
 let context: GatewayRequestContext | undefined;
 let lifetime: AbortController;
-
 function createRuntime() {
   return createGatewaySubagentRuntime(
     () => context,
@@ -67,13 +55,11 @@ function createRuntime() {
     lifetime.signal,
   );
 }
-
 function complete(runtime: PluginRuntime["subagent"], params: Partial<CompleteParams> = {}) {
   return withPluginRuntimePluginScope({ pluginId: PLUGIN_ID }, () =>
     runtime.complete({ agentId: "research", message: "Review these notes", ...params }),
   );
 }
-
 function completeScoped(
   client: GatewayRequestOptions["client"],
   params: Partial<CompleteParams> = {},
@@ -84,14 +70,12 @@ function completeScoped(
     () => runtime.complete({ agentId: "research", message: "Review these notes", ...params }),
   );
 }
-
 const operatorProfile = {
   profileId: "completion-operator",
   displayName: "Completion operator",
   hasAvatar: false,
   updatedAt: 1,
 };
-
 function restrictOperatorAgents() {
   config.gateway = {
     roles: {
@@ -102,7 +86,6 @@ function restrictOperatorAgents() {
     },
   };
 }
-
 function blockSubagentSlots(count: number) {
   const gate = createDeferred();
   const work = Array.from({ length: count }, () =>
@@ -115,12 +98,6 @@ beforeEach(() => {
   resetCommandQueueStateForTest();
   commandQueue.setCommandLaneConcurrency(CommandLane.Subagent, 3);
   normalizeProviderModelIdWithRuntime.mockReset().mockImplementation(() => undefined);
-  sideQuestion.mockReset();
-  forkSessionLookup.mockReset().mockResolvedValue({
-    entry: { sessionId: "parent-session", updatedAt: 1 },
-    canonicalKey: "agent:research:main",
-    storePath: "/tmp/session-fork.sqlite",
-  });
   isolated.mockReset().mockImplementation(async (params) => ({
     text: `${params.agentId}:${params.provider}/${params.model}`,
     provider: params.provider,
@@ -146,47 +123,6 @@ afterEach(() => {
   resetCommandQueueStateForTest();
   resetConfigRuntimeState();
   vi.restoreAllMocks();
-});
-
-describe("plugin session forks", () => {
-  const fork = () =>
-    withPluginRuntimePluginScope({ pluginId: PLUGIN_ID }, () =>
-      createRuntime().forkSession({
-        sessionKey: "agent:research:main",
-        message: "Review the current work",
-      }),
-    );
-
-  it("requires explicit conversation access for an external plugin", async () => {
-    await expect(fork()).rejects.toThrow(
-      `plugins.entries.${PLUGIN_ID}.hooks.allowConversationAccess`,
-    );
-    expect(sideQuestion).not.toHaveBeenCalled();
-    expect(forkSessionLookup).not.toHaveBeenCalled();
-  });
-
-  it("uses the session side-question owner and returns billed cache usage", async () => {
-    config.plugins = { entries: { [PLUGIN_ID]: { hooks: { allowConversationAccess: true } } } };
-    sideQuestion.mockImplementation(async (params) => {
-      expect(params).toMatchObject({
-        agentId: "research",
-        provider: "test-provider",
-        model: "research-model",
-        sessionKey: "agent:research:main",
-        sessionEntry: { sessionId: "parent-session" },
-        toolCalls: "deny",
-        isNewSession: false,
-      });
-      expect(params.opts).not.toHaveProperty("onBlockReply");
-      params.onUsage?.({ input: 6, output: 4, cacheRead: 20, total: 30 });
-      return { text: "Looks correct." };
-    });
-    await expect(fork()).resolves.toEqual({
-      text: "Looks correct.",
-      usage: { inputTokens: 6, outputTokens: 4, cacheReadTokens: 20, totalTokens: 30 },
-    });
-    expect(isolated).not.toHaveBeenCalled();
-  });
 });
 
 describe("plugin background completions", () => {

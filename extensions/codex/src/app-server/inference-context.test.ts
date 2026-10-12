@@ -146,17 +146,31 @@ describe("native inference metadata", () => {
 });
 
 describe("parent-local inference context", () => {
-  it("copies the exact admitted prefix into an independently authorized root fork", () => {
-    const { context, register } = fixture();
+  it("forks the retained prepared prefix after parent cleanup under only the new root's authority", () => {
+    let parentActive = true;
+    const { context, controller, register } = fixture(() => {
+      if (!parentActive) {
+        throw new Error("parent authority ended");
+      }
+    });
     const parent = register("private persona\n\nskills\n\nmemory");
     const expectedInstructions = context.prepare(request("root", parent.generation)).body
       .instructions;
+    parent.release();
+    controller.abort();
+    parentActive = false;
+    expect(() => context.prepare(request("root", parent.generation))).toThrow("current admitted");
+    let forkActive = true;
     const forkController = new AbortController();
     const fork = context.fork({
       sourceThreadId: "root",
       threadId: "fork",
       signal: forkController.signal,
-      assertCurrent: () => {},
+      assertCurrent: () => {
+        if (!forkActive) {
+          throw new Error("fork authority ended");
+        }
+      },
     });
     const source = request("fork", fork.generation);
     const prepared = context.prepare(source);
@@ -171,7 +185,20 @@ describe("parent-local inference context", () => {
         signal: forkController.signal,
         assertCurrent: () => {},
       }),
-    ).toThrow("active parent");
+    ).toThrow("prepared parent");
+    context.forget("root");
+    expect(() =>
+      context.fork({
+        sourceThreadId: "root",
+        threadId: "later",
+        signal: forkController.signal,
+        assertCurrent: () => {},
+      }),
+    ).toThrow("prepared parent");
+    expect(context.prepare(source).body.instructions).toBe(expectedInstructions);
+    forkActive = false;
+    expect(() => context.prepare(source)).toThrow("fork authority ended");
+    forkActive = true;
     forkController.abort();
     expect(() => prepared.assertCurrent()).toThrow();
     expect(() => context.prepare(source)).toThrow("current admitted");
@@ -328,6 +355,42 @@ describe("parent-local inference context", () => {
       "persona B",
     );
     context.close();
+  });
+
+  it("bounds retained prefixes independently of completed turn registrations", () => {
+    const { context, controller } = fixture();
+    const register = (threadId: string) =>
+      context.register({
+        threadId,
+        text: "prepared",
+        signal: controller.signal,
+        assertCurrent: () => {},
+      });
+    for (let index = 0; index < 256; index += 1) {
+      register(`thread-${index}`).release();
+    }
+    expect(() => register("overflow")).toThrow("prepared inference prefix limit");
+    context.forget("thread-0");
+    const replacement = register("replacement");
+    replacement.release();
+    const fork = context.fork({
+      sourceThreadId: "replacement",
+      threadId: "side",
+      signal: controller.signal,
+      assertCurrent: () => {},
+    });
+    expect(context.prepare(request("side", fork.generation)).body.instructions).toBe(
+      "native base\n\nprepared",
+    );
+    context.close();
+    expect(() =>
+      context.fork({
+        sourceThreadId: "replacement",
+        threadId: "after-close",
+        signal: controller.signal,
+        assertCurrent: () => {},
+      }),
+    ).toThrow("closed");
   });
 
   it("bounds context and fences aborts, missing metadata and unsupported request kinds", () => {

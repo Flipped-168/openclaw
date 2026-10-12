@@ -9,7 +9,10 @@ import type { OpenClawConfig } from "../config/types.openclaw.js";
 import type { ImageContent, Message, Model, TextContent } from "../llm/types.js";
 import { withPluginRuntimeGenerationScope } from "../plugins/runtime/generation-scope.js";
 import { runWithAsyncWorkResources } from "../shared/async-work-resources.js";
-import { prepareSystemAgentRunAdmission } from "./admitted-run-context.js";
+import {
+  prepareSystemAgentRunAdmission,
+  type AdmittedRunOperatorAuthority,
+} from "./admitted-run-context.js";
 import { resolveExternalCliAuthOverlayScopeFromSelection } from "./auth-profiles/external-cli-auth-selection.js";
 import { resolveSessionAuthSelection } from "./auth-profiles/session-override.js";
 import type { AuthProfileStore } from "./auth-profiles/types.js";
@@ -395,6 +398,8 @@ export type RunBtwSideQuestionParams = {
   model: string;
   question: string;
   toolCalls?: "deny";
+  assertCurrent?: () => void;
+  operatorAuthority?: AdmittedRunOperatorAuthority;
   /** Background consumers collect usage without recording a user-facing reply. */
   onUsage?: (usage: NormalizedUsage | undefined) => void;
   images?: ImageContent[];

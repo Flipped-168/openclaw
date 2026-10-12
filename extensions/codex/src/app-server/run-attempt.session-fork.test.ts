@@ -6,7 +6,9 @@ import {
 } from "openclaw/plugin-sdk/runtime-config-snapshot";
 import { afterAll, describe, expect, it, vi } from "vitest";
 import { CodexAppServerClient } from "./client.js";
+import { CODEX_INFERENCE_GENERATION_KEY } from "./inference-context.js";
 import { createCodexInferenceModelBinding } from "./inference-dispatch.js";
+import { getCodexInferenceThread, ownCodexInferenceClient } from "./inference-routing.js";
 import { codexNativeSubagentMonitorRuntime } from "./native-subagent-monitor.js";
 import { isJsonObject } from "./protocol.js";
 import {
@@ -24,11 +26,15 @@ import { runCodexAppServerSideQuestion } from "./side-question.js";
 setupRunAttemptTestHooks();
 afterAll(clearRuntimeConfigSnapshot);
 
-describe("active parent session fork", () => {
-  it("uses the recorded parent client and settings across differing acquisition keys", async () => {
+describe("parent session fork", () => {
+  it.each([false, true])("forks with parent cleanup=%s", async (completeParent) => {
     let inferenceAdmitted = false;
+    let sideInstructions: unknown;
     const harness = createStartedThreadHarness(
       async (method, request) => {
+        if (method === "account/read") {
+          return { account: { type: "apiKey" } };
+        }
         if (method === "thread/fork") {
           return threadStartResult("fork-thread");
         }
@@ -39,6 +45,24 @@ describe("active parent session fork", () => {
         ) {
           void (async () => {
             try {
+              const route = getCodexInferenceThread(harness.client, "thread-1");
+              if (!route || !isJsonObject(request.responsesapiClientMetadata)) {
+                throw new Error(
+                  "Expected the parent's managed inference route and child admission",
+                );
+              }
+              sideInstructions = route.context.prepare({
+                instructions: "native base",
+                client_metadata: {
+                  thread_id: "fork-thread",
+                  "x-codex-turn-metadata": JSON.stringify({
+                    thread_id: "fork-thread",
+                    request_kind: "turn",
+                    [CODEX_INFERENCE_GENERATION_KEY]:
+                      request.responsesapiClientMetadata[CODEX_INFERENCE_GENERATION_KEY],
+                  }),
+                },
+              }).body.instructions;
               const execution = await createCodexInferenceModelBinding({
                 client: harness.client,
                 provider: "openai",
@@ -77,6 +101,7 @@ describe("active parent session fork", () => {
       },
       { persistedThreads: [] },
     );
+    ownCodexInferenceClient(harness.client);
     const params = createTestParams();
     setRuntimeConfigSnapshot(params.config ?? {});
     const parent = runCodexAppServerAttempt(params);
@@ -90,6 +115,33 @@ describe("active parent session fork", () => {
       }),
     );
     expect(binding?.clientId).toBe(harness.client.getInstanceId());
+    const route = getCodexInferenceThread(harness.client, binding?.threadId ?? "thread-1");
+    const parentTurn = harness.requests.find(({ method }) => method === "turn/start")?.params;
+    if (
+      !route ||
+      !isJsonObject(parentTurn) ||
+      !isJsonObject(parentTurn.responsesapiClientMetadata)
+    ) {
+      throw new Error("Expected a prepared parent inference generation");
+    }
+    const parentRequest = {
+      instructions: "native base",
+      client_metadata: {
+        thread_id: binding?.threadId ?? "thread-1",
+        "x-codex-turn-metadata": JSON.stringify({
+          thread_id: binding?.threadId ?? "thread-1",
+          request_kind: "turn",
+          [CODEX_INFERENCE_GENERATION_KEY]:
+            parentTurn.responsesapiClientMetadata[CODEX_INFERENCE_GENERATION_KEY],
+        }),
+      },
+    };
+    const expectedInstructions = route.context.prepare(parentRequest).body.instructions;
+    if (completeParent) {
+      await harness.completeTurn({ threadId: binding?.threadId ?? "thread-1", turnId: "turn-1" });
+      await parent;
+      expect(() => route.context.prepare(parentRequest)).toThrow("current admitted");
+    }
     // The parent used native-auth fixture keys; the side request below prepares an API-key route.
     // A fresh key-based acquisition must not replace the bound physical owner.
     const start = vi
@@ -147,6 +199,7 @@ describe("active parent session fork", () => {
       ).resolves.toMatchObject({ text: "Read-only review." });
       expect(start).not.toHaveBeenCalled();
       expect(inferenceAdmitted).toBe(true);
+      expect(sideInstructions).toBe(expectedInstructions);
       expect(
         await codexNativeSubagentMonitorRuntime.captureModelSource({
           client: harness.client,

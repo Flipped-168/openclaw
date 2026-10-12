@@ -1,5 +1,6 @@
 import { defineCodexBuildState } from "../build-state.js";
 import type { CodexAppServerClient } from "./client.js";
+import { forgetCodexInferenceThread } from "./inference-routing.js";
 import type {
   CodexThreadForkParams,
   CodexThreadResumeParams,
@@ -43,8 +44,12 @@ export function forgetCodexClientForkSettings(
   threadId?: string,
 ): void {
   if (threadId === undefined) {
+    for (const id of clients.get(client)?.keys() ?? []) {
+      forgetCodexInferenceThread(client, id);
+    }
     clients.delete(client);
   } else {
+    forgetCodexInferenceThread(client, threadId);
     clients.get(client)?.delete(threadId);
   }
 }

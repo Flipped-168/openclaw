@@ -6,6 +6,7 @@ export { CODEX_INFERENCE_GENERATION_KEY } from "./inference-metadata.js";
 
 const MAX_CONTEXT_BYTES = 256 * 1024;
 const MAX_ACTIVE_ROOTS = 64;
+const MAX_PREPARED_PREFIXES = 256;
 
 type Registration = {
   generation: string;
@@ -18,6 +19,8 @@ type Registration = {
 /** One physical inference transport owns these confidential, nonpersistent snapshots. */
 export function createCodexInferenceContext(assertClientCurrent: () => void) {
   const roots = new Map<string, Registration>();
+  // Prepared bytes survive turn settlement, but confer no execution authority.
+  const prefixes = new Map<string, string>();
   let closed = false;
   const assertOpen = () => {
     if (closed) {
@@ -31,6 +34,7 @@ export function createCodexInferenceContext(assertClientCurrent: () => void) {
       text: string;
       signal: AbortSignal;
       assertCurrent: () => void;
+      retainPrefix?: boolean;
     }) {
       assertOpen();
       params.signal.throwIfAborted();
@@ -40,6 +44,13 @@ export function createCodexInferenceContext(assertClientCurrent: () => void) {
       }
       if (!roots.has(params.threadId) && roots.size >= MAX_ACTIVE_ROOTS) {
         throw new Error("Codex parent-local inference root limit reached");
+      }
+      if (
+        params.retainPrefix !== false &&
+        !prefixes.has(params.threadId) &&
+        prefixes.size >= MAX_PREPARED_PREFIXES
+      ) {
+        throw new Error("Codex prepared inference prefix limit reached; reconnect before retrying");
       }
       roots.get(params.threadId)?.release();
       const controller = new AbortController();
@@ -66,10 +77,13 @@ export function createCodexInferenceContext(assertClientCurrent: () => void) {
         },
       };
       roots.set(params.threadId, registration);
+      if (params.retainPrefix !== false) {
+        prefixes.set(params.threadId, params.text);
+      }
       params.signal.addEventListener("abort", registration.release, { once: true });
       return { generation: registration.generation, release: registration.release };
     },
-    /** Authorized root forks copy the admitted prefix without borrowing the parent's lifetime. */
+    /** A retained prefix is data; only the new root's caller grants model authority. */
     fork(params: {
       sourceThreadId: string;
       threadId: string;
@@ -77,17 +91,21 @@ export function createCodexInferenceContext(assertClientCurrent: () => void) {
       assertCurrent: () => void;
     }) {
       assertOpen();
-      const source = roots.get(params.sourceThreadId);
-      if (!source) {
-        throw new Error("Cache-parity fork has no active parent inference context.");
+      const text = prefixes.get(params.sourceThreadId);
+      if (text === undefined) {
+        throw new Error("Cache-parity fork has no prepared parent inference context.");
       }
-      source.assertCurrent();
       return this.register({
         threadId: params.threadId,
-        text: source.text,
+        text,
+        retainPrefix: false,
         signal: params.signal,
         assertCurrent: params.assertCurrent,
       });
+    },
+    forget(threadId: string) {
+      prefixes.delete(threadId);
+      roots.get(threadId)?.release();
     },
     /** Caller must authenticate its private transport before parsing any model request. */
     // Host-held OAuth may fund only admitted generations; native background work has no such grant.
@@ -146,6 +164,7 @@ export function createCodexInferenceContext(assertClientCurrent: () => void) {
     },
     close() {
       closed = true;
+      prefixes.clear();
       for (const registration of roots.values()) {
         registration.release();
       }

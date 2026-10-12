@@ -229,7 +229,10 @@ describe("embedded cache-parity session fork", () => {
             entries: { "fork-proof": { enabled: true, hooks: { allowConversationAccess: true } } },
           },
           skills: { load: { watch: false } },
-          tools: { allow: ["fork_probe"], toolSearch: false },
+          tools: {
+            allow: ["fork_probe", ...(api === "openai-responses" ? ["web_search"] : [])],
+            toolSearch: false,
+          },
         };
         await state.writeConfig(config);
         await captureRuntimeConfigAsyncReader()();
@@ -267,7 +270,7 @@ describe("embedded cache-parity session fork", () => {
         });
         const onUsage = vi.fn();
         const onBlockReply = vi.fn();
-        const fork = (abortSignal?: AbortSignal) =>
+        const fork = (abortSignal?: AbortSignal, denyTools = true) =>
           runBtwSideQuestion({
             cfg: config,
             agentId: "main",
@@ -275,7 +278,7 @@ describe("embedded cache-parity session fork", () => {
             provider,
             model,
             question: "Review only",
-            toolCalls: "deny",
+            toolCalls: denyTools ? "deny" : undefined,
             onUsage,
             sessionEntry: { sessionId, updatedAt: 1 },
             sessionKey,
@@ -317,7 +320,7 @@ describe("embedded cache-parity session fork", () => {
               modelSelectionLocked: true,
               codeModeOverride: false,
               thinkLevel: "off",
-              toolsAllow: ["fork_probe"],
+              toolsAllow: config.tools?.allow,
               runId: "fork-parent",
               timeoutMs: 60_000,
               prompt: "Parent question",
@@ -393,6 +396,12 @@ describe("embedded cache-parity session fork", () => {
           expect(replayMessages).toHaveLength(originalMessages.length + 1);
           expect(JSON.stringify(replayMessages.at(-1))).toContain("Review only");
           expect(JSON.stringify(replay.tools)).toBe(JSON.stringify(original.tools));
+          expect(replay.tool_choice).toEqual(
+            api === "anthropic-messages" ? { type: "none" } : "none",
+          );
+          if (api === "openai-responses") {
+            expect(original.tools).toEqual(expect.arrayContaining([{ type: "web_search" }]));
+          }
           expect(JSON.stringify(original.tools)).toContain("fork_probe");
           expect(JSON.stringify(replay.system)).toBe(JSON.stringify(original.system));
           expect(JSON.stringify(replay.instructions)).toBe(JSON.stringify(original.instructions));
@@ -405,6 +414,9 @@ describe("embedded cache-parity session fork", () => {
           }
           expect(onUsage).toHaveBeenCalledWith(expect.objectContaining({ cacheRead: 900 }));
           expect(onBlockReply).not.toHaveBeenCalled();
+          if (api === "openai-responses") {
+            await expect(fork(undefined, false)).resolves.toEqual({ text: "Review answer" });
+          }
           toolsRemaining = 1;
           await expect(fork()).resolves.toEqual({ text: "Review answer" });
           expect(JSON.stringify(payloads.at(-1))).toContain("Tool execution denied");

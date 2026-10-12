@@ -177,13 +177,14 @@ export class CodexSideQuestionFork {
   }
 
   threadParams(nativeHookRelayConfig: JsonObject | undefined): CodexThreadForkParams {
-    const config = mergeCodexThreadConfigs(
-      this.settings.thread.config ?? undefined,
-      nativeHookRelayConfig,
-    );
+    // Hosted search executes upstream of PreToolUse, so the native relay cannot deny it.
+    const config = {
+      ...mergeCodexThreadConfigs(this.settings.thread.config ?? undefined, nativeHookRelayConfig),
+      web_search: "disabled",
+    };
     return {
       ...this.settings.thread,
-      ...(config ? { config } : {}),
+      config,
       ephemeral: true,
       excludeTurns: true,
     };

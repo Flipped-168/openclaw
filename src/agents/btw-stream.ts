@@ -125,9 +125,6 @@ export async function runLightweightBtwStream(input: {
     (payloadObj) => {
       // BTW is intentionally tool-less. Some OpenAI-compatible providers reject
       // the empty tools arrays injected for generic tool-history replay.
-      if (Array.isArray(payloadObj.tools) && payloadObj.tools.length > 0) {
-        throw new Error("The built-in side-question runtime must not send tools.");
-      }
       if (Array.isArray(payloadObj.tools) && payloadObj.tools.length === 0) {
         delete payloadObj.tools;
       }

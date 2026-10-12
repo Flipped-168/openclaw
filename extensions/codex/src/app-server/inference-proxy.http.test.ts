@@ -138,97 +138,103 @@ async function waitForUpstreamClose() {
 }
 
 describe("inference HTTP transport ownership", () => {
-  it("authorizes a fork's actual session and turn while preserving its parent cache routing", async () => {
-    const client = createClient();
-    proxy.close();
-    proxy = await createCodexInferenceProxy({
-      upstream: new URL("https://api.openai.com/v1"),
-      assertCurrent: () => {},
-      bindModelExecution: createCodexInferenceModelBinding({
-        client: client.client,
-        provider: "test-provider",
+  it.each([false, true])(
+    "authorizes a fork after early parent cleanup=%s",
+    async (earlyCleanup) => {
+      const client = createClient();
+      proxy.close();
+      proxy = await createCodexInferenceProxy({
+        upstream: new URL("https://api.openai.com/v1"),
         assertCurrent: () => {},
-        memoryConfigured: () => false,
-        captureModelSource: codexNativeSubagentMonitorRuntime.captureModelSource,
-        resolveModelThreadId: codexNativeSubagentMonitorRuntime.resolveModelThreadId,
-      }),
-    });
-    const parent = proxy.context.register({
-      threadId: "parent-thread",
-      text: "private parent prefix",
-      signal: new AbortController().signal,
-      assertCurrent: () => {},
-    });
-    const fork = proxy.context.fork({
-      sourceThreadId: "parent-thread",
-      threadId: "fork-thread",
-      signal: new AbortController().signal,
-      assertCurrent: () => {},
-    });
-    const source = createNativeModelSourceFixture(["allowed"]);
-    const owner = await codexNativeSubagentMonitorRuntime.register({
-      client: client.client,
-      parentThreadId: "fork-thread",
-      modelSource: source,
-      configurationQualification: { assertCurrent: () => {}, hasProvider: () => true },
-    });
-    await owner.ready;
-    owner.bindTurn("fork-turn");
-    const metadata = {
-      session_id: "fork-session",
-      thread_id: "fork-thread",
-      turn_id: "fork-turn",
-      request_kind: "turn",
-      [CODEX_INFERENCE_GENERATION_KEY]: fork.generation,
-    };
-    const body = {
-      model: "allowed",
-      instructions: "native instructions",
-      prompt_cache_key: "parent-session",
-      client_metadata: {
-        session_id: metadata.session_id,
-        turn_id: metadata.turn_id,
+        bindModelExecution: createCodexInferenceModelBinding({
+          client: client.client,
+          provider: "test-provider",
+          assertCurrent: () => {},
+          memoryConfigured: () => false,
+          captureModelSource: codexNativeSubagentMonitorRuntime.captureModelSource,
+          resolveModelThreadId: codexNativeSubagentMonitorRuntime.resolveModelThreadId,
+        }),
+      });
+      const parent = proxy.context.register({
+        threadId: "parent-thread",
+        text: "private parent prefix",
+        signal: new AbortController().signal,
+        assertCurrent: () => {},
+      });
+      if (earlyCleanup) {
+        parent.release();
+      }
+      const fork = proxy.context.fork({
+        sourceThreadId: "parent-thread",
+        threadId: "fork-thread",
+        signal: new AbortController().signal,
+        assertCurrent: () => {},
+      });
+      const source = createNativeModelSourceFixture(["allowed"]);
+      const owner = await codexNativeSubagentMonitorRuntime.register({
+        client: client.client,
+        parentThreadId: "fork-thread",
+        modelSource: source,
+        configurationQualification: { assertCurrent: () => {}, hasProvider: () => true },
+      });
+      await owner.ready;
+      owner.bindTurn("fork-turn");
+      const metadata = {
+        session_id: "fork-session",
+        thread_id: "fork-thread",
+        turn_id: "fork-turn",
+        request_kind: "turn",
+        [CODEX_INFERENCE_GENERATION_KEY]: fork.generation,
+      };
+      const body = {
+        model: "allowed",
+        instructions: "native instructions",
+        prompt_cache_key: "parent-session",
+        client_metadata: {
+          session_id: metadata.session_id,
+          turn_id: metadata.turn_id,
+          "x-codex-turn-metadata": JSON.stringify(metadata),
+        },
+      };
+      const headers = {
+        "session-id": body.prompt_cache_key,
+        "thread-id": metadata.thread_id,
         "x-codex-turn-metadata": JSON.stringify(metadata),
-      },
-    };
-    const headers = {
-      "session-id": body.prompt_cache_key,
-      "thread-id": metadata.thread_id,
-      "x-codex-turn-metadata": JSON.stringify(metadata),
-    };
-    const received = createDeferred<Buffer>();
-    handle = (req, res) => {
-      void readBody(req).then((bytes) => {
-        received.resolve(bytes);
-        res.end("fork response");
-      }, received.reject);
-    };
-    try {
-      // Parent completion must not revoke the independently admitted fork.
-      parent.release();
-      const upload = post(Buffer.from(JSON.stringify(body)), headers);
-      const response = await upload.response;
-      const responseBody = (await readBody(response)).toString();
-      expect({ status: response.statusCode, body: responseBody }).toEqual({
-        status: 200,
-        body: "fork response",
-      });
-      expect(JSON.parse((await received.promise).toString())).toEqual({
-        ...body,
-        instructions: "native instructions\n\nprivate parent prefix",
-      });
-      await upload.closed;
-      await owner.unregister();
-      const revoked = post(Buffer.from(JSON.stringify(body)), headers);
-      const denied = await revoked.response;
-      expect(denied.statusCode).toBe(403);
-      expect((await readBody(denied)).toString()).toContain("cannot verify the owner");
-      await revoked.closed;
-    } finally {
-      fork.release();
-      await owner.unregister();
-    }
-  });
+      };
+      const received = createDeferred<Buffer>();
+      handle = (req, res) => {
+        void readBody(req).then((bytes) => {
+          received.resolve(bytes);
+          res.end("fork response");
+        }, received.reject);
+      };
+      try {
+        // Parent completion must not revoke the independently admitted fork.
+        parent.release();
+        const upload = post(Buffer.from(JSON.stringify(body)), headers);
+        const response = await upload.response;
+        const responseBody = (await readBody(response)).toString();
+        expect({ status: response.statusCode, body: responseBody }).toEqual({
+          status: 200,
+          body: "fork response",
+        });
+        expect(JSON.parse((await received.promise).toString())).toEqual({
+          ...body,
+          instructions: "native instructions\n\nprivate parent prefix",
+        });
+        await upload.closed;
+        await owner.unregister();
+        const revoked = post(Buffer.from(JSON.stringify(body)), headers);
+        const denied = await revoked.response;
+        expect(denied.statusCode).toBe(403);
+        expect((await readBody(denied)).toString()).toContain("cannot verify the owner");
+        await revoked.closed;
+      } finally {
+        fork.release();
+        await owner.unregister();
+      }
+    },
+  );
 
   it("preserves guarded TLS, length, auth and SSE when rewriting zstd requests", async () => {
     const registration = proxy.context.register({

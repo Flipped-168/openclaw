@@ -10,6 +10,7 @@ import type { Message, Model } from "../llm/types.js";
 import { prepareProviderRuntimeAuth } from "../plugins/provider-runtime.js";
 import { isModelSelectionLocked } from "../sessions/model-overrides.js";
 import {
+  assertOperatorModelAllowed,
   prepareSystemAgentRunAdmission,
   resolveAdmittedRunActiveAssertion,
 } from "./admitted-run-context.js";
@@ -371,6 +372,8 @@ export async function runBtwSideQuestion(
         sideRunId,
         sessionAgentId,
         "btw.side-question",
+        params.assertCurrent,
+        params.operatorAuthority,
       );
       const admittedRunContext = await preparedRunAdmission.admit("plugin-harness");
       try {
@@ -437,6 +440,11 @@ export async function runBtwSideQuestion(
         let result: Awaited<ReturnType<NonNullable<AgentHarness["runSideQuestion"]>>>;
         try {
           placement.assertCurrent();
+          params.assertCurrent?.();
+          assertOperatorModelAllowed(params.operatorAuthority, {
+            provider: runtimeModel.provider,
+            model: runtimeModel.id,
+          });
           result = await selectedHarness.runSideQuestion(sideParams);
         } finally {
           host.close();
@@ -598,6 +606,11 @@ export async function runBtwSideQuestion(
         authProfileStore,
       }));
     const apiKeyInfo = resolvedAttempt.auth;
+    params.assertCurrent?.();
+    assertOperatorModelAllowed(params.operatorAuthority, {
+      provider: resolvedAttempt.model.provider,
+      model: resolvedAttempt.model.id,
+    });
     const resolvedRuntimeAuthPlan = resolvedAttempt.plan;
     const resolvedAuthProfileId = resolvedRuntimeAuthPlan.forwardedAuthProfileId;
     let runtimeModel = resolvedAttempt.model;
@@ -642,6 +655,8 @@ export async function runBtwSideQuestion(
         params.authorityRunId,
         sessionAgentId,
         "btw.session-fork",
+        params.assertCurrent,
+        params.operatorAuthority,
       );
       try {
         const admitted = await admission.admit("plugin-harness");
