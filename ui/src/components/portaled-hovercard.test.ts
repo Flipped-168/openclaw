@@ -1,4 +1,5 @@
 /* @vitest-environment jsdom */
+import { delegateEvents, render } from "@solidjs/web";
 import { afterEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { createPortaledHovercard, PortaledHovercardController } from "./portaled-hovercard.ts";
 
@@ -23,6 +24,35 @@ function fixture(shadow = false) {
 }
 
 describe("portaled hovercard presentation ownership", () => {
+  it("keeps a Solid card open after pointer exit until keyboard focus leaves", () => {
+    vi.useFakeTimers();
+    const view = fixture();
+    const card = createPortaledHovercard("solid-preview", "preview");
+    const content = document.createElement("div");
+    const first = document.createElement("a");
+    first.href = "#first";
+    const second = document.createElement("a");
+    second.href = "#second";
+    content.append(first, second);
+    delegateEvents(["focusin", "focusout"]);
+    const dispose = render(() => content, card);
+    view.controller.mount(view.trigger, card, "vertical", true, dispose);
+    onTestFinished(() => view.controller.reset());
+    const outside = document.body.appendChild(document.createElement("button"));
+
+    first.focus();
+    view.controller.handleCardPointerLeave();
+    vi.advanceTimersByTime(120);
+    expect(card.isConnected).toBe(true);
+    expect(view.dismiss).not.toHaveBeenCalled();
+
+    second.focus();
+    outside.focus();
+    vi.advanceTimersByTime(120);
+    expect(card.isConnected).toBe(false);
+    expect(view.dismiss).toHaveBeenCalledTimes(1);
+  });
+
   it.each([false, true])(
     "retires animated exits without waiting for reduced motion (%s)",
     async (reduced) => {

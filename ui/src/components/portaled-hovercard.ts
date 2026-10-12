@@ -267,8 +267,9 @@ export class PortaledHovercardController {
     this.card = card;
     card.addEventListener("keydown", this.handleCardKeyDown);
     card.addEventListener("pointerenter", this.handleCardPointerEnter);
-    card.addEventListener("focusin", this.handleCardFocusIn);
-    card.addEventListener("focusout", this.handleCardFocusOut);
+    // Capture before Solid's delegated root retargets currentTarget during bubbling.
+    card.addEventListener("focusin", this.handleCardFocusIn, true);
+    card.addEventListener("focusout", this.handleCardFocusOut, true);
     this.placement = placement;
     this.unmountContents = unmountContents ?? null;
     const trigger = this.trigger ?? anchor;
