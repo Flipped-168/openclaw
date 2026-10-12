@@ -1,6 +1,7 @@
 import type { JSX } from "@solidjs/web";
 import { createEffect, For, onSettled } from "solid-js";
 import "../../styles/hub-tabs.css";
+import { reclaimHubTabFocus, rememberHubTabFocus } from "../hub-tabs-focus.ts";
 import { syncTabGroupLabel } from "../web-awesome-tabs.ts";
 
 type HubTabOption<T extends string> = {
@@ -25,9 +26,7 @@ export type HubTabsProps<T extends string> = {
   onActivate?: (element: HTMLElement) => void;
 };
 
-const PENDING_FOCUS_WINDOW_MS = 2000;
 const NO_ACTIVE_TAB = "__openclaw-hub-tabs-no-active__";
-let pendingFocus: { hubId: string; tab: string; at: number; source: Element } | null = null;
 
 function HubTab<T extends string>(props: { hub: HubTabsProps<T>; tab: HubTabOption<T> }) {
   let element: HTMLElement | undefined;
@@ -45,28 +44,14 @@ function HubTab<T extends string>(props: { hub: HubTabsProps<T>; tab: HubTabOpti
     }
     if (keyboard) {
       event.preventDefault();
-      pendingFocus = { hubId: props.hub.id, tab: props.tab.value, at: Date.now(), source: target };
+      rememberHubTabFocus(props.hub.id, props.tab.value, target);
     }
     props.hub.onSelect(props.tab.value);
     props.hub.onActivate?.(target);
   };
   onSettled(() => {
-    if (
-      !selected() ||
-      pendingFocus?.hubId !== props.hub.id ||
-      pendingFocus.tab !== props.tab.value
-    ) {
-      return;
-    }
-    const pending = pendingFocus;
-    pendingFocus = null;
-    const focus = document.activeElement;
-    if (
-      element?.isConnected &&
-      Date.now() - pending.at <= PENDING_FOCUS_WINDOW_MS &&
-      (focus === pending.source || focus === document.body || focus === document.documentElement)
-    ) {
-      element.focus();
+    if (selected()) {
+      reclaimHubTabFocus(props.hub.id, props.tab.value, element);
     }
   });
   return (
