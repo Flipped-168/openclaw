@@ -313,6 +313,25 @@ it("checks claim-free reclaim, activity and the exact terminal turn inside drain
 it("persists monotonic ACKs and their terminal fence through the gate without host SQLite", async () => {
   const claim = await workerClaim("ack-cursors");
   const gate = createWorkerSessionPlacementGate(placements);
+  const retained = await placements.prepareSessionPlacement(claim.sessionId);
+  let observedCommit = false;
+  const admission = probe.admission(operationAdmission, (request, grant, admit) => {
+    admit(request, () => {
+      if (
+        request.stage === "commit" &&
+        isRecord(request.facts) &&
+        isRecord(request.facts.placement) &&
+        request.facts.placement.sessionId === claim.sessionId
+      ) {
+        observedCommit = true;
+        expect(retained.current()).toMatchObject({
+          state: "active",
+          turnClaim: { claimId: claim.claimId },
+        });
+      }
+      return grant();
+    });
+  });
   const queries = observeHostDataSql();
   try {
     await gate.updateAckCursors({ claim, transcriptSeq: 4 });
@@ -320,10 +339,17 @@ it("persists monotonic ACKs and their terminal fence through the gate without ho
     await gate.updateAckCursors({ claim, liveSeq: 9 });
     await gate.updateAckCursors({ claim, transcriptSeq: 3, liveSeq: 8 });
     await gate.updateAckCursors({ claim, transcriptSeq: 4, liveSeq: 9 });
+    expect(retained.current()).toMatchObject({
+      lastTranscriptAckCursor: 4,
+      lastLiveEventAckCursor: 9,
+    });
     expect(queries.queries).toEqual([]);
   } finally {
     queries.restore();
+    admission.mockRestore();
+    retained.release();
   }
+  expect(observedCommit).toBe(true);
   expect(placements.get(claim.sessionId)).toMatchObject({
     generation: claim.placementGeneration,
     lastTranscriptAckCursor: 4,

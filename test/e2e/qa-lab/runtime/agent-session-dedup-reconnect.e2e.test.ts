@@ -1,5 +1,5 @@
 import { GatewayClient } from "openclaw/plugin-sdk/gateway-runtime";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, onTestFailed, vi } from "vitest";
 import { createQaGatewayChild, type QaGatewayChild } from "../../../../extensions/qa-lab/api.js";
 import {
   GATEWAY_CLIENT_MODES,
@@ -124,6 +124,15 @@ describe("agent session deduplication across reconnect", () => {
         modelRef: MODEL_REF,
         terminalText: TERMINAL_TEXT,
       });
+      let phase = "gateway startup";
+      let gatewayLogs = () => "Gateway startup did not return a ready child.";
+      onTestFailed(() => {
+        console.error(
+          "Session dedup reconnect fixture failed",
+          JSON.stringify({ phase, providerRequests: provider.requests.length }),
+          gatewayLogs(),
+        );
+      });
       cleanups.push(() => provider.stop());
       const gatewayOwner = createQaGatewayChild();
       cleanups.push(() => stopQaGatewayFixture(gatewayOwner));
@@ -146,12 +155,18 @@ describe("agent session deduplication across reconnect", () => {
           OPENCLAW_SKIP_CHANNELS: "1",
           OPENCLAW_TEST_MINIMAL_GATEWAY: "1",
         },
+        onListening: () => {
+          phase = "gateway readiness";
+        },
         mutateConfig: (config) => ({ ...config, plugins: { enabled: false } }),
       });
+      gatewayLogs = gateway.logs;
       cleanups.push(async () => provider.release());
 
+      phase = "first client connection";
       const clientA = await connectOperator(gateway, "Session dedup client A");
       cleanups.push(() => clientA.stopAndWait({ timeoutMs: 1_000 }));
+      phase = "initial agent admission";
       const acceptedA = await clientA.request<AgentResult>("agent", {
         sessionKey: SESSION_KEY,
         message: ORIGINAL_MESSAGE,
@@ -162,14 +177,18 @@ describe("agent session deduplication across reconnect", () => {
         status: "accepted",
         runId: IDEMPOTENCY_KEY,
       });
+      phase = "first provider request";
       await vi.waitFor(() => expect(provider.requests).toHaveLength(1), {
         interval: 20,
         timeout: REQUEST_TIMEOUT_MS,
       });
+      phase = "first client disconnect";
       await clientA.stopAndWait({ timeoutMs: 1_000 });
 
+      phase = "second client connection";
       const clientB = await connectOperator(gateway, "Session dedup client B");
       cleanups.push(() => clientB.stopAndWait({ timeoutMs: 1_000 }));
+      phase = "in-flight replay";
       const acceptedB = await clientB.request<AgentResult>("agent", {
         sessionKey: SESSION_KEY,
         message: ORIGINAL_MESSAGE,
@@ -184,6 +203,7 @@ describe("agent session deduplication across reconnect", () => {
       expect(provider.requests).toHaveLength(1);
 
       provider.release();
+      phase = "terminal result";
       const terminal = await clientB.request<AgentResult>(
         "agent.wait",
         { runId: IDEMPOTENCY_KEY, timeoutMs: 30_000 },
@@ -194,6 +214,7 @@ describe("agent session deduplication across reconnect", () => {
         runId: IDEMPOTENCY_KEY,
       });
 
+      phase = "cached terminal replay";
       const cachedTerminal = await clientB.request<AgentResult>("agent", {
         sessionKey: SESSION_KEY,
         message: ORIGINAL_MESSAGE,
@@ -207,6 +228,7 @@ describe("agent session deduplication across reconnect", () => {
           payloads: [{ text: TERMINAL_TEXT }],
         },
       });
+      phase = "changed-message replay";
       const changedReplay = await clientB.request<AgentResult>("agent", {
         sessionKey: SESSION_KEY,
         message: CHANGED_MESSAGE,
@@ -216,6 +238,7 @@ describe("agent session deduplication across reconnect", () => {
       expect(changedReplay).toEqual(cachedTerminal);
       expect(provider.requests).toHaveLength(1);
 
+      phase = "terminal transcript";
       const history = await clientB.request<{ messages?: unknown[] }>("chat.history", {
         sessionKey: SESSION_KEY,
         limit: 20,

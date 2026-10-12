@@ -95,7 +95,12 @@ export function retainSessionPlacementRead(
       if (reader.revoked) {
         throw new Error(`Session ${sessionId} placement authority changed (retained read revoked)`);
       }
-      if (hasPendingPublication(owner, sessionId)) {
+      // ACK and journal writes keep the committed placement usable until their receipt arrives.
+      if (
+        [...owner.pending].some(
+          (change) => change.kind === "claim" && change.sessionId === sessionId,
+        )
+      ) {
         throw new Error(
           `Session ${sessionId} placement authority changed (retained publication pending)`,
         );

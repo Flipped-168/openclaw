@@ -69,6 +69,21 @@ vi.mock("../auto-reply/reply/dispatch-acp-manager.runtime.js", async (importOrig
   listSessionBindingsBySessionAsync: async () => [],
 }));
 
+vi.mock("./session-sharing-incognito.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./session-sharing-incognito.js")>();
+  return {
+    ...actual,
+    SessionMutationFactsUnavailableError: class
+      extends actual.SessionMutationFactsUnavailableError
+    {
+      constructor(options?: ErrorOptions) {
+        super(options);
+        console.error("session facts diagnostic", this.stack, this.cause);
+      }
+    },
+  };
+});
+
 installGatewayTestHooks({ scope: "suite" });
 let ws: WebSocket;
 installConnectedControlUiServerSuite((started) => {

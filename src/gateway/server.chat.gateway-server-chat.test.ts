@@ -622,7 +622,7 @@ describe("gateway server chat", () => {
         message: "hello orion",
         idempotencyKey: "idem-sessions-send-orion",
       });
-      expect(res.ok).toBe(true);
+      expect(res.ok, JSON.stringify(res)).toBe(true);
       expect(res.payload?.runId).toBe("idem-sessions-send-orion");
 
       expect(
