@@ -1,6 +1,5 @@
 import type { TemplateResult } from "lit";
 import { createComponent, createEffect, lazy, Loading, Show } from "solid-js";
-import type { OpenClawModalDialog } from "../components/modal-dialog.ts";
 import { defineSolidBridge, type SolidBridgeElement } from "../lit/solid-bridge.ts";
 const ToastView = lazy(() => import("./toast-view.tsx"), { export: "ToastView" });
 
@@ -32,10 +31,11 @@ export function resolveToastAnchorRect(anchor: Element | undefined) {
 }
 
 function activeModalToastLayer() {
-  // SAFETY: modal-dialog is the only writer of this set; it registers its bridge hosts.
-  return [...(document.openClawModalLayers ?? [])].findLast(
-    (candidate) => candidate.isConnected,
-  ) as OpenClawModalDialog | undefined;
+  const owner = [...(document.openClawModalLayers ?? [])]
+    .findLast((candidate) => candidate.isConnected)
+    ?.closest("openclaw-modal-dialog");
+  const container = owner?.getOverlayContainer();
+  return owner && container ? { owner, container } : undefined;
 }
 
 function restingToastLayer() {
@@ -95,7 +95,7 @@ class ToastController {
     if (this.host.isConnected) {
       return;
     }
-    const target = activeModalToastLayer()?.getOverlayContainer() ?? restingToastLayer();
+    const target = activeModalToastLayer()?.container ?? restingToastLayer();
     if (this.host.closest("openclaw-modal-dialog") && target) {
       target.append(this.host);
     } else {
@@ -270,19 +270,18 @@ export function showToast(options: ToastOptions): boolean {
     return false;
   }
   const modal = activeModalToastLayer();
-  const layer = modal?.getOverlayContainer();
-  if (modal && layer && host.parentElement !== layer) {
-    layer.append(host);
+  if (modal && host.parentElement !== modal.container) {
+    modal.container.append(host);
     const handoff = (event: Event) => {
-      if (event.target !== modal) {
+      if (event.target !== modal.owner) {
         return;
       }
-      modal.removeEventListener("wa-after-hide", handoff);
+      modal.owner.removeEventListener("wa-after-hide", handoff);
       queueMicrotask(() =>
-        (activeModalToastLayer()?.getOverlayContainer() ?? restingToastLayer())?.append(host),
+        (activeModalToastLayer()?.container ?? restingToastLayer())?.append(host),
       );
     };
-    modal.addEventListener("wa-after-hide", handoff);
+    modal.owner.addEventListener("wa-after-hide", handoff);
   }
   host.show(options);
   return true;
