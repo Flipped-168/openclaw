@@ -241,6 +241,7 @@ export class AppSidebarOwner extends AppSidebarSessionNavigationElement implemen
   private readonly communityInviteStorageChanged = (event: StorageEvent) => {
     if (event.key === COMMUNITY_INVITE_KEY || event.key === null) {
       this.syncCommunityInviteState();
+      this.requestUpdate();
     }
   };
 
