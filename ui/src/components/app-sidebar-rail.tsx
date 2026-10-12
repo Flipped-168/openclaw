@@ -372,7 +372,12 @@ function renderRailPin(
         onDragOver={(event) => host.sessionOrganizer.handleSidebarZoneDragOver(event, serialized)}
         onDrop={(event) => host.sessionOrganizer.handleSidebarZoneDrop(event, serialized)}
       >
-        <openclaw-tooltip prop:content={label()}>{content}</openclaw-tooltip>
+        <openclaw-tooltip
+          prop:content={label()}
+          prop:disabled={Boolean(host.sidebarMenus.railPinMenuPosition)}
+        >
+          {content}
+        </openclaw-tooltip>
       </div>
     </Show>
   );

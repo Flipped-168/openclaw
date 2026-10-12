@@ -13,6 +13,7 @@ import {
 import "../test-helpers/app-sidebar-suite.ts";
 import { createDataTransferStub } from "../test-helpers/drag-data.ts";
 import { gatewayHelloForMethods } from "../test-helpers/gateway-methods.ts";
+import { dispatchMousePointer } from "./tooltip.test-support.ts";
 import "./app-sidebar.tsx";
 
 async function fixture() {
@@ -332,6 +333,52 @@ describe("personal navigation rail", () => {
     menu.dispatchEvent(new CustomEvent("wa-select", { detail: { item: remove } }));
     await sidebar.updateComplete;
     expect(sidebar.sidebarEntries).toEqual(["person:offline", "session:agent:other:unloaded"]);
+  });
+
+  it("retires pending pin hints while a context menu owns keyboard focus", async () => {
+    const { sidebar } = await fixture();
+    sidebar.sidebarEntries = ["session:agent:main:mine", "session:agent:main:other"];
+    await sidebar.updateComplete;
+    await sidebar.sidebarMenus.preloadMenuRenderer();
+    const source = sidebar.querySelector<HTMLAnchorElement>(
+      '.sidebar-rail [data-sidebar-entry="session:agent:main:mine"] a',
+    )!;
+    const hovered = sidebar.querySelector<HTMLAnchorElement>(
+      '.sidebar-rail [data-sidebar-entry="session:agent:main:other"] a',
+    )!;
+    const tooltip = hovered.closest("openclaw-tooltip")!;
+    tooltip.delay = 100;
+    await tooltip.updateComplete;
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+
+    source.focus();
+    dispatchMousePointer(hovered, "pointerenter");
+    source.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "F10",
+        shiftKey: true,
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+    await sidebar.updateComplete;
+    await tooltip.updateComplete;
+    const menu = sidebar.querySelector(".sidebar-rail-pin-menu")!;
+    expect(menu).not.toBeNull();
+    vi.advanceTimersByTime(100);
+    expect(tooltip.hasAttribute("open")).toBe(false);
+
+    menu.dispatchEvent(
+      new CustomEvent("wa-select", {
+        detail: { item: menu.querySelector('wa-dropdown-item[value="remove"]') },
+      }),
+    );
+    await sidebar.updateComplete;
+    await tooltip.updateComplete;
+    dispatchMousePointer(hovered, "pointerleave");
+    dispatchMousePointer(hovered, "pointerenter");
+    vi.advanceTimersByTime(100);
+    expect(tooltip.hasAttribute("open")).toBe(true);
   });
 
   it("toggles the panel from the active view and expands it when switching views", async () => {

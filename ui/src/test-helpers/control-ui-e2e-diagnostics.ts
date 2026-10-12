@@ -186,6 +186,7 @@ export function installControlUiRpcDiagnostics(page: Page): void {
             "agents.files.list",
             "agents.files.get",
             "agents.files.set",
+            "audit.run.inspect",
             "canvas.document.view",
           ].includes(frame.method)
         ) {
@@ -340,6 +341,7 @@ async function captureControlUiE2eFailureDiagnosticsUnsafe(
       };
       const app = document.querySelector("openclaw-app");
       const shell = document.querySelector("openclaw-app-shell");
+      const runInspector = document.querySelector("#activity-run-panel");
       const diagnostics: ReturnType<ControlUiReadiness["hook"]["diagnostics"]> | undefined =
         window.openclawControlUi?.diagnostics();
       const agentsState = diagnostics?.roster;
@@ -458,6 +460,11 @@ async function captureControlUiE2eFailureDiagnosticsUnsafe(
             editorPresent: Boolean(fileEditor),
             editorLength: fileEditor?.value.length ?? null,
             editorDisabled: fileEditor?.disabled ?? null,
+          },
+          runInspector: {
+            panelPresent: runInspector !== null,
+            executionIdentityPresent: runInspector?.hasAttribute("data-execution-id") ?? null,
+            runIdentityPresent: runInspector?.hasAttribute("data-run-id") ?? null,
           },
           gatewayPhase: safeValue(gatewaySnapshot?.phase, [
             "stopped",
