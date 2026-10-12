@@ -10,6 +10,10 @@ import { useAutoCleanupTempDirTracker } from "../../test/helpers/temp-dir.js";
 import { makeTextToolResult } from "../../test/helpers/text-tool-result.js";
 import { makeUserMessage } from "../../test/helpers/user-message.js";
 import {
+  clearRuntimeConfigSnapshot,
+  setRuntimeConfigSnapshot,
+} from "../config/runtime-snapshot.js";
+import {
   appendTranscriptMessage,
   appendTranscriptMessageSync,
   loadSessionEntry,
@@ -86,6 +90,7 @@ function collectUpdates() {
 }
 
 async function openPersistedSessionManager(lifecycleRevision?: string) {
+  setRuntimeConfigSnapshot({});
   const root = tempDirs.make("openclaw-transcript-events-");
   const sessionId = `session-${fixtureId++}`;
   const target = {
@@ -109,6 +114,7 @@ afterEach(async () => {
   }
   await closeOpenClawAgentDatabasesAsync();
   closeOpenClawAgentDatabasesForTest();
+  clearRuntimeConfigSnapshot();
 });
 
 describe("guardSessionManager transcript updates", () => {

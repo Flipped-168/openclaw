@@ -2,6 +2,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { awaitGateBeforeSettlement, createDeferred } from "../../../test/helpers/promise.js";
 import { bindWorkerToolPreparation } from "../../agents/harness/host-private-capabilities.js";
 import { createNativeSessionBindingAuthority } from "../../agents/harness/native-session/binding-authority.js";
+import { setRuntimeConfigSnapshot } from "../../config/runtime-snapshot.js";
 import { resolveSessionStorePathCore } from "../../config/sessions/paths.js";
 import {
   deleteSessionEntryLifecycle,
@@ -43,18 +44,6 @@ async function createPolicyOperation(
   const policyKey = incognito
     ? `agent:main:dashboard:incognito-${name}`
     : `agent:main:${name}-policy`;
-  const policyEntry = await upsertSessionEntryCore(
-    { agentId: "main", sessionKey: policyKey, storePath: options.policyStorePath },
-    {
-      sessionId: name,
-      updatedAt: 1,
-      sandboxMode: "off",
-      ...(incognito ? { incognito: true } : {}),
-    },
-  );
-  if (!policyEntry) {
-    throw new Error("Policy fixture entry was not created");
-  }
   const run = createQueueTestRun({ prompt: name });
   Object.assign(run.run, {
     agentId: "main",
@@ -75,6 +64,19 @@ async function createPolicyOperation(
       tools: { sandbox: { tools: { deny: ["exec"] } } },
     },
   });
+  setRuntimeConfigSnapshot(run.run.config);
+  const policyEntry = await upsertSessionEntryCore(
+    { agentId: "main", sessionKey: policyKey, storePath: options.policyStorePath },
+    {
+      sessionId: name,
+      updatedAt: 1,
+      sandboxMode: "off",
+      ...(incognito ? { incognito: true } : {}),
+    },
+  );
+  if (!policyEntry) {
+    throw new Error("Policy fixture entry was not created");
+  }
   const operation = createTestReplyOperation({ sessionKey: run.run.sessionKey, sessionId: name });
   await operation.bindToolAuthoritySnapshotAsync(prepareReplyToolAuthority(run));
   const fingerprint = await operation.bindToolAuthorityRouteAsync(run.run);
