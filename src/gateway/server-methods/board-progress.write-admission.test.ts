@@ -18,6 +18,8 @@ import {
   openOpenClawAgentDatabase,
 } from "../../state/openclaw-agent-db.js";
 import { runOpenClawAgentWorkerWrite } from "../../state/openclaw-agent-write-admission.js";
+import { openOpenClawStateDatabase } from "../../state/openclaw-state-db.js";
+import { prepareUserProfileCatalog } from "../../state/user-profile-list.js";
 import { withOpenClawTestState } from "../../test-utils/openclaw-test-state.js";
 import { boardStore } from "../board-store.js";
 import { progressCardStore } from "../progress-card-store.js";
@@ -76,6 +78,8 @@ describe("board and progress-card database write admission", () => {
           "operator.approvals",
         ];
         setRuntimeConfigSnapshot(cfg, cfg);
+        openOpenClawStateDatabase();
+        using _ = { [Symbol.dispose]: (await prepareUserProfileCatalog()).release };
         const target = { sessionKey: "global", agentId: "work" };
         const client = { ...roleClient("view", "admission-owner"), connId: "admission-owner" };
         client.connect.scopes = ["operator.read", "operator.write", "operator.approvals"];
