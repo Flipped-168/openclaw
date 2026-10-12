@@ -38,7 +38,6 @@ import {
   isMissingRegisteredMemoryToolsError,
   resetActiveMemoryConfigForTests,
   setMinimumTimeoutMsForTests,
-  setSetupGraceTimeoutMsForTests,
 } from "./config.js";
 import { registerActiveMemoryDiagnosticTests } from "./index.diagnostics.test-support.js";
 import plugin from "./index.js";
@@ -605,7 +604,6 @@ describe("active-memory plugin", () => {
 
   const configureRecallTimeout = (timeoutMs: number, overrides: Record<string, unknown> = {}) => {
     setMinimumTimeoutMsForTests(1);
-    setSetupGraceTimeoutMsForTests(0);
     registerPluginConfig({ timeoutMs, logging: true, ...overrides });
   };
 
@@ -2677,7 +2675,6 @@ describe("active-memory plugin", () => {
     async ({ failed, persistTranscripts, cleanupFails }) => {
       vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"] });
       setMinimumTimeoutMsForTests(1);
-      setSetupGraceTimeoutMsForTests(0);
       registerPluginConfig({ timeoutMs: 1_000, persistTranscripts, logging: true });
       const sessionKey = "agent:main:completed-recall-cleanup-deadline";
       seedSession(sessionKey, "s-completed-recall-cleanup-deadline", 0);
@@ -2763,7 +2760,6 @@ describe("active-memory plugin", () => {
   it("returns partial transcript text on timeout when the subagent has already written assistant output", async () => {
     vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"] });
     setMinimumTimeoutMsForTests(1);
-    setSetupGraceTimeoutMsForTests(0);
     setTimeoutPartialDataGraceMsForTests(50);
     registerPluginConfig({
       timeoutMs: 100,
@@ -2824,7 +2820,6 @@ describe("active-memory plugin", () => {
     // Worker transcript timestamps and cleanup share the real wall clock.
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     setMinimumTimeoutMsForTests(1);
-    setSetupGraceTimeoutMsForTests(0);
     setTimeoutPartialDataGraceMsForTests(50);
     registerPluginConfig({ timeoutMs: 100, maxSummaryChars: 80, logging: true });
     const sessionRuntime = await vi.importActual<
@@ -3022,7 +3017,6 @@ describe("active-memory plugin", () => {
   it("keeps a timeout partial grounded only by the tool-result callback", async () => {
     vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"] });
     setMinimumTimeoutMsForTests(1);
-    setSetupGraceTimeoutMsForTests(0);
     setTimeoutPartialDataGraceMsForTests(50);
     registerPluginConfig({ timeoutMs: 100, logging: true });
     const sessionKey = "agent:main:timeout-partial-callback-evidence";
@@ -3241,7 +3235,6 @@ describe("active-memory plugin", () => {
     const CONFIGURED_TIMEOUT_MS = 25;
     const PARTIAL_DATA_GRACE_MS = 5;
     setMinimumTimeoutMsForTests(1);
-    setSetupGraceTimeoutMsForTests(0);
     setTimeoutPartialDataGraceMsForTests(PARTIAL_DATA_GRACE_MS);
     registerPluginConfig({ timeoutMs: CONFIGURED_TIMEOUT_MS, logging: true });
     const embeddedStarted = createDeferred<AbortSignal | undefined>();
@@ -3278,7 +3271,6 @@ describe("active-memory plugin", () => {
     vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"] });
     const CONFIGURED_TIMEOUT_MS = 50;
     setMinimumTimeoutMsForTests(1);
-    setSetupGraceTimeoutMsForTests(0);
     setTimeoutPartialDataGraceMsForTests(50);
     registerPluginConfig({ timeoutMs: CONFIGURED_TIMEOUT_MS, logging: true });
     const sessionKey = "agent:main:terminal-zero-hit";
@@ -3367,7 +3359,6 @@ describe("active-memory plugin", () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     const CONFIGURED_TIMEOUT_MS = 1_000;
     setMinimumTimeoutMsForTests(1);
-    setSetupGraceTimeoutMsForTests(0);
     setTimeoutPartialDataGraceMsForTests(5);
     registerPluginConfig({ timeoutMs: CONFIGURED_TIMEOUT_MS, maxSummaryChars: 120, logging: true });
     const sessionKey = "agent:main:terminal-unavailable-then-summary";
@@ -3596,7 +3587,6 @@ describe("active-memory plugin", () => {
   it("fails open at the live deadline when pre-recall session state stalls", async () => {
     vi.useFakeTimers();
     setMinimumTimeoutMsForTests(1);
-    setSetupGraceTimeoutMsForTests(0);
     api.pluginConfig = {
       agents: ["main"],
       timeoutMs: 25,
@@ -3638,7 +3628,6 @@ describe("active-memory plugin", () => {
     );
     vi.useFakeTimers({ toFake: ["Date", "performance", "setTimeout", "clearTimeout"] });
     setMinimumTimeoutMsForTests(1);
-    setSetupGraceTimeoutMsForTests(0);
     setTimeoutPartialDataGraceMsForTests(100);
     api.pluginConfig = {
       agents: ["main"],
@@ -3707,7 +3696,6 @@ describe("active-memory plugin", () => {
   it("does not recover arbitrary assistant text without successful memory evidence", async () => {
     const CONFIGURED_TIMEOUT_MS = 1_000;
     setMinimumTimeoutMsForTests(1);
-    setSetupGraceTimeoutMsForTests(0);
     setTimeoutPartialDataGraceMsForTests(200);
     registerPluginConfig({ timeoutMs: CONFIGURED_TIMEOUT_MS, logging: true });
     const sessionKey = "agent:main:terminal-unavailable-then-diagnostic";
@@ -3743,7 +3731,6 @@ describe("active-memory plugin", () => {
 
   it("keeps rotated transcript evidence after a stale poll settles", async () => {
     setMinimumTimeoutMsForTests(1);
-    setSetupGraceTimeoutMsForTests(0);
     registerPluginConfig({
       timeoutMs: 1_000,
       toolsAllow: ["memory_get", "memory_search"],
@@ -3854,7 +3841,6 @@ describe("active-memory plugin", () => {
     async (identity) => {
       vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"] });
       setMinimumTimeoutMsForTests(1);
-      setSetupGraceTimeoutMsForTests(0);
       registerPluginConfig({ timeoutMs: 1_000, logging: true });
       const sessionKey = "agent:main:rotated-sqlite-memory-unavailable";
       seedSession(sessionKey, "s-rotated-sqlite-memory-unavailable", 0);
@@ -3967,7 +3953,6 @@ describe("active-memory plugin", () => {
 
   it("does not fast-fail memory_get misses but rejects ungrounded completed output", async () => {
     setMinimumTimeoutMsForTests(1);
-    setSetupGraceTimeoutMsForTests(0);
     registerPluginConfig({ timeoutMs: 1_000 });
     seedSession("agent:main:memory-get-miss", "s-memory-get-miss", 0);
     runEmbeddedAgent.mockImplementationOnce(async (params: { sessionFile: string }) => {
@@ -4361,7 +4346,6 @@ describe("active-memory plugin", () => {
       const CONFIGURED_TIMEOUT_MS = 25;
       const COOLDOWN_MS = 60_000;
       setMinimumTimeoutMsForTests(1);
-      setSetupGraceTimeoutMsForTests(0);
       registerPluginConfig({
         timeoutMs: CONFIGURED_TIMEOUT_MS,
         logging: true,
