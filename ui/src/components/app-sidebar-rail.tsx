@@ -73,61 +73,51 @@ export function renderSidebarRail(host: AppSidebarRenderHost): JSX.Element {
       <div class="sidebar-rail__views">
         <For each={views}>
           {(view) => (
-            <openclaw-tooltip
-              prop:content={
+            <button
+              type="button"
+              class="sidebar-rail__button"
+              title={
                 host.navigationView === view
                   ? `${viewLabel(view)} · ${t(host.navigationCollapsed ? "nav.expand" : "nav.collapse")} (${formatKeyboardShortcutCombo(KEYBOARD_SHORTCUT_COMBOS.toggleSidebar)})`
                   : viewLabel(view)
               }
+              data-navigation-view={view}
+              aria-label={viewLabel(view)}
+              aria-pressed={host.navigationView === view ? "true" : "false"}
+              onClick={() => {
+                const active = host.navigationView === view;
+                host.navigationView = view;
+                if (view === "online") {
+                  host.teamOnlineExpanded = true;
+                  if (host.collapsedSessionSections.has("online")) {
+                    host.toggleSection("online");
+                  }
+                }
+                if (!isMobileNavLayout() && (active || host.navigationCollapsed)) {
+                  host.onToggleSidebar?.();
+                }
+                host.requestUpdate();
+              }}
             >
-              <button
-                type="button"
-                class="sidebar-rail__button"
-                data-navigation-view={view}
-                aria-label={viewLabel(view)}
-                aria-pressed={host.navigationView === view ? "true" : "false"}
-                onClick={() => {
-                  const active = host.navigationView === view;
-                  host.navigationView = view;
-                  if (view === "online") {
-                    host.teamOnlineExpanded = true;
-                    if (host.collapsedSessionSections.has("online")) {
-                      host.toggleSection("online");
-                    }
-                  }
-                  if (!isMobileNavLayout() && (active || host.navigationCollapsed)) {
-                    host.onToggleSidebar?.();
-                  }
-                  host.requestUpdate();
-                }}
-              >
-                <Icon
-                  name={
-                    view === "pages"
-                      ? "layoutGrid"
-                      : view === "sessions"
-                        ? "messageCircle"
-                        : "users"
-                  }
-                />
-              </button>
-            </openclaw-tooltip>
+              <Icon
+                name={
+                  view === "pages" ? "layoutGrid" : view === "sessions" ? "messageCircle" : "users"
+                }
+              />
+            </button>
           )}
         </For>
       </div>
-      <openclaw-tooltip
-        prop:content={`${t("chat.openCommandPalette")} (${formatKeyboardShortcutCombo(KEYBOARD_SHORTCUT_COMBOS.commandPalette)})`}
+      <button
+        type="button"
+        class="sidebar-rail__button sidebar-brand__search sidebar-brand__desktop-control"
+        title={`${t("chat.openCommandPalette")} (${formatKeyboardShortcutCombo(KEYBOARD_SHORTCUT_COMBOS.commandPalette)})`}
+        aria-label={t("chat.openCommandPalette")}
+        disabled={!host.onOpenPalette}
+        onClick={() => host.onOpenPalette?.()}
       >
-        <button
-          type="button"
-          class="sidebar-rail__button sidebar-brand__search sidebar-brand__desktop-control"
-          aria-label={t("chat.openCommandPalette")}
-          disabled={!host.onOpenPalette}
-          onClick={() => host.onOpenPalette?.()}
-        >
-          <Icon name="search" />
-        </button>
-      </openclaw-tooltip>
+        <Icon name="search" />
+      </button>
       <div
         class={[
           "sidebar-rail__pins",
@@ -328,6 +318,7 @@ function renderRailPin(
           drop()?.entry === serialized ? `sidebar-zone-entry--drop-${drop()?.position}` : undefined,
         ]}
         data-sidebar-entry={serialized}
+        title={host.sidebarMenus.railPinMenuPosition ? "" : label()}
         draggable={!host.sidebarSnapshot ? "true" : "false"}
         onContextMenu={openMenu}
         onKeyDown={openMenu}
@@ -372,12 +363,7 @@ function renderRailPin(
         onDragOver={(event) => host.sessionOrganizer.handleSidebarZoneDragOver(event, serialized)}
         onDrop={(event) => host.sessionOrganizer.handleSidebarZoneDrop(event, serialized)}
       >
-        <openclaw-tooltip
-          prop:content={label()}
-          prop:disabled={Boolean(host.sidebarMenus.railPinMenuPosition)}
-        >
-          {content}
-        </openclaw-tooltip>
+        {content}
       </div>
     </Show>
   );

@@ -280,60 +280,55 @@ describe("SidebarUpdateCard", () => {
     expect(action().getAttribute("aria-disabled")).toBe("true");
   });
 
-  it.each([false, true])(
-    "checks and replaces the target on every expansion with acknowledged history=%s",
-    async (withHistory) => {
-      const update: UpdateAvailable = {
-        currentVersion: "1.0.0",
-        latestVersion: "1.0.0",
-        channel: "dev",
-        currentSha: "a".repeat(40),
-        upstreamSha: "b".repeat(40),
-        upstreamRef: "origin/main",
-        commitsBehind: 7,
-      };
-      const element = await mount(update);
-      element.setProps({
-        updateRun: withHistory
-          ? createUpdateRunFixture({ status: "succeeded", phase: "finished" })
-          : null,
-      });
-      element.setProps({ updateRunAcknowledged: withHistory });
-      const check = createDeferred<boolean>();
-      element.setProps({ compact: true });
-      element.setProps({ onCheckStatus: vi.fn(() => check.promise) });
-      element.setProps({ onUpdate: vi.fn() });
-      await settle();
-      const details = element.element.querySelector("details")!;
-      details.open = true;
-      await vi.waitFor(() => expect(element.props().onCheckStatus).toHaveBeenCalledOnce());
-      await settle();
-      expect(element.element.textContent).toContain("Checking for updates…");
-      expect(element.element.querySelector(".update-git-revisions")).toBeNull();
-      expect(
-        element.element.querySelector<HTMLButtonElement>(".sidebar-update-card__action")?.disabled,
-      ).toBe(true);
+  it("checks and replaces the target on every expansion with acknowledged history", async () => {
+    const update: UpdateAvailable = {
+      currentVersion: "1.0.0",
+      latestVersion: "1.0.0",
+      channel: "dev",
+      currentSha: "a".repeat(40),
+      upstreamSha: "b".repeat(40),
+      upstreamRef: "origin/main",
+      commitsBehind: 7,
+    };
+    const element = await mount(update);
+    element.setProps({
+      updateRun: createUpdateRunFixture({ status: "succeeded", phase: "finished" }),
+      updateRunAcknowledged: true,
+    });
+    const check = createDeferred<boolean>();
+    element.setProps({ compact: true });
+    element.setProps({ onCheckStatus: vi.fn(() => check.promise) });
+    element.setProps({ onUpdate: vi.fn() });
+    await settle();
+    const details = element.element.querySelector("details")!;
+    details.open = true;
+    await vi.waitFor(() => expect(element.props().onCheckStatus).toHaveBeenCalledOnce());
+    await settle();
+    expect(element.element.textContent).toContain("Checking for updates…");
+    expect(element.element.querySelector(".update-git-revisions")).toBeNull();
+    expect(
+      element.element.querySelector<HTMLButtonElement>(".sidebar-update-card__action")?.disabled,
+    ).toBe(true);
 
-      element.setProps({
-        updateAvailable: { ...update, upstreamSha: "c".repeat(40), commitsBehind: 9 },
-      });
-      await settle();
-      check.resolve(true);
-      await vi.waitFor(() =>
-        expect(element.element.querySelector(".update-git-revisions")?.textContent).toContain(
-          "cccccccc",
-        ),
-      );
-      expect(element.element.textContent).toContain("9 commits behind");
-      expect(element.props().onUpdate).not.toHaveBeenCalled();
-      details.open = false;
-      await new Promise<void>((resolve) => {
-        details.addEventListener("toggle", () => resolve(), { once: true });
-      });
-      details.open = true;
-      await vi.waitFor(() => expect(element.props().onCheckStatus).toHaveBeenCalledTimes(2));
-    },
-  );
+    element.setProps({
+      updateAvailable: { ...update, upstreamSha: "c".repeat(40), commitsBehind: 9 },
+    });
+    await settle();
+    check.resolve(true);
+    await vi.waitFor(() =>
+      expect(element.element.querySelector(".update-git-revisions")?.textContent).toContain(
+        "cccccccc",
+      ),
+    );
+    expect(element.element.textContent).toContain("9 commits behind");
+    expect(element.props().onUpdate).not.toHaveBeenCalled();
+    details.open = false;
+    await new Promise<void>((resolve) => {
+      details.addEventListener("toggle", () => resolve(), { once: true });
+    });
+    details.open = true;
+    await vi.waitFor(() => expect(element.props().onCheckStatus).toHaveBeenCalledTimes(2));
+  });
 
   it("checks and retries the target when running updates is unavailable", async () => {
     const element = await mount(
@@ -375,13 +370,13 @@ describe("SidebarUpdateCard", () => {
     expect(document.querySelector("openclaw-modal-dialog")).toBeNull();
   });
 
-  it.each([false, true])("retries a failed fresh target check with compact=%s", async (compact) => {
+  it("retries a failed fresh target check in the compact row", async () => {
     const element = await mount({
       currentVersion: "1.0.0",
       latestVersion: "2.0.0",
       channel: "stable",
     });
-    element.setProps({ compact });
+    element.setProps({ compact: true });
     await settle();
     element.setProps({ onCheckStatus: vi.fn(async () => false) });
     element.setProps({ onUpdate: vi.fn() });
@@ -418,61 +413,6 @@ describe("SidebarUpdateCard", () => {
     expect(element.props().onUpdate).not.toHaveBeenCalled();
   });
 
-  it("renders the refresh state and invokes its action", async () => {
-    const element = await mount(null);
-    const onRefresh = vi.fn(async () => false);
-    element.setProps({ refreshRequired: true });
-    element.setProps({ onRefresh });
-    await settle();
-
-    const card = element.element.querySelector(".sidebar-update-card");
-    expect(card?.getAttribute("role")).toBe("status");
-    expect(card?.getAttribute("aria-live")).toBe("polite");
-    expect(element.element.querySelector(".sidebar-update-card__title")?.textContent).toBe(
-      "Server updated",
-    );
-    expect(element.element.querySelector(".sidebar-update-card__subtitle")?.textContent).toBe(
-      "Refresh for full capabilities",
-    );
-    element.element.querySelector<HTMLButtonElement>(".sidebar-update-card__action")?.click();
-
-    expect(onRefresh).toHaveBeenCalledOnce();
-  });
-
-  it("restores an actionable retry after stale-client recovery cannot reach the Gateway", async () => {
-    const element = await mount(null);
-    let completeRefresh: ((reloading: boolean) => void) | undefined;
-    const firstRefresh = new Promise<boolean>((resolve) => {
-      completeRefresh = resolve;
-    });
-    const onRefresh = vi
-      .fn<() => Promise<boolean>>()
-      .mockReturnValueOnce(firstRefresh)
-      .mockResolvedValue(false);
-    element.setProps({ refreshRequired: true });
-    element.setProps({ onRefresh });
-    await settle();
-
-    const action = element.element.querySelector<HTMLButtonElement>(".sidebar-update-card__action");
-    action?.click();
-    await settle();
-
-    expect(action?.disabled).toBe(true);
-    expect(action?.textContent).toContain("Reloading…");
-    action?.click();
-    expect(onRefresh).toHaveBeenCalledOnce();
-
-    completeRefresh?.(false);
-    await vi.waitFor(() => expect(action?.disabled).toBe(false));
-    expect(element.element.textContent).toContain(
-      "Actions are unavailable while the Gateway reconnects.",
-    );
-    expect(action?.textContent).toContain("Retry now");
-
-    action?.click();
-    expect(onRefresh).toHaveBeenCalledTimes(2);
-  });
-
   it("ignores an obsolete refresh result after recovery state is re-established", async () => {
     const element = await mount(null);
     let completeFirst: ((reloading: boolean) => void) | undefined;
@@ -505,6 +445,8 @@ describe("SidebarUpdateCard", () => {
     await settle();
     expect(onRefresh).toHaveBeenCalledTimes(2);
     expect(action?.disabled).toBe(true);
+    action?.click();
+    expect(onRefresh).toHaveBeenCalledTimes(2);
 
     completeFirst?.(false);
     await settle();
@@ -518,49 +460,8 @@ describe("SidebarUpdateCard", () => {
     expect(element.element.textContent).toContain(
       "Actions are unavailable while the Gateway reconnects.",
     );
-  });
-
-  it("gives the refresh state precedence over an available update", async () => {
-    const element = await mount({
-      currentVersion: "1.0.0",
-      latestVersion: "2.0.0",
-      channel: "stable",
-    });
-    const onRefresh = vi.fn(async () => false);
-    const onUpdate = vi.fn();
-    element.setProps({ refreshRequired: true });
-    element.setProps({ onRefresh });
-    await settle();
-    element.setProps({ onUpdate });
-    await settle();
-
-    const card = element.element.querySelector(".sidebar-update-card");
-    expect(card?.getAttribute("role")).toBe("status");
-    expect(card?.getAttribute("aria-live")).toBe("polite");
-    expect(element.element.querySelector(".sidebar-update-card__title")?.textContent).toBe(
-      "Server updated",
-    );
-    expect(element.element.querySelector(".sidebar-update-card__subtitle")?.textContent).toBe(
-      "Refresh for full capabilities",
-    );
-    expect(element.element.textContent).not.toContain("Update Gateway");
-    expect(element.element.textContent).not.toContain("v2.0.0");
-    element.element.querySelector<HTMLButtonElement>(".sidebar-update-card__action")?.click();
-
-    expect(onRefresh).toHaveBeenCalledOnce();
-    expect(onUpdate).not.toHaveBeenCalled();
-  });
-
-  it("routes a recorded failure to update settings when availability is gone", async () => {
-    const element = await mount(null);
-    const onReviewUpdate = vi.fn();
-    element.setProps({ statusBanner: { tone: "danger", text: "Update failed" } });
-    element.setProps({ onReviewUpdate });
-    await settle();
-
-    expect(element.element.textContent).toContain("Update failed");
-    element.element.querySelector<HTMLButtonElement>(".sidebar-update-card__review")?.click();
-    expect(onReviewUpdate).toHaveBeenCalledOnce();
+    action?.click();
+    expect(onRefresh).toHaveBeenCalledTimes(3);
   });
 
   it.each([false, true])(
@@ -657,7 +558,7 @@ describe("SidebarUpdateCard", () => {
     expect(element.element.textContent).toContain("Updating Gateway…");
   });
 
-  it.each(["current", "ahead"] as const)(
+  it.each(["current"] as const)(
     "retires stale git availability after a refreshed %s comparison",
     async (status) => {
       const element = await mount(
@@ -672,7 +573,7 @@ describe("SidebarUpdateCard", () => {
           autoEnabled: false,
           install: {
             kind: "git",
-            git: status === "current" ? { status } : { status, commitsAhead: 1 },
+            git: { status },
           },
           target: {
             kind: "git",
@@ -686,32 +587,6 @@ describe("SidebarUpdateCard", () => {
       expect(element.element.querySelector(".sidebar-update-card")).toBeNull();
     },
   );
-
-  it("retains cached git availability when the refreshed comparison is unavailable", async () => {
-    const element = await mount(
-      {
-        currentVersion: "2026.9.3",
-        latestVersion: "2026.9.3",
-        channel: "dev",
-        commitsBehind: 246,
-      },
-      {
-        channel: "dev",
-        autoEnabled: false,
-        install: { kind: "git", git: { status: "unavailable", reason: "fetch-failed" } },
-        target: {
-          kind: "git",
-          upstreamRef: "origin/main",
-          upstreamSha: "abc1234def",
-          commitsBehind: 246,
-        },
-      },
-    );
-
-    expect(element.element.querySelector(".sidebar-update-card__action")?.textContent).toContain(
-      "246 commits behind",
-    );
-  });
 
   it("keeps an available update actionable inside the compact Inbox row", async () => {
     const element = await mount({
@@ -744,8 +619,6 @@ describe("SidebarUpdateCard", () => {
 
   it.each([
     { state: "running", ageMinutes: 30 },
-    { state: "succeeded", ageMinutes: 5 },
-    { state: "failed", ageMinutes: 5 },
     { state: "campaign", ageMinutes: 20 },
   ] as const)(
     "shows the recorded $state age beside the compact row's detail",

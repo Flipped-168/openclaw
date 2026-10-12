@@ -109,6 +109,9 @@ export class AppSidebarOwner extends AppSidebarSessionNavigationElement implemen
 
   releaseSidebarSnapshot(): void {
     const snapshot = this.sidebarSnapshot;
+    if (snapshot) {
+      this.pinnedSessions.seed(snapshot.pinnedSessions);
+    }
     this.sidebarPluginSnapshot =
       snapshot && this.context?.plugins.registryStatus !== "complete"
         ? { entries: snapshot.entries, plugins: snapshot.plugins }

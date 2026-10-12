@@ -24,6 +24,8 @@ function visibilityProbe() {
   const activeObservers = new Set<IntersectionObserver>();
   const observed = new Set<Element>();
   const intersections = new Map<Element, IntersectionObserverEntry>();
+  let delivery = Promise.withResolvers<void>();
+  let deliveryReady = () => true;
   vi.stubGlobal(
     "IntersectionObserver",
     class extends NativeObserver {
@@ -33,6 +35,9 @@ function visibilityProbe() {
           if (options?.root instanceof Element && options.root.matches(".sidebar-shell__body")) {
             for (const entry of entries) {
               intersections.set(entry.target, entry);
+            }
+            if (deliveryReady()) {
+              delivery.resolve();
             }
           }
         }, options);
@@ -62,6 +67,13 @@ function visibilityProbe() {
     activeObservers,
     observed,
     intersections,
+    get delivered() {
+      return delivery.promise;
+    },
+    reset(ready = () => true) {
+      deliveryReady = ready;
+      delivery = Promise.withResolvers<void>();
+    },
   };
 }
 
@@ -96,11 +108,11 @@ it("pauses offscreen session indicators and resumes them when their rows scroll 
   scroller.style.cssText = "height:600px;flex:none;overflow:auto";
   expect(observers).toHaveLength(0);
   harness.publishList(roster);
-  await sidebar.updateComplete;
+  await settleRoster(sidebar);
   const revealRunningRows = async () => {
     for (let page = 0; page < 2; page++) {
       sidebar.querySelector<HTMLButtonElement>(".sidebar-session-pagination__button")!.click();
-      await sidebar.updateComplete;
+      await settleRoster(sidebar);
     }
   };
   await revealRunningRows();
@@ -114,7 +126,8 @@ it("pauses offscreen session indicators and resumes them when their rows scroll 
   const first = rows[0]!;
   const last = rows.at(-1)!;
   const ring = (row: HTMLElement) => row.querySelector<HTMLElement>(".session-glyph__ring")!;
-  const scrollTo = async (row: HTMLElement) => {
+  const scrollTo = async (row: HTMLElement, ready = () => true) => {
+    probe.reset(ready);
     scroller.scrollTop += row.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
     await waitForSolid(() =>
       expect(ring(first).classList.contains("session-run-indicator--offscreen")).toBe(true),
@@ -151,7 +164,10 @@ it("pauses offscreen session indicators and resumes them when their rows scroll 
         ),
       },
     });
-    await sidebar.updateComplete;
+    await settleRoster(sidebar);
+    if (patch.hasActiveRun !== false) {
+      await probe.delivered;
+    }
   };
   // Queuing replaces the ring's class binding without moving its observed row.
   await updateRows({ status: "queued" });
@@ -196,8 +212,9 @@ it("pauses offscreen session indicators and resumes them when their rows scroll 
   await sidebar.updateComplete;
   expect(disconnect).toHaveBeenCalledOnce();
   expect(activeObservers.size).toBe(0);
+  probe.reset();
   provider.append(sidebar.hostElement);
-  await sidebar.updateComplete;
+  await settleRoster(sidebar);
   sidebar.style.cssText =
     "display:block;position:fixed;inset:0 auto auto 0;width:280px;height:240px";
   scroller = sidebar.querySelector<HTMLElement>(".sidebar-shell__body")!;
@@ -208,8 +225,10 @@ it("pauses offscreen session indicators and resumes them when their rows scroll 
     (row) => row.querySelector(".session-glyph__trace-run"),
   );
   expect(reconnectedRows).toHaveLength(11);
+  probe.reset();
   scroller.scrollTop +=
     reconnectedRows.at(-1)!.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
+  await probe.delivered;
   await waitForSolid(() =>
     expect(trace(reconnectedRows[0]!).classList.contains("session-run-indicator--offscreen")).toBe(
       true,

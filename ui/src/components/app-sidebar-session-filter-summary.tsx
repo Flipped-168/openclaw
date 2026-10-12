@@ -2,7 +2,8 @@ import type { JSX } from "@solidjs/web";
 import { createMemo, Show, untrack } from "solid-js";
 import { gatewayPresentationScope } from "../app/gateway-presentation-scope.ts";
 import { isMobileNavLayout } from "../app/mobile-nav-layout.ts";
-import { t } from "../lib/reactive/i18n.ts";
+import { sessionParticipantIdentityKey } from "../lib/chat/sender-label.ts";
+import { getLocale, t } from "../lib/reactive/i18n.ts";
 import type { SessionListHost } from "./app-sidebar-session-render-types.ts";
 import { renderSessionOwnerAvatar } from "./session-owner-chip.ts";
 import { Icon } from "./solid/icon.tsx";
@@ -29,6 +30,26 @@ function SidebarOwnerPicker(props: { host: SessionListHost }) {
         : ownerId()
           ? (owners().find((entry) => entry.id === ownerId())?.label ?? ownerId()!)
           : t("sessionsView.allOwners");
+  const optionKeys = createMemo(
+    () => [
+      ownerId(),
+      selfId(),
+      props.host.sessionInvolvingMeFilterActive,
+      Boolean(props.host.sidebarSnapshot),
+      isMobileNavLayout(),
+      getLocale(),
+      ...owners().flatMap((entry) => [
+        entry.id,
+        entry.label,
+        entry.avatarUrl,
+        entry.identity ? sessionParticipantIdentityKey(entry.identity) : null,
+      ]),
+    ],
+    {
+      equals: (previous, next) =>
+        previous.length === next.length && previous.every((value, index) => value === next[index]),
+    },
+  );
   const options = () => [
     { value: "all", label: t("sessionsView.allOwners") },
     { value: "involving-me", label: t("sessionsView.involvingMe") },
@@ -40,6 +61,33 @@ function SidebarOwnerPicker(props: { host: SessionListHost }) {
       ? [{ value: `owner:${ownerId()}`, label: label() }]
       : []),
   ];
+  const params = createMemo(() => {
+    optionKeys();
+    return untrack(() => ({
+      id: "sidebar-session-owner-title",
+      class: "sidebar-session-owner-filter",
+      label: t("sessionsView.owners"),
+      value: props.host.sessionInvolvingMeFilterActive
+        ? "involving-me"
+        : ownerId()
+          ? `owner:${ownerId()}`
+          : "all",
+      disabled: Boolean(props.host.sidebarSnapshot),
+      searchable: "always" as const,
+      sheet: isMobileNavLayout(),
+      showOptionTooltips: false,
+      renderLeading: (option: { value: string }) => {
+        const owner = owners().find((entry) => `owner:${entry.id}` === option.value);
+        return owner ? renderSessionOwnerAvatar(owner) : undefined;
+      },
+      options: options(),
+      onChange: (value: string) =>
+        props.host.setSessionOwnerFilter(
+          value.startsWith("owner:") ? value.slice("owner:".length) : null,
+          value === "involving-me",
+        ),
+    }));
+  });
   return (
     <Show
       when={owners().length > 0 || ownerId() !== null || props.host.sessionInvolvingMeFilterActive}
@@ -47,34 +95,7 @@ function SidebarOwnerPicker(props: { host: SessionListHost }) {
         <span class="sidebar-recent-sessions__label-text">{t("chat.sidebar.threads")}</span>
       }
     >
-      <Picker
-        id="sidebar-session-owner-title"
-        class="sidebar-session-owner-filter"
-        label={t("sessionsView.owners")}
-        value={
-          props.host.sessionInvolvingMeFilterActive
-            ? "involving-me"
-            : ownerId()
-              ? `owner:${ownerId()}`
-              : "all"
-        }
-        disabled={Boolean(props.host.sidebarSnapshot)}
-        searchable="always"
-        sheet={isMobileNavLayout()}
-        showOptionTooltips={false}
-        renderLeading={(option) => {
-          const owner = untrack(owners).find((entry) => `owner:${entry.id}` === option.value);
-          // The unported picker owns this callback's Lit content.
-          return owner ? renderSessionOwnerAvatar(owner) : undefined;
-        }}
-        options={options()}
-        onChange={(value) =>
-          props.host.setSessionOwnerFilter(
-            value.startsWith("owner:") ? value.slice("owner:".length) : null,
-            value === "involving-me",
-          )
-        }
-      />
+      <Picker {...params()} />
     </Show>
   );
 }

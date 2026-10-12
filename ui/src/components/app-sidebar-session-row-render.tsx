@@ -319,39 +319,35 @@ function renderRecentSessionRow(params: RecentSessionParams) {
               <Icon name="pin" />
             </button>
           )}
-          <openclaw-tooltip
-            prop:content={(() => {
+          <button
+            class="session-action"
+            data-sidebar-session-archive="true"
+            type="button"
+            title={(() => {
               const access = archiveAccess();
               return access.allowed ? archiveLabel() : access.reason;
             })()}
-            prop:describe={false}
+            aria-label={`${archiveLabel()}: ${label()}`}
+            disabled={!archiveAccess().allowed || !archiveAllowed() || archiving()}
+            onClick={(event: MouseEvent) => {
+              event.stopPropagation();
+              if (session().archived) {
+                void host().sessionOrganizer.patchSession(
+                  session(),
+                  {
+                    archived: false,
+                  },
+                  {
+                    sessionScope: true,
+                  },
+                );
+              } else {
+                void host().sessionOrganizer.archiveSessionWithUndo(session());
+              }
+            }}
           >
-            <button
-              class="session-action"
-              data-sidebar-session-archive="true"
-              type="button"
-              aria-label={`${archiveLabel()}: ${label()}`}
-              disabled={!archiveAccess().allowed || !archiveAllowed() || archiving()}
-              onClick={(event: MouseEvent) => {
-                event.stopPropagation();
-                if (session().archived) {
-                  void host().sessionOrganizer.patchSession(
-                    session(),
-                    {
-                      archived: false,
-                    },
-                    {
-                      sessionScope: true,
-                    },
-                  );
-                } else {
-                  void host().sessionOrganizer.archiveSessionWithUndo(session());
-                }
-              }}
-            >
-              {session().archived ? <Icon name="archiveRestore" /> : <Icon name="archive" />}
-            </button>
-          </openclaw-tooltip>
+            {session().archived ? <Icon name="archiveRestore" /> : <Icon name="archive" />}
+          </button>
           <button
             class="session-action session-action--touch-menu"
             data-sidebar-session-menu="true"
