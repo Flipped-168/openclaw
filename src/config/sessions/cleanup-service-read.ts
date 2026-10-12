@@ -104,8 +104,8 @@ export function withSessionCleanupStore<T>(
               key: `file:${snapshot.source.databaseIdentity}`,
               birthtime: snapshot.source.databaseBirthtime,
             };
-            source.identity = identity;
           }
+          source.identity = identity;
           assertCurrent();
           return snapshot;
         },
