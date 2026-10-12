@@ -82,7 +82,7 @@ suite.define(() => {
       agentId: "research",
       archivedFilter: "archived",
       limit: pageSize,
-      rowMode: "compact",
+      rowMode: "sidebar",
       includeDerivedTitles: true,
       includeLastMessage: true,
     } as const;
