@@ -274,11 +274,12 @@ describe("chat delivery watermark preparation", () => {
               const transcriptReads = sql.queries.filter((query) =>
                 /\bfrom\s+"?transcript_events\b/i.test(query),
               );
-              expect(transcriptReads).toEqual([]);
+              // Unbound incognito fixtures retain their native owner until the actor cutover.
+              expect(transcriptReads.length > 0).toBe(incognito);
               const sessionReads = sql.queries.filter((query) =>
                 /\bfrom\s+"?session_(?:nodes|participants)\b/i.test(query),
               );
-              expect(sessionReads).toEqual([]);
+              expect(sessionReads.length > 0).toBe(incognito);
             } finally {
               sql.restore();
             }

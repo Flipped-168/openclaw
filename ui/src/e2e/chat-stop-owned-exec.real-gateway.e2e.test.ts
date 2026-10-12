@@ -240,8 +240,8 @@ for (const stopMethod of ["button", "slash"] as const) {
             expect(provider.parentRequests()).toBe(3);
             await composer.fill(fixture.nextPrompt);
             await pane.getByRole("button", { name: "Send message", exact: true }).click();
-            await pane.getByRole("paragraph").filter({ hasText: fixture.nextReply }).waitFor();
             await stop.waitFor({ state: "hidden" });
+            await pane.getByRole("paragraph").filter({ hasText: fixture.nextReply }).waitFor();
             expect(
               provider.parentRequests(),
               "only the new human prompt may start another model turn",
