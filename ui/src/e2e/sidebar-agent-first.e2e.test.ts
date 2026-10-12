@@ -330,6 +330,7 @@ suite.define(() => {
             await group.locator('.sidebar-agent-roster__signals [aria-label="Unread"]').count(),
           ).toBe(1);
           const summary = group.locator(".sidebar-agent-roster__signals [data-session-attention]");
+          await expect.poll(() => summary.isVisible()).toBe(true);
           const summaryBounds = (await summary.boundingBox())!;
           const summaryActions = (await group
             .locator(".sidebar-agent-roster__actions")
@@ -342,7 +343,6 @@ suite.define(() => {
             beforeFocus.rows[0]!.right,
             1,
           );
-          expect(await summary.isVisible()).toBe(true);
           await captureSidebarUiProof(suite, page, `agent-first-${mode}-${width}-collapsed.png`);
         },
       );
