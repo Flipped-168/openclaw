@@ -5,6 +5,7 @@ import {
   createAdmittedRunOperatorAuthority,
   type AdmittedRunOperatorAuthority,
 } from "../../agents/admitted-run-context.js";
+import { setRuntimeConfigSnapshot } from "../../config/runtime-snapshot.js";
 import { createChatSendLateFollowupDisposition } from "../../gateway/server-methods/chat-send-late-followup.js";
 import { createChatSendLateReplyFinalizer } from "../../gateway/server-methods/chat-send-source-finalization.js";
 import { createGatewayRequestContext } from "../../gateway/server-request-context.js";
@@ -107,6 +108,7 @@ function createStalledRun(
     messageProvider: "telegram",
     senderId: "traveler",
   });
+  setRuntimeConfigSnapshot(followupRun.run.config);
   followupRun.originatingChannel = options.originatingChannel ?? "telegram";
   followupRun.originatingTo = options.originatingChannel ? undefined : "12345";
   followupRun.operatorAuthority = options.operatorAuthority;

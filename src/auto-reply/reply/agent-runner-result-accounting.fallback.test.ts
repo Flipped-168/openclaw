@@ -2,6 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, afterEach, beforeAll, expect, it } from "vitest";
+import { setRuntimeConfigSnapshot } from "../../config/runtime-snapshot.js";
 import {
   loadSessionEntry,
   persistSessionTranscriptTurn,
@@ -55,6 +56,7 @@ async function createFixture(selected = diagnostic) {
     model: selected.model,
   };
   const cfg: OpenClawConfig = { session: { store: storePath } };
+  setRuntimeConfigSnapshot(cfg);
   await replaceSessionEntry({ storePath, sessionKey }, entry);
   const replyOperation = createReplyOperation({
     sessionId: entry.sessionId,
