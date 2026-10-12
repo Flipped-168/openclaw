@@ -96,6 +96,8 @@ including local OpenAI-compatible `/v1/audio/transcriptions` endpoints and local
 CLI models. Audio is transcribed when capture ends; file-based providers do not
 produce partial captions. An explicit Talk transcription provider or Voice Call
 streaming configuration keeps the streaming path.
+Loopback and private-network endpoints use the existing provider opt-in:
+`models.providers.<id>.request.allowPrivateNetwork: true`.
 
 Set `talk.realtime.mode: "stt-tts"` for split browser Talk: the Gateway transcribes
 each utterance, the current chat session's agent answers it, and the browser plays

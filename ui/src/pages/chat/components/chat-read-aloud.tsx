@@ -17,9 +17,12 @@ export function ReadAloud(props: { text: string }) {
   const [playing, setPlaying] = createSignal(false);
   const [error, setError] = createSignal("");
   let generation = 0;
-  const stop = () => {
+  const cancelPlayback = () => {
     generation += 1;
     playback.stop();
+  };
+  const stop = () => {
+    cancelPlayback();
     setPlaying(false);
   };
   createEffect(
@@ -31,7 +34,7 @@ export function ReadAloud(props: { text: string }) {
       void context?.runtimeConfig.ensureLoaded().catch(() => undefined);
     },
   );
-  onCleanup(stop);
+  onCleanup(cancelPlayback);
   const available = () => {
     const snapshot = config?.read().state.configSnapshot;
     const runtime = snapshot?.runtimeConfig ?? snapshot?.config;

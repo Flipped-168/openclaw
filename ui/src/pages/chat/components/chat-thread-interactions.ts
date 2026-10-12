@@ -10,6 +10,7 @@ import type {
   GatewaySessionRow,
   SessionsListResult,
 } from "../../../api/types.ts";
+import type { ApplicationContext } from "../../../app/context.ts";
 import type { QuestionPrompt } from "../../../app/question-prompt.ts";
 import type { BrowserTabSelection } from "../../../components/browser/browser-target.ts";
 import { copyMarkdownLabel, handleCopyButton } from "../../../components/copy-button.ts";
@@ -109,6 +110,7 @@ type ReplyMessageAccess = {
 
 export type ChatThreadProps = ChatSendStatusActions &
   SubagentRoster & {
+    applicationContext?: ApplicationContext;
     messageReactions?: ReadonlyMap<string, MessageReactionSummary[]>;
     onReact?: (messageId: string, emoji: string, remove: boolean) => void;
     branding?: ThemeBranding;

@@ -2,6 +2,7 @@
 // for one transcript. Owned and swapped by ChatTranscriptController.
 import { Virtualizer } from "@tanstack/virtual-core";
 import { nothing, type ReactiveController, type ReactiveControllerHost } from "lit";
+import type { ApplicationContext } from "../../../app/context.ts";
 import { McpAppUnmountGate } from "../../../components/mcp-app-unmount.ts";
 import { resolveScrollBehavior } from "../../../lib/scroll-behavior.ts";
 import type { PresentationValue } from "../../../lit/presentation-binding.ts";
@@ -104,8 +105,7 @@ export class ChatSessionVirtualizerHost implements ReactiveControllerHost, ChatT
   }
   // Keep one ref per root and row so redraws do not repeat attachment work.
   readonly scrollElementRef = (element?: Element) => {
-    const next = element instanceof HTMLDivElement ? element : null;
-    this.threadInnerElement = next;
+    this.threadInnerElement = element instanceof HTMLDivElement ? element : null;
     // A retained root can move to another host without changing its identity.
     this.queueScrollElementAttach();
   };
@@ -423,6 +423,7 @@ export class ChatSessionVirtualizerHost implements ReactiveControllerHost, ChatT
     overlay: unknown = nothing,
     header: TranscriptHeader | null = null,
     presented: PresentationValue = true,
+    applicationContext?: ApplicationContext,
   ): HTMLDivElement {
     this.offsetState.renderedScrollState = this.offsetState.renderState(
       this.scrollElement !== null && this.endAnchor.atEnd,
@@ -450,6 +451,7 @@ export class ChatSessionVirtualizerHost implements ReactiveControllerHost, ChatT
         renderKeyRows: this.candidateMessageRowsByKey,
         entryKeys: this.entryAnimations.projectedKeys,
         presented,
+        applicationContext,
       },
       true,
     );
@@ -508,6 +510,7 @@ export class ChatSessionVirtualizerHost implements ReactiveControllerHost, ChatT
         }
         this.announcement.sync(announcement, announce);
         return this.renderer.render({
+          applicationContext: snapshot.applicationContext,
           layout: this.layout,
           headerHeight: this.headerHeight,
           presented: snapshot.presented,
@@ -535,9 +538,6 @@ export class ChatSessionVirtualizerHost implements ReactiveControllerHost, ChatT
             ...(this.threadInnerElement?.querySelectorAll<HTMLElement>("mcp-app-view") ?? []),
           ].flatMap((app) => app.closest<HTMLElement>(".chat-virtual-row") ?? []),
         );
-        if (appRows.size === 0) {
-          return [];
-        }
         const nextRenderedKeys = rowModelChanged
           ? previewTranscriptRowKeys(virtualizer, nextKeys, this.focusedRowKey)
           : new Set(nextRowKeys);
@@ -704,13 +704,12 @@ export class ChatSessionVirtualizerHost implements ReactiveControllerHost, ChatT
   }
 
   private reconcileInteractionResize(sidebarCommitTarget?: EventTarget | null): void {
-    const virtualizer = this.virtualizer;
     if (
       reconcileChatTranscriptInteractionResize(
         this.offsetState.pendingInteractionAnchor,
         sidebarCommitTarget,
         this.scrollElement,
-        virtualizer,
+        this.virtualizer,
       )
     ) {
       this.offsetState.pendingInteractionAnchor = null;

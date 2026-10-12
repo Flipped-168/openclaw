@@ -339,10 +339,9 @@ export function projectChatTranscript(props: ChatThreadProps, transcript: ChatTr
   } satisfies StreamGroupOptions;
   const renderGroupOptions = (item: MessageGroup) => {
     const continuation = continuations.get(item.key);
-    const lastMessage = item.messages.at(-1)?.message;
     const rewindEntryId =
-      item.role.toLowerCase() === "user" && lastMessage
-        ? persistedMessageEntryId(lastMessage)
+      item.role.toLowerCase() === "user"
+        ? persistedMessageEntryId(item.messages.at(-1)?.message)
         : null;
     return {
       ...sharedMessageRenderOptions,
@@ -724,6 +723,7 @@ export function projectChatTranscript(props: ChatThreadProps, transcript: ChatTr
         overlay,
         header,
         props.transcriptVisible ?? true,
+        props.applicationContext,
       ),
   };
 }

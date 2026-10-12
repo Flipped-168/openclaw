@@ -372,6 +372,7 @@ export class ChatPane extends ChatPaneLayoutRender {
       !catalogKey && !sessionParticipationBlocked,
     );
     const props: ChatProps = {
+      applicationContext: this.context,
       transcript: this.transcript,
       paneId: this.presentationId,
       sessionKey: state.sessionKey,
