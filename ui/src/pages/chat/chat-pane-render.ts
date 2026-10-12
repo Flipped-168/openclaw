@@ -83,6 +83,8 @@ export class ChatPaneRuntime extends ChatPaneLayoutRender {
     const selectionConnectionGeneration = this.connectionGeneration;
     const selectedSession = selectedChatSessionRow(state);
     const providerPaused = Boolean(selectedSession?.providerReview);
+    const childRoster = this.projectChildRoster(this.resolveChatReadTarget());
+    this.syncSubagentsPanelPresence(selectedSession, childRoster);
     const progressPresentation = this.progressCardPresentation;
     const selectedSessionArchived = this.isCurrentSessionArchived(state);
     const mutationAccess = readChatPaneMutationAccess(
@@ -413,9 +415,7 @@ export class ChatPaneRuntime extends ChatPaneLayoutRender {
         lockChatScroll(state);
         this.transcript.cancelScroll();
       },
-      onDismissProgressCard: progressPresentation
-        ? (card) => this.hideProgressCard(card)
-        : undefined,
+      onDismissProgressCard: progressPresentation ? this.hideProgressCard.bind(this) : undefined,
       gatewayQuestionPrompts,
       asyncQuestionStorage: nativeConversation
         ? this.chatState.composerPersistence.durableScope
@@ -530,7 +530,7 @@ export class ChatPaneRuntime extends ChatPaneLayoutRender {
               (composerState.capabilityMenuView === "skills" ||
                 composerState.capabilityMenuView.startsWith("library:")),
           ),
-      ...this.projectChildRoster(this.resolveChatReadTarget()),
+      ...childRoster,
       sessionHost: {
         assistantAgentId: state.assistantAgentId,
         agentsList: state.agentsList,

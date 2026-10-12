@@ -12,6 +12,7 @@ import { releaseChatAttachmentPayloads } from "./attachment-payload-store.ts";
 import { getChatHistoryLoadState } from "./chat-history-state.ts";
 import { buildPendingInputQueueItems, getChatPendingInputs } from "./chat-pending-inputs.ts";
 import { chatStartupStatusLabel } from "./chat-run-startup.ts";
+import { projectSubagentStatus } from "./chat-subagent-wait.ts";
 import type { ChatProps } from "./chat-view.tsx";
 import { createAsyncQuestionPresentation } from "./components/chat-async-question.ts";
 import {
@@ -123,6 +124,7 @@ export function createChatViewFrame(props: ChatProps) {
   }
   // Placement is visible work, but does not own an abortable model run yet.
   const runWorking = Boolean(placementStartup) || isChatRunWorking(props);
+  const subagents = projectSubagentStatus({ ...props, runWorking }, false);
   const threadProps: ChatThreadProps = {
     ...props,
     asyncQuestions,
@@ -225,6 +227,7 @@ export function createChatViewFrame(props: ChatProps) {
     openImmediateImage,
     attachmentDropHandlers,
     threadProps,
+    subagents,
     displayQueue,
     historyLoadState,
     historyFailed,

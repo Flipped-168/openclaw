@@ -22,8 +22,8 @@ import { formatDurationCompact } from "../../../lib/format-duration.ts";
 import { pathDisplayName } from "../../../lib/path-display.ts";
 import { t } from "../../../lib/reactive/i18n.ts";
 import { defineSolidBridge } from "../../../lit/solid-bridge.ts";
-import { solidContent } from "../../../lit/solid-content.tsx";
-import { PluginView } from "../../../plugins/control-ui-view.solid.tsx";
+import { LitContent, solidContent } from "../../../lit/solid-content.tsx";
+import { renderPluginSurface } from "../../../plugins/control-ui-view.ts";
 import { resolveSpawnedSubagent, type SpawnedSubagent } from "../chat-spawned-subagent.ts";
 import type { PluginToolIcons } from "../chat-tool-icon-controller.ts";
 import { HighlightedCommand } from "./chat-command-highlight.solid.tsx";
@@ -614,11 +614,13 @@ export function ChatToolCard(props: ToolCardProps) {
     },
   });
   return (
-    <PluginView
-      surface="tool-result"
-      props={toolResultSurfaceProps(props.card, props.options)}
-      defaultView={fallback}
-      presented={props.options.presented ?? true}
+    <LitContent
+      value={renderPluginSurface(
+        "tool-result",
+        toolResultSurfaceProps(props.card, props.options),
+        fallback,
+        props.options.presented ?? true,
+      )}
     />
   );
 }

@@ -26,8 +26,6 @@ import {
   type PresentationValue,
 } from "../../lit/presentation-binding.ts";
 import { LitContent, solidContent, emptyLegacyContent } from "../../lit/solid-content.tsx";
-import { PluginContributions } from "../../plugins/control-ui-contributions.solid.tsx";
-import { PluginView } from "../../plugins/control-ui-view.solid.tsx";
 import { getChatHistoryLoadState } from "./chat-history-state.ts";
 import { loadChatPendingInputs } from "./chat-pending-inputs.ts";
 import type { ChatProviderReviewController } from "./chat-provider-review-controller.tsx";
@@ -248,11 +246,11 @@ function ChatFooterContent(input: ChatViewInput) {
         <LitContent value={renderChatSwarmProgress(input.props.swarm!)} />
       </Show>
       <Show when={input.application}>
-        <PluginContributions
-          kind="composer"
-          sessionKey={input.props.sessionKey}
-          agentId={input.props.currentAgentId}
-          presented={input.presented}
+        <openclaw-plugin-contributions
+          prop:kind="composer"
+          prop:sessionKey={input.props.sessionKey}
+          prop:agentId={input.props.currentAgentId}
+          prop:presented={input.presented}
         />
       </Show>
     </>
@@ -264,6 +262,8 @@ function ChatComposerView(input: ChatViewInput) {
     <ChatComposer
       {...input.props}
       renderRevision={input.frame}
+      waitingSubagents={input.frame.subagents.wait}
+      onOpenSubagents={input.frame.subagents.listed ? input.props.onOpenSubagents : undefined}
       progressCard={input.props.detailsEnabled ? null : input.props.progressCard}
       progressCardInitialLoading={
         input.props.detailsEnabled ? false : input.props.progressCardInitialLoading
@@ -341,16 +341,16 @@ function ChatSurface<S extends "transcript" | "composer">(input: {
   const selected = createMemo(() => runtime.read()?.selectedReplacement(input.surface));
   return (
     <Show when={selected()} fallback={<input.view {...input.viewProps} />}>
-      <PluginView
-        surface={input.surface}
-        props={input.surfaceProps}
-        presented={input.viewProps.presented}
+      <openclaw-plugin-view
+        prop:surface={input.surface}
+        prop:props={input.surfaceProps}
+        prop:presented={input.viewProps.presented}
         data-plugin-composer={input.surface === "composer" ? "" : undefined}
-        defaultView={solidContent(ChatSurfaceContent, {
+        prop:defaultView={solidContent(ChatSurfaceContent, {
           view: input.view,
           viewProps: input.viewProps,
         })}
-        replacementCompanion={
+        prop:replacementCompanion={
           input.companion
             ? solidContent(ChatSurfaceContent, {
                 view: input.companion,
@@ -489,11 +489,11 @@ function ChatContent(input: { props: ChatProps }) {
                   {renderChatTopbarNotices(input.props)}
                 </Show>
                 <Show when={application}>
-                  <PluginContributions
-                    kind="header"
-                    sessionKey={input.props.sessionKey}
-                    agentId={input.props.currentAgentId}
-                    presented={presented()}
+                  <openclaw-plugin-contributions
+                    prop:kind="header"
+                    prop:sessionKey={input.props.sessionKey}
+                    prop:agentId={input.props.currentAgentId}
+                    prop:presented={presented()}
                   />
                 </Show>
                 <LitContent

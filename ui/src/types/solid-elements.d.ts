@@ -30,10 +30,17 @@ declare module "@solidjs/web" {
       messageActions: MessageActionDetails | null | undefined;
     }
     interface IntrinsicElements {
+      "openclaw-plugin-contributions": HTMLAttributes<HTMLElement> & {
+        "prop:kind": "header" | "composer";
+        "prop:sessionKey": string;
+        "prop:agentId": string | undefined;
+        "prop:presented": boolean;
+      };
       "openclaw-plugin-view": HTMLAttributes<HTMLElement> & {
-        "prop:surface": "tool-result";
-        "prop:props": ControlUiSurfaceProps["tool-result"];
+        "prop:surface": keyof ControlUiSurfaceProps;
+        "prop:props": ControlUiSurfaceProps[keyof ControlUiSurfaceProps];
         "prop:defaultView": unknown;
+        "prop:replacementCompanion"?: unknown;
         "prop:presented": boolean;
       };
       "openclaw-message-reaction-picker": HTMLAttributes<HTMLElement> & {

@@ -18,7 +18,7 @@ import { resolveMessageDisplayMarkdown } from "../../../lib/chat/message-display
 import { registerEnglishCatalog, t } from "../../../lib/reactive/i18n.ts";
 import { presentedContent } from "../../../lit/presentation-binding.ts";
 import { LitContent, solidContent } from "../../../lit/solid-content.tsx";
-import "../../../plugins/control-ui-view.solid.tsx";
+import { renderPluginSurface } from "../../../plugins/control-ui-view.ts";
 import { assistantMessageIsInterrupted } from "../chat-assistant-reply.ts";
 import { renderAsyncQuestionSummary } from "./chat-async-question.ts";
 import "../../../components/person-reference.ts";
@@ -574,14 +574,16 @@ function ToolMessage(props: ContentProps) {
   return (
     <Show when={props.state().singleToolCard} fallback={<LitContent value={fallback} />}>
       {(card) => (
-        <openclaw-plugin-view
-          prop:surface="tool-result"
-          prop:props={toolResultSurfaceProps(card(), {
-            ...props.state().toolRenderOptions,
-            expanded: props.state().toolMessageExpanded,
-          })}
-          prop:defaultView={fallback}
-          prop:presented={props.options.presented ?? true}
+        <LitContent
+          value={renderPluginSurface(
+            "tool-result",
+            toolResultSurfaceProps(card(), {
+              ...props.state().toolRenderOptions,
+              expanded: props.state().toolMessageExpanded,
+            }),
+            fallback,
+            props.options.presented ?? true,
+          )}
         />
       )}
     </Show>
