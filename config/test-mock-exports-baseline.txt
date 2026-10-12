@@ -3199,7 +3199,6 @@
 ["src/agents/test-helpers/embedded-agent-runner-e2e-mocks.ts","../runtime-plugins.js","d50fd7edca595c864d90a65fd1ab307317cc1e89fdd4296b765d464f6fa54ccd",1]
 ["src/agents/test-helpers/fast-bash-tools.ts","../bash-tools.js","93f8aebdc6aef3d1cef78e28c50db0248e550537404123af2cf55de72e75015a",1]
 ["src/agents/test-helpers/fast-openclaw-tools-sessions.ts","../../channels/plugins/index.js","2c980f8d653a0706de3b0d372886f458e475d70495701a2ff33b98ba2f6983b3",1]
-["src/agents/test-helpers/fast-openclaw-tools-sessions.ts","../../channels/plugins/session-conversation.js","fb5f8f2d8f46833b9c236fadfd9d1f76195d73fe6813b3b651299003bd83bf63",1]
 ["src/agents/test-helpers/fast-openclaw-tools-sessions.ts","../tools/agents-list-tool.js","1f191e26ba01be1a7b068918e987e27b132ba5ae75b19f4fdeb39fe19b452163",1]
 ["src/agents/test-helpers/fast-openclaw-tools-sessions.ts","../tools/computer-tool.js","b96096a71589f55718a560db12ac669e4a8a523f9cef33812c244b97c4d5aa05",1]
 ["src/agents/test-helpers/fast-openclaw-tools-sessions.ts","../tools/cron-tool.js","7ab8c888af26a9dadad882e8cce9362302183e89e8f0baabed96efc6c9c6fd3d",1]

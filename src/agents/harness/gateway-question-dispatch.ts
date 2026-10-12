@@ -5,12 +5,15 @@ import type {
 import type { PreparedSessionEntryWorkerRead } from "../../config/sessions/session-entry-read-runtime.types.js";
 import { isEmbeddedMode } from "../../infra/embedded-mode.js";
 import type { EmbeddedQuestionBroker } from "../../infra/embedded-question-broker.js";
+import type { EmbeddedRunAttemptParams } from "../embedded-agent-runner/run/types.js";
 import type { GatewayQuestionCall } from "../tools/gateway-question-lifecycle.js";
+import type { AgentHarnessHostCapabilities } from "./host-capability-types.js";
 import {
   readQuestionDispatchCapability,
   prepareQuestionInputAuthority,
   type QuestionInputAuthority,
 } from "./host-private-capabilities.js";
+import type { AgentHarnessUserInputPromptOptions } from "./user-input-bridge.js";
 import type {
   AgentHarnessUserInputAnswers,
   AgentHarnessUserInputQuestion,
@@ -22,6 +25,21 @@ export type AgentHarnessQuestionGatewayCall = (
   params?: unknown,
   extra?: { signal?: AbortSignal },
 ) => Promise<unknown>;
+
+export type RunAgentHarnessGatewayQuestionParams = {
+  questions: readonly AgentHarnessUserInputQuestion[];
+  sessionKey: string;
+  agentId?: string;
+  runId?: string;
+  timeoutMs: number;
+  gatewayCall?: AgentHarnessQuestionGatewayCall | AgentQuestionDispatcher;
+  delivery: Pick<EmbeddedRunAttemptParams, "onBlockReply" | "onPartialReply"> & {
+    hostCapabilities?: AgentHarnessHostCapabilities;
+  };
+  promptOptions?: AgentHarnessUserInputPromptOptions;
+  signal?: AbortSignal;
+  questionId?: string;
+};
 
 type QuestionDispatchAuthority =
   | { kind: "unscoped" }

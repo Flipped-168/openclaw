@@ -32,6 +32,7 @@ import type {
   ChannelAccountState,
   ChannelDirectoryEntry,
   ChannelGroupContext,
+  ChannelDirectToolPolicyContext,
   ChannelHeartbeatDeps,
   ChannelLegacyStateMigrationPlan,
   ChannelLogSink,
@@ -675,6 +676,10 @@ type ChannelSecurityDmRouteContext<ResolvedAccount> = ChannelSecurityContext<Res
 };
 
 export type ChannelSecurityAdapter<ResolvedAccount = unknown> = {
+  /** Resolve configured direct-conversation permissions once per new execution admission. */
+  resolveDirectToolPolicy?: (
+    ctx: ChannelDirectToolPolicyContext,
+  ) => GroupToolPolicyConfig | undefined;
   applyConfigFixes?: (params: {
     cfg: OpenClawConfig;
     env: NodeJS.ProcessEnv;

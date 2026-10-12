@@ -7,7 +7,7 @@ import {
 import { buildInboundMetaSystemPrompt } from "../../auto-reply/reply/inbound-meta.js";
 import type { TemplateContext } from "../../auto-reply/templating.js";
 import type { ChannelPlugin } from "../../channels/plugins/types.public.js";
-import type { SessionEntry } from "../../config/sessions/types.js";
+import type { InternalSessionEntry, SessionEntry } from "../../config/sessions/types.js";
 import { resolveVisibleActiveSessionRunState } from "../../gateway/server-methods/session-active-runs.js";
 import { registerAgentRunCapacityWait } from "../../infra/agent-run-capacity-wait.js";
 import {
@@ -23,7 +23,10 @@ import {
 import { normalizeSessionDeliveryState } from "../../utils/delivery-context.shared.js";
 import { buildAgentSystemPrompt } from "../system-prompt.js";
 import { prepareCommandConversationContext } from "./conversation-context.js";
-import { prepareEmbeddedSessionState } from "./session-preparation.js";
+import {
+  prepareCommandSessionRecoveryEntry,
+  prepareEmbeddedSessionState,
+} from "./session-preparation.js";
 
 vi.mock("../embedded-agent-runner/runs.js", () => ({
   resolveEmbeddedAgentSessionProgressState: () => undefined,
@@ -49,6 +52,76 @@ vi.mock("./runtime-loaders.js", () => ({
     resolveNodeExecEligibilityAsync: () => ({ canExec: false }),
   }),
 }));
+
+it.each(["channel", "delegate", "generated-media", "recovery"] as const)(
+  "binds requester facts to the existing %s command recovery claim",
+  (kind) => {
+    const requesterOrigin = {
+      sessionKey: "agent:research:telegram:group:requesters",
+      messageProvider: "telegram",
+      senderId: "bob",
+    };
+    const entry: InternalSessionEntry = {
+      sessionId: "destination-session",
+      lifecycleRevision: "destination-lifecycle",
+      updatedAt: 1,
+      ...(kind === "recovery"
+        ? {
+            restartRecoveryDeliveryRunId: "current-run",
+            restartRecoveryDeliverySourceRunId: "original-run",
+            restartRecoverySourceIngress: "internal" as const,
+            restartRecoveryRequesterSource: {
+              agentId: "main",
+              sessionKey: "agent:main:destination",
+              sessionId: "destination-session",
+              lifecycleRevision: "destination-lifecycle",
+              sourceRunId: "original-run",
+              requesterOrigin: { ...requesterOrigin, senderId: "original-requester" },
+            },
+          }
+        : {}),
+    };
+    const prepared = prepareCommandSessionRecoveryEntry({
+      agentId: "main",
+      sessionKey: "agent:main:destination",
+      sessionId: entry.sessionId,
+      entry,
+      runId: "current-run",
+      now: 2,
+      lifecycleGeneration: getAgentRunLifecycleGeneration(),
+      isSessionRollover: false,
+      opts: {
+        message: "continue accepted work",
+        requesterOrigin,
+        ...(kind === "channel"
+          ? {}
+          : {
+              inputProvenance: {
+                kind: "inter_session" as const,
+                sourceTool: kind === "generated-media" ? "subagent_settle" : "sessions_send",
+              },
+            }),
+        ...(kind === "generated-media"
+          ? { internalDeliveryMediaUrls: ["/synthetic/result.png"] }
+          : {}),
+      },
+    });
+    requesterOrigin.senderId = "replacement";
+    expect(prepared.nextEntry).toMatchObject({
+      restartRecoveryDeliveryRunId: "current-run",
+      restartRecoveryDeliverySourceRunId: kind === "recovery" ? "original-run" : "current-run",
+      restartRecoverySourceIngress: kind === "channel" ? "channel" : "internal",
+      restartRecoveryRequesterSource: {
+        agentId: "main",
+        sessionKey: "agent:main:destination",
+        sessionId: entry.sessionId,
+        lifecycleRevision: entry.lifecycleRevision,
+        sourceRunId: kind === "recovery" ? "original-run" : "current-run",
+        requesterOrigin: { senderId: kind === "recovery" ? "original-requester" : "bob" },
+      },
+    });
+  },
+);
 
 it.each([
   { internal: false, coordination: false },

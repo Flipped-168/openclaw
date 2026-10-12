@@ -126,6 +126,7 @@ async function executeAgentRun(params: StartAgentRunExecutionParams): Promise<vo
     const assertDispatchCurrent = () => {
       params.assertContextCurrent?.();
       prepared.operatorAuthority?.assertCurrent();
+      prepared.userTurn.assertRequesterCurrent?.();
       abortController.signal.throwIfAborted();
       assertAgentRunLifecycleGenerationCurrent(params.lifecycleGeneration);
       if (
@@ -534,6 +535,7 @@ async function executeAgentRun(params: StartAgentRunExecutionParams): Promise<vo
                 runtimeContextFragments: params.client?.internal?.runtimeContextFragments,
                 inputProvenance: params.inputProvenance,
                 privateCompletion: prepared.userTurn.privateCompletion,
+                requesterOrigin: prepared.userTurn.requesterOrigin,
                 senderIsOwner: prepared.userTurn.senderIsOwner,
                 sessionEffects: params.sessionEffects,
                 skipInitialSessionTouch: params.skipAgentInitialSessionTouch,

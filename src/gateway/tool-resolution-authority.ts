@@ -14,6 +14,10 @@ export function resolveGatewayRequesterToolPolicies(
   params: Pick<
     McpLoopbackRequestContext,
     | "conversationToolPolicy"
+    | "requesterOrigin"
+    | "operatorProfileId"
+    | "conversationId"
+    | "chatType"
     | "spawnedBy"
     | "messageProvider"
     | "groupId"
@@ -45,9 +49,14 @@ export function resolveGatewayRequesterToolPolicies(
   const isOwnerInternalSession =
     options.nodeExecSurface &&
     params.senderIsOwner === true &&
-    normalizeMessageChannel(params.messageProvider) === INTERNAL_MESSAGE_CHANNEL;
+    normalizeMessageChannel(
+      params.requesterOrigin ? params.requesterOrigin.messageProvider : params.messageProvider,
+    ) === INTERNAL_MESSAGE_CHANNEL;
   const policies = resolveRequesterToolPolicies({
     config: params.cfg,
+    requesterOrigin: params.requesterOrigin,
+    conversationId: params.conversationId,
+    chatType: params.chatType,
     conversationPolicy: pickSandboxToolPolicy(params.conversationToolPolicy),
     sessionKey: options.runtimePolicySessionKey,
     subagentSessionKey: options.runtimePolicySessionKey,

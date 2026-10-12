@@ -5,7 +5,6 @@ import {
   resolveSqliteReadScope,
   toDatabaseOptions,
 } from "../../../config/sessions/session-accessor.sqlite-scope.js";
-import { createSessionActorFactory } from "../../../config/sessions/session-actor-durable.js";
 import { prepareCronRootSessionGeneration } from "../../../config/sessions/session-delivery-generation.js";
 import { assertSessionEntryCohortScope } from "../../../config/sessions/session-entry-cohort-scope.js";
 import { composeSessionSourceAssertion } from "../../../config/sessions/session-source-authority.js";
@@ -183,6 +182,9 @@ export async function prepareEmbeddedAttemptTranscriptLifecycle(input: {
           database,
         };
       } else if (!isIncognitoOpenClawAgentSqlitePath(database.path, database)) {
+        const { createSessionActorFactory } =
+          await import("../../../config/sessions/session-actor-durable.js");
+        assertCurrent();
         // Native incognito retains its existing transcript owner until the worker cutover.
         let identity = readDatabasePathIdentitySync(database.path);
         if (identity.key.startsWith("path:")) {

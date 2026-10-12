@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
+import { captureRequesterOrigin } from "../agents/requester-origin.js";
 import {
   bindSessionPendingInputSources,
   stageSessionPendingInput,
@@ -8,7 +9,10 @@ import {
   type TranscriptEntryAnchor,
   type SessionTranscriptTurnPersistOptions,
 } from "../config/sessions/session-accessor.js";
-import { readWithdrawnSessionPendingInputId } from "../config/sessions/session-accessor.pending-inputs.js";
+import {
+  readSessionPendingInputRequesterOrigin,
+  readWithdrawnSessionPendingInputId,
+} from "../config/sessions/session-accessor.pending-inputs.js";
 import {
   registerUserTurnInputActor,
   withSessionInputActor,
@@ -90,6 +94,9 @@ export function createUserTurnTranscriptRecorder(
   params: CreateUserTurnTranscriptRecorderParams,
 ): UserTurnTranscriptRecorder {
   const logicalTurnId = randomUUID();
+  let requesterOrigin = params.input?.requesterOrigin
+    ? captureRequesterOrigin({ requesterOrigin: params.input.requesterOrigin })
+    : undefined;
   let message = resolvePersistedUserTurnMessage(params);
   let blocked = false;
   let runtimePersisted = false;
@@ -119,6 +126,34 @@ export function createUserTurnTranscriptRecorder(
   );
   let staging: Promise<boolean> | undefined;
 
+  // Exposed messages are projections. Only producer facts or exact accepted
+  // pending custody can supply identity to a fresh write.
+  const projectRequesterOrigin = <T extends PersistedUserTurnMessage | undefined>(
+    candidate: T,
+  ): T => {
+    if (!candidate) {
+      return candidate;
+    }
+    const metadata = { ...candidate["__openclaw"] };
+    delete metadata.requesterOrigin;
+    if (requesterOrigin) {
+      metadata.requesterOrigin = requesterOrigin;
+    }
+    const next = { ...candidate };
+    delete next["__openclaw"];
+    if (Object.keys(metadata).length > 0) {
+      next["__openclaw"] = metadata;
+    }
+    return next;
+  };
+
+  const adoptPendingInput = (receipt: NonNullable<typeof pendingInput>) => {
+    pendingInput = receipt;
+    requesterOrigin = readSessionPendingInputRequesterOrigin(receipt);
+    message = projectRequesterOrigin(receipt.message);
+    resolvedMessagePromise = Promise.resolve(message);
+  };
+
   const applyReplacementText = (
     candidate: PersistedUserTurnMessage | undefined,
   ): PersistedUserTurnMessage | undefined => {
@@ -137,7 +172,7 @@ export function createUserTurnTranscriptRecorder(
 
   const applyMessageOverrides = (candidate: PersistedUserTurnMessage | undefined) => {
     const next = rewritePersistedSteerTargetRunId(
-      applyReplacementText(candidate),
+      projectRequesterOrigin(applyReplacementText(candidate)),
       confirmedSteerTargetRunId,
     );
     // Native mirrors must reuse this admission even when no transport supplied a key.
@@ -169,10 +204,16 @@ export function createUserTurnTranscriptRecorder(
       resolvedMessagePromise = (async () => {
         try {
           const resolvedInput = await params.resolveInput?.();
+          if (!requesterOrigin && resolvedInput?.requesterOrigin) {
+            requesterOrigin = captureRequesterOrigin({
+              requesterOrigin: resolvedInput.requesterOrigin,
+            });
+          }
+          const input = resolvedInput ?? params.input;
           const resolvedMessage =
             resolvePersistedUserTurnMessage({
               message: params.message,
-              input: resolvedInput ?? params.input,
+              input: input ? { ...input, requesterOrigin } : undefined,
             }) ?? message;
           return applyMessageOverrides(resolvedMessage);
         } catch (error) {
@@ -195,8 +236,7 @@ export function createUserTurnTranscriptRecorder(
       }
       pendingInput = bindSessionPendingInputSources(sources, resolved);
       if (pendingInput) {
-        message = pendingInput.message;
-        resolvedMessagePromise = Promise.resolve(message);
+        adoptPendingInput(pendingInput);
       }
     }
     return pendingInput?.message ?? resolved;
@@ -379,7 +419,7 @@ export function createUserTurnTranscriptRecorder(
           persistUserTurnTranscript({
             ...resolvedTarget,
             logicalTurnId,
-            message: candidate,
+            message: projectRequesterOrigin(candidate),
             sessionTurnMutation: params.sessionTurnMutation,
             expectedSessionId: options.expectedSessionId || resolvedTarget.expectedSessionId,
             sessionLifecyclePatch: options.sessionLifecyclePatch ?? params.sessionLifecyclePatch,
@@ -503,15 +543,11 @@ export function createUserTurnTranscriptRecorder(
               requestFingerprint: params.pendingInputRequestFingerprint,
               trackCompletion: params.trackInputCompletion,
               replaySourceSessionKeys: params.pendingInputReplaySourceSessionKeys,
-              message: candidate,
+              message: projectRequesterOrigin(candidate),
               config,
-              onCommitted: (receipt) => {
-                pendingInput = receipt;
-                message = receipt.message;
-                resolvedMessagePromise = Promise.resolve(message);
-              },
+              onCommitted: adoptPendingInput,
               prepareMessageAfterIdempotencyCheck: (next) =>
-                preparePersistedUserTurnMessageForTranscriptWrite(next, {
+                preparePersistedUserTurnMessageForTranscriptWrite(projectRequesterOrigin(next), {
                   ...target,
                   beforeMessageWrite: params.beforeMessageWrite ?? target.beforeMessageWrite,
                 }),
@@ -520,8 +556,7 @@ export function createUserTurnTranscriptRecorder(
           if (!pendingInput) {
             return false;
           }
-          message = pendingInput.message;
-          resolvedMessagePromise = Promise.resolve(message);
+          adoptPendingInput(pendingInput);
           return pendingInput.state !== "consumed";
         })();
         return staging;
@@ -687,6 +722,7 @@ export function createUserTurnTranscriptRecorder(
     inputActorBinding = binding;
   });
   registerUserTurnTranscriptAdmissionOwner(recorder, {
+    requesterOrigin: () => requesterOrigin,
     pendingInput: () => pendingInput,
     withdrawnInputId: () => readWithdrawnSessionPendingInputId(pendingInput),
     receipt: () => admissionReceipt,

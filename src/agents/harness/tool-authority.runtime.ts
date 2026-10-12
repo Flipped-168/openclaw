@@ -12,6 +12,7 @@ import {
   resolveAdmittedRunActiveAssertion,
 } from "../admitted-run-context.js";
 import type { EmbeddedRunAttemptInternalParams } from "../embedded-agent-runner/run/internal-params.js";
+import { captureRequesterOrigin, hasSameRequesterOrigin } from "../requester-origin.js";
 import {
   getGatewayToolCallerIdentity,
   withGatewayToolCallerIdentity,
@@ -54,6 +55,10 @@ export async function withPreparedEmbeddedRunToolAuthority<T, Attempt extends To
   const inherited = getGatewayToolCallerIdentity();
   const source = inherited?.operationalRunInstance === instance ? inherited : undefined;
   const { sessionId, sessionKey, sessionFile, agentId, runId } = attempt;
+  const requesterOrigin = captureRequesterOrigin({
+    ...attempt,
+    operatorProfileId: readAdmittedRunOperatorAuthority(admitted)?.profileId,
+  });
   const route = { provider: attempt.provider, model: attempt.modelId };
   // Maintenance borrows an operation for cancellation, not its injection snapshot.
   const operation = attempt.toolAuthorityFingerprint ? internal.replyOperation : undefined;
@@ -175,6 +180,7 @@ export async function withPreparedEmbeddedRunToolAuthority<T, Attempt extends To
         sessionKey,
         operationalRunInstance: instance,
         personalToolParticipants,
+        requesterOrigin,
         embeddedRunToolAuthorityBinding: (registration) => {
           assertActive();
           const { handle } = registration;
@@ -207,6 +213,14 @@ export async function withPreparedEmbeddedRunToolAuthority<T, Attempt extends To
             source: operation ? "reply" : "attempt",
             sourceTurnId: readChannelSourceTurnId(internal) ?? runId,
             assertActive: assertRegistered,
+            acceptsRequesterOrigin: (incoming) => {
+              assertRegistered();
+              return Boolean(
+                ownsOperation() &&
+                requesterOrigin &&
+                hasSameRequesterOrigin(requesterOrigin, incoming),
+              );
+            },
             project: (overlay) => {
               assertRegistered();
               if (!ownsOperation()) {

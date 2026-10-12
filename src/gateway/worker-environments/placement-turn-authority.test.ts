@@ -15,6 +15,7 @@ import { captureAgentToolSourceExecutionGuard } from "../../agents/agent-tool-so
 import { createAgentHarnessHostCapabilities } from "../../agents/harness/host-capability.js";
 import type { BoundAgentRunSessionTarget } from "../../agents/run-session-target.types.js";
 import { createStubTool } from "../../agents/test-helpers/agent-tool-stubs.js";
+import { getGatewayToolCallerIdentity } from "../../agents/tools/gateway-caller-context.js";
 import { setRuntimeConfigSnapshot } from "../../config/runtime-snapshot.js";
 import {
   loadSessionEntry,
@@ -238,6 +239,11 @@ it("retains worker-parent source predicates through tool execution and rejects a
       },
     });
     let host: ReturnType<typeof createAgentHarnessHostCapabilities> | undefined;
+    const requesterOrigin = {
+      sessionKey: "agent:research:whatsapp:group:requesters",
+      messageProvider: "whatsapp",
+      senderId: "requester-bob",
+    };
     try {
       const prepared = await prepareWorkerAgentRuntimeIdentity({
         agentId: SESSION.agentId,
@@ -256,8 +262,10 @@ it("retains worker-parent source predicates through tool execution and rejects a
           timeoutMs: 5_000,
           runId: claim.runId,
           preparedRunAdmission: admission,
+          requesterOrigin,
         },
       });
+      requesterOrigin.senderId = "replacement-alice";
       const runner = createWorkerSessionToolSourceRunner({
         placements: store,
         resolveGatewayContext: () => undefined,
@@ -293,6 +301,10 @@ it("retains worker-parent source predicates through tool execution and rejects a
                 {
                   ...createStubTool("sessions_spawn"),
                   execute: async () => {
+                    expect(getGatewayToolCallerIdentity()?.requesterOrigin).toMatchObject({
+                      sessionKey: "agent:research:whatsapp:group:requesters",
+                      senderId: "requester-bob",
+                    });
                     const guard = captureAgentToolSourceExecutionGuard();
                     const sql = reset ? undefined : observeHostDataSql();
                     const child = await patchSessionEntryCore(
@@ -667,7 +679,7 @@ it.each(["preparing", "bound", "final source check"] as const)(
   },
 );
 
-it("retains the original transcript and prompt cache facts while claim authority is prepared", async () => {
+it("retains original requester, transcript, and prompt cache facts while claim authority is prepared", async () => {
   const active = await advanceToActive();
   const claim = await store.claimTurn(workerClaimInput("target-snapshot", active));
   const instance = createOperationalRunInstanceRef(claim.runId);
@@ -685,6 +697,11 @@ it("retains the original transcript and prompt cache facts while claim authority
     fastModeStartedAtMs: 123,
     fastModeAutoOnSeconds: 30,
   };
+  const requesterOrigin = {
+    sessionKey: "agent:research:whatsapp:group:requesters",
+    senderId: "requester-bob",
+    memberRoleIds: ["reader"],
+  };
   const binding = bindWorkerTurnOwner(
     store,
     claim,
@@ -696,6 +713,7 @@ it("retains the original transcript and prompt cache facts while claim authority
     undefined,
     undefined,
     promptCacheContext,
+    requesterOrigin,
   );
   const connection: WorkerConnectionIdentity = {
     environmentId: active.environmentId,
@@ -714,6 +732,8 @@ it("retains the original transcript and prompt cache facts while claim authority
   promptCacheContext.fastMode = false;
   promptCacheContext.fastModeStartedAtMs = 456;
   promptCacheContext.fastModeAutoOnSeconds = 60;
+  requesterOrigin.senderId = "replacement-alice";
+  requesterOrigin.memberRoleIds.push("administrator");
   requested.sessionId = "replacement-session";
   requested.storePath = path.join(root, "replacement.json");
   requested.expectedLifecycleRevision = "replacement-lifecycle";
@@ -724,6 +744,13 @@ it("retains the original transcript and prompt cache facts while claim authority
     expect(capability.sessionTarget).toEqual(expected);
     await capability.run((identity) => {
       expect(identity.sessionTarget).toEqual(expected);
+      expect(identity.requesterOrigin).toMatchObject({
+        sessionKey: "agent:research:whatsapp:group:requesters",
+        senderId: "requester-bob",
+        memberRoleIds: ["reader"],
+      });
+      expect(Object.isFrozen(identity.requesterOrigin)).toBe(true);
+      expect(Object.isFrozen(identity.requesterOrigin?.memberRoleIds)).toBe(true);
     });
     expect(readWorkerTurnPromptCacheContext(connection)).toEqual({
       boundaryCount: 2,

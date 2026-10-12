@@ -14,7 +14,6 @@ import type {
   SessionActorOutcome,
   SessionActorTarget,
 } from "./session-actor-contract.js";
-import { createSessionActorFactory } from "./session-actor-durable.js";
 import {
   getSessionActorStorageBinding,
   runWithSessionActorStorage,
@@ -103,6 +102,8 @@ export async function withSessionActor<T>(
     }
   }
   const scope = await prepareSqliteScope(input);
+  lifetime.assertCurrent();
+  const { createSessionActorFactory } = await import("./session-actor-durable.js");
   lifetime.assertCurrent();
   const options = toDatabaseOptions(scope);
   const database = { ...options, path: resolveOpenClawAgentSqlitePath(options) };

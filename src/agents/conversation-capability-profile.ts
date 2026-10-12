@@ -14,6 +14,7 @@ import { normalizeMessageChannel } from "../utils/message-channel-core.js";
 import { resolveEffectiveToolPolicy, resolveTrustedGroupId } from "./agent-tools.policy.js";
 import type { DelegatedToolDenyFloor } from "./delegated-tool-policy.js";
 import { normalizeInheritedToolDenylist } from "./inherited-tool-deny.js";
+import { captureRequesterOrigin, type RequesterOrigin } from "./requester-origin.js";
 import { resolveRequesterToolPolicies } from "./requester-tool-policy.js";
 import { pickSandboxToolPolicy } from "./sandbox-tool-policy.js";
 import type { SandboxToolPolicy } from "./sandbox/types.js";
@@ -54,6 +55,13 @@ function resolveManifestToolProfileNames(
 }
 
 export type ConversationCapabilityProfileParams = {
+  requesterOrigin?: RequesterOrigin;
+  operatorProfileId?: string;
+  /** Original authenticated conversation, independent of the execution session route. */
+  conversationId?: string | null;
+  chatType?: string;
+  messageThreadId?: string | number | null;
+  memberRoleIds?: readonly string[];
   config?: OpenClawConfig;
   sessionKey?: string;
   /** Live conversation key when a sandbox/policy key is used for tool filtering. */
@@ -100,6 +108,7 @@ export type ConversationCapabilityProfileParams = {
 
 export function resolveConversationCapabilityProfile(params: ConversationCapabilityProfileParams) {
   const messageProvider = params.messageProvider;
+  const senderIsOwner = params.senderIsOwner;
   const effective = resolveEffectiveToolPolicy(params);
   const { policy: sandboxToolPolicy, renameOnly: sandboxSessionRenameOnly } =
     prepareSandboxSessionRename({
@@ -107,7 +116,7 @@ export function resolveConversationCapabilityProfile(params: ConversationCapabil
         runId: params.runId,
         agentId: effective.agentId,
       }),
-      senderIsOwner: params.senderIsOwner,
+      senderIsOwner,
     });
   const trustedGroup = resolveTrustedGroupId({
     sessionKey: params.sessionKey,
@@ -118,11 +127,17 @@ export function resolveConversationCapabilityProfile(params: ConversationCapabil
   // against; mask them whenever the trust check dropped the caller group id.
   const trustedGroupChannel = trustedGroup.dropped ? null : params.groupChannel;
   const trustedGroupSpace = trustedGroup.dropped ? null : params.groupSpace;
-  // Owner WebChat intentionally has no external sender identity. Its trusted
-  // owner state must not fall through to the wildcard policy for guests.
+  // Internal operator/System origins may have no provider. Current admission
+  // verifies owner authority; the destination route cannot replace an origin.
+  const requesterMessageProvider = normalizeMessageChannel(
+    params.requesterOrigin
+      ? params.requesterOrigin.messageProvider
+      : (messageProvider ?? params.messageChannel),
+  );
   const isOwnerInternalSession =
-    params.senderIsOwner === true &&
-    normalizeMessageChannel(messageProvider ?? params.messageChannel) === INTERNAL_MESSAGE_CHANNEL;
+    senderIsOwner === true &&
+    (requesterMessageProvider === INTERNAL_MESSAGE_CHANNEL ||
+      (params.requesterOrigin !== undefined && !requesterMessageProvider));
   const subagentSessionKey = params.sandboxSessionKey ?? params.sessionKey;
   const callerContext = resolveScheduledToolCallerContext({
     scheduledToolPolicy: params.scheduledToolPolicy,
@@ -192,6 +207,12 @@ export function resolveConversationCapabilityProfile(params: ConversationCapabil
   ];
 
   return {
+    requesterOrigin: captureRequesterOrigin({
+      ...params,
+      groupId: trustedGroup.groupId,
+      groupChannel: trustedGroupChannel,
+      groupSpace: trustedGroupSpace,
+    }),
     agentId: effective.agentId,
     serviceIdentity: {
       accountId: params.agentAccountId,
@@ -213,7 +234,7 @@ export function resolveConversationCapabilityProfile(params: ConversationCapabil
       spawnedBy: params.spawnedBy,
     },
     sender: {
-      isOwner: params.senderIsOwner,
+      isOwner: senderIsOwner,
     },
     workspace: {
       workspaceRoot: resolveWorkspaceRoot(params.workspaceDir),

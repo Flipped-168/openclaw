@@ -22,6 +22,7 @@ import {
   readAdmittedHarnessCompletionInputAsync,
 } from "../agent-harness-completion-recovery.js";
 import { resolveExecDefaultsAsync } from "../exec-defaults.js";
+import { readRestartRecoveryRequesterSource } from "../requester-run-recovery-source.js";
 import type { MainSessionRecoveryAdmission } from "./main-session-recovery-admission.js";
 import { buildMainSessionRecoverySettlementPatch } from "./main-session-recovery-clear.js";
 import { createCurrentProcessOwnerLookup } from "./main-session-recovery-live-owners.js";
@@ -509,6 +510,14 @@ export async function recoverStore(params: {
       }
       if (
         !recoverableHarnessCompletion &&
+        !(
+          expectedRecoverySourceRunId &&
+          readRestartRecoveryRequesterSource({
+            ...target,
+            entry,
+            sourceRunId: expectedRecoverySourceRunId,
+          })
+        ) &&
         (source === "inter_session" ||
           ((source === undefined ||
             source === "internal_system" ||

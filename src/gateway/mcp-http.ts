@@ -291,7 +291,7 @@ async function startMcpLoopbackServer(
                 admittedRunContext: boundClientGrant?.admittedRunContext,
                 sessionEventSourcePolicy: boundClientGrant?.sessionEventSourcePolicy,
                 messageActionTurnCapability: boundClientGrant?.messageActionTurnCapability,
-                cfg,
+                cfg: boundClientGrant?.toolPolicyConfig ?? cfg,
                 signal: requestAbort.signal,
                 authProfileStore: boundClientGrant?.toolAuth?.store,
                 authProfileStoreAgentDir: boundClientGrant?.toolAuth?.agentDir || undefined,
@@ -417,6 +417,7 @@ async function startMcpLoopbackServer(
                   mintCronRequesterGrant: boundClientGrant.mintCronRequesterGrant,
                   agentId: scopedTools.agentId,
                   sessionKey: requestContext.sessionKey,
+                  requesterOrigin: requestContext.requesterOrigin,
                   turnSourceChannel: requestContext.messageProvider,
                   turnSourceLocal:
                     !requestContext.messageProvider &&

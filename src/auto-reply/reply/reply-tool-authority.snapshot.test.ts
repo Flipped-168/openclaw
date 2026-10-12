@@ -18,7 +18,13 @@ import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { prepareReplyToolAuthority, type ReplyToolAuthorityInput } from "./reply-tool-authority.js";
 
 const route = { provider: "openai", model: "test-model" };
-const overlay = { senderIsOwner: true, disableTools: false, traceAuthorized: false };
+const overlay = {
+  senderIsOwner: true,
+  senderId: "alice",
+  messageProvider: "telegram",
+  disableTools: false,
+  traceAuthorized: false,
+};
 
 function prepare(config: OpenClawConfig, sessionId: string) {
   let projected: ReplyToolAuthorityInput | undefined;
@@ -31,6 +37,8 @@ function prepare(config: OpenClawConfig, sessionId: string) {
         sessionFile: "/tmp/synthetic-session.json",
         workspaceDir: "/tmp/synthetic-workspace",
         senderIsOwner: true,
+        senderId: "alice",
+        messageProvider: "telegram",
       },
     },
     (input) => {

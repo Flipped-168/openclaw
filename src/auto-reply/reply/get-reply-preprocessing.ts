@@ -1,6 +1,12 @@
+import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 // Optional utility preprocessing keeps its runtime loaders lazy and cancellation explicit.
 import { resolveSessionAgentId } from "../../agents/agent-scope.js";
+import { resolveConversationCapabilityProfile } from "../../agents/conversation-capability-profile.js";
+import { projectConversationToolNames } from "../../agents/conversation-tool-policy-pipeline.js";
+import { resolveSandboxRuntimeStatus } from "../../agents/sandbox.js";
+import { resolveEffectiveToolFsRootExpansionAllowed } from "../../agents/tool-fs-policy.js";
 import { readConversationBindingRouteFacts } from "../../channels/conversation-binding-route-facts.js";
+import { resolveGroupSessionKey } from "../../config/sessions/group.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { logVerbose } from "../../globals.js";
 import { isAbortError } from "../../infra/abort-signal.js";
@@ -10,6 +16,8 @@ import { createLazyImportLoader } from "../../shared/lazy-promise.js";
 import { resolveCommandTurnTargetSessionKey } from "../command-turn-context.js";
 import type { RuntimeMsgContext as MsgContext } from "../templating.js";
 import { hasInboundMediaForUnderstanding } from "./inbound-media.js";
+import { resolveOriginMessageProvider } from "./origin-routing.js";
+import { resolveRuntimePolicySessionKey } from "./runtime-policy-session-key.js";
 import { assertPreparedConversationBindingRouteCurrent } from "./session-conversation-binding.js";
 
 const mediaUnderstandingApplyRuntimeLoader = createLazyImportLoader(
@@ -98,4 +106,91 @@ export async function resolveReplyAgentScope(params: { cfg: OpenClawConfig; ctx:
       fallbackAgentId: ctx.AgentId,
     }),
   };
+}
+
+/** Expose local attachment paths only when this request can actually read them. */
+export function canReadReplyAttachmentPaths(params: {
+  cfg: OpenClawConfig;
+  agentId: string;
+  sessionKey?: string;
+  sessionCtx: MsgContext;
+  workspaceDir: string;
+  stagedAttachmentCount: number;
+  spawnedBy?: string;
+  senderIsOwner: boolean;
+  modelProvider: string;
+  modelId: string;
+  operatorProfileId?: string;
+  toolsAllow?: string[];
+}): boolean {
+  const {
+    cfg,
+    agentId,
+    sessionKey,
+    sessionCtx,
+    workspaceDir,
+    stagedAttachmentCount,
+    spawnedBy,
+    senderIsOwner,
+    modelProvider,
+    modelId,
+    operatorProfileId,
+    toolsAllow,
+  } = params;
+  const policySessionKey = resolveRuntimePolicySessionKey({
+    cfg,
+    agentId,
+    ctx: sessionCtx,
+    sessionKey,
+  });
+  const sandboxed = resolveSandboxRuntimeStatus({
+    cfg,
+    agentId,
+    sessionKey,
+    classificationSessionKey: policySessionKey,
+  }).sandboxed;
+  if (
+    (sandboxed && stagedAttachmentCount > 0) ||
+    (!sandboxed && resolveEffectiveToolFsRootExpansionAllowed({ cfg, agentId }))
+  ) {
+    const capabilityProfile = resolveConversationCapabilityProfile({
+      config: cfg,
+      sessionKey: policySessionKey,
+      runSessionKey: policySessionKey === sessionKey ? undefined : sessionKey,
+      agentId,
+      agentAccountId: sessionCtx.AccountId,
+      messageProvider: resolveOriginMessageProvider({
+        originatingChannel: sessionCtx.OriginatingChannel,
+        provider: sessionCtx.Provider ?? sessionCtx.Surface,
+      }),
+      conversationToolPolicy: sessionCtx.ConversationToolPolicy,
+      conversationId: sessionCtx.ChatId,
+      chatType: sessionCtx.ChatType,
+      messageThreadId: sessionCtx.MessageThreadId,
+      memberRoleIds: sessionCtx.MemberRoleIds,
+      operatorProfileId,
+      groupId: resolveGroupSessionKey(sessionCtx)?.id,
+      groupChannel:
+        normalizeOptionalString(sessionCtx.GroupChannel) ??
+        normalizeOptionalString(sessionCtx.GroupSubject),
+      groupSpace: normalizeOptionalString(sessionCtx.GroupSpace),
+      spawnedBy: normalizeOptionalString(spawnedBy),
+      senderId: normalizeOptionalString(sessionCtx.SenderId),
+      senderName: normalizeOptionalString(sessionCtx.SenderName),
+      senderUsername: normalizeOptionalString(sessionCtx.SenderUsername),
+      senderE164: normalizeOptionalString(sessionCtx.SenderE164),
+      senderIsOwner,
+      modelProvider,
+      modelId,
+      workspaceDir,
+      runtimeToolAllowlist: toolsAllow,
+      inheritRuntimeToolAllowlist: true,
+      inputProvenance: sessionCtx.InputProvenance,
+    });
+    return (
+      projectConversationToolNames({ capabilityProfile, toolNames: ["read"], warn: () => {} })
+        .length === 1
+    );
+  }
+  return false;
 }

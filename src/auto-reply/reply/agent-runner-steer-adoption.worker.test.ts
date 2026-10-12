@@ -4,8 +4,13 @@ import {
   createDeferred,
   withinTest,
 } from "../../../test/helpers/promise.js";
+import { createAdmittedRunOperatorAuthority } from "../../agents/admitted-run-context.js";
 import { prepareReplyToolAuthorityCallerRead } from "../../agents/harness/host-private-capabilities.js";
 import { createNativeSessionBindingAuthority } from "../../agents/harness/native-session/binding-authority.js";
+import {
+  clearRuntimeConfigSnapshot,
+  setRuntimeConfigSnapshot,
+} from "../../config/runtime-snapshot.js";
 import { beginRestartRecoveryTerminalDelivery } from "../../config/sessions/restart-recovery-receipt.js";
 import { upsertSessionEntryCore } from "../../config/sessions/session-accessor.js";
 import { resolveOpenClawAgentSqlitePath } from "../../state/openclaw-agent-db.paths.js";
@@ -28,11 +33,13 @@ import { createTypingSignaler } from "./typing-mode.js";
 
 afterEach(() => {
   testing.resetReplyRunRegistry();
+  clearRuntimeConfigSnapshot();
   vi.restoreAllMocks();
 });
 
 it("adopts active steering through prepared policy without caller-thread SQL", async () => {
   await withOpenClawTestState({ scenario: "minimal" }, async () => {
+    setRuntimeConfigSnapshot({});
     const key = "agent:main:active-worker-steering";
     const policyKey = "agent:main:active-worker-policy";
     await upsertSessionEntryCore(
@@ -43,6 +50,12 @@ it("adopts active steering through prepared policy without caller-thread SQL", a
       prompt: "use the new requirements",
       messageId: "incoming-steer",
       originatingChannel: "webchat",
+    });
+    run.operatorAuthority = createAdmittedRunOperatorAuthority({
+      profileId: "steering-requester",
+      scopes: ["operator.read", "operator.write"],
+      source: {},
+      assertCurrent() {},
     });
     Object.assign(run.run, {
       agentId: "main",
@@ -146,6 +159,12 @@ it.for(
         prompt: "keep this incoming request visible",
         messageId,
         originatingChannel: "webchat",
+      });
+      run.operatorAuthority = createAdmittedRunOperatorAuthority({
+        profileId: "steering-requester",
+        scopes: ["operator.read", "operator.write"],
+        source: {},
+        assertCurrent() {},
       });
       Object.assign(run.run, {
         agentId: "main",

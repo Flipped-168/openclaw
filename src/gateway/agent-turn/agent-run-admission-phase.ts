@@ -491,9 +491,11 @@ export async function prepareAgentRunDispatch(
   let assertInputAdmissionCurrent = params.assertAdmissionCurrent;
   let resumedTaskAdopted = false;
   let userTurn: PreparedAgentRunUserTurn;
+  let assertUserRequesterCurrent: (() => void) | undefined;
   const assertInputOwnerCurrent = (terminal = false) => {
     assertInputAdmissionCurrent?.();
     assertRequesterCurrent?.();
+    assertUserRequesterCurrent?.();
     followupCompletion?.assertCurrent();
     if (followupSuccessor) {
       if (!resumedTaskAdopted) {
@@ -531,6 +533,8 @@ export async function prepareAgentRunDispatch(
       admittedSessionId: params.getAdmittedSessionId(),
       resolvedThreadId,
     });
+    assertUserRequesterCurrent = userTurn.assertRequesterCurrent;
+    assertUserRequesterCurrent?.();
     if (userTurn.recorder) {
       // Accepted input owns these media references before it enters the transcript.
       // Later admission rejection must preserve the files retained by that custody.

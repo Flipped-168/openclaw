@@ -13,8 +13,6 @@ import { resetCommandQueueStateForTest } from "../../process/command-queue.test-
 import { setUserProfileRole } from "../../state/user-profile-writes.worker.js";
 import { ensureProfileForEmail } from "../../state/user-profiles.js";
 import { withOpenClawTestState } from "../../test-utils/openclaw-test-state.js";
-import { createQueueTestRun } from "./queue.test-helpers.js";
-import type { ReplyToolAuthorityOverlay } from "./reply-run-registry.contracts.js";
 import type { ReplyBackendQueueMessageOptions } from "./reply-run-registry.js";
 import {
   createTestReplyOperation,
@@ -25,42 +23,7 @@ import {
   prepareReplyToolAuthority,
   resolveFollowupRunToolAuthorityFingerprint,
 } from "./reply-tool-authority.js";
-
-function toolAuthorityOverlay(
-  run: ReturnType<typeof createQueueTestRun>,
-): ReplyToolAuthorityOverlay {
-  return {
-    operatorAuthority: run.operatorAuthority,
-    permissionMode: run.run.permissionMode,
-    toolOverrides: run.run.toolOverrides,
-    originatingChannel: run.originatingChannel,
-    messageProvider: run.run.messageProvider,
-    chatType: run.run.chatType,
-    agentAccountId: run.run.agentAccountId,
-    conversationToolPolicy: run.run.conversationToolPolicy,
-    groupId: run.run.groupId,
-    groupChannel: run.run.groupChannel,
-    groupSpace: run.run.groupSpace,
-    memberRoleIds: run.run.memberRoleIds,
-    spawnedBy: run.run.spawnedBy,
-    senderId: run.run.senderId,
-    senderName: run.run.senderName,
-    senderUsername: run.run.senderUsername,
-    senderE164: run.run.senderE164,
-    senderIsOwner: run.run.senderIsOwner === true,
-    inputProvenance: run.run.inputProvenance,
-    trustedInternalHandoff: run.run.trustedInternalHandoff,
-    scheduledToolPolicy: run.run.scheduledToolPolicy,
-    runtimePluginToolGrant: run.run.runtimePluginToolGrant,
-    toolsAllow: run.toolsAllow,
-    disableTools: run.disableTools === true,
-    traceAuthorized: run.run.traceAuthorized === true,
-    approvalReviewerDeviceId: run.run.approvalReviewerDeviceId,
-    clientCaps: run.run.clientCaps,
-    gatewayUiCommandTarget: run.run.gatewayUiCommandTarget,
-    toolBindings: run.run.toolBindings,
-  };
-}
+import { createQueueTestRun, toolAuthorityOverlay } from "./reply-tool-authority.test-support.js";
 
 describe("reply tool authority", () => {
   afterEach(() => {
@@ -105,7 +68,7 @@ describe("reply tool authority", () => {
     },
   );
 
-  it("steers another participant without replacing session personal context", async () =>
+  it("keeps same-requester steering independent of session personal-context reassignment", async () =>
     withOpenClawTestState({ scenario: "minimal" }, async () => {
       const owner = ensureProfileForEmail("owner@example.test");
       const other = ensureProfileForEmail("participant@example.test");
@@ -306,7 +269,7 @@ describe("reply tool authority", () => {
     { withModelPolicy: true, grantKind: "independent", grant: null, toolsAllow: ["theme"] },
     { withModelPolicy: true, grantKind: "unclassified", grant: undefined, toolsAllow: undefined },
   ])(
-    "preserves steering across profiles and reconnects (model policy: $withModelPolicy, grant: $grantKind)",
+    "preserves same-requester reconnects and rejects other profiles (model policy: $withModelPolicy, grant: $grantKind)",
     async ({ withModelPolicy, grant, toolsAllow }) =>
       withOpenClawTestState({ scenario: "minimal" }, async () => {
         const profileId = ensureProfileForEmail("steering-operator@example.test").id;
@@ -447,12 +410,9 @@ describe("reply tool authority", () => {
               operatorAuthority: otherAuthority,
               gatewayUiCommandTarget: { connId: "other-browser", profileId: otherProfileId },
             }),
-          ).resolves.toEqual(
-            grant === undefined
-              ? { status: "rejected", reason: "tool_authority_mismatch" }
-              : { status: "accepted" },
-          );
-          const acceptedMessages = grant === undefined ? 1 : 3;
+          ).resolves.toEqual({ status: "rejected", reason: "tool_authority_mismatch" });
+          const acceptedMessages = grant === undefined ? 1 : 2;
+          expect(queueMessage).toHaveBeenCalledTimes(acceptedMessages);
           expect(queueMessage).toHaveBeenLastCalledWith(
             "change strategy",
             expect.objectContaining({

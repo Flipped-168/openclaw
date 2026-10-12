@@ -1,5 +1,6 @@
 import { resolveManifestModelCatalogProviderAliasMetadata } from "../../agents/embedded-agent-runner/model.manifest-alias.js";
 import type { ModelFallbackAttemptProvenance } from "../../agents/model-fallback.types.js";
+import { resolveRequesterPrincipalKey } from "../../agents/requester-origin.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { resolveModelFallbackOptions } from "./agent-runner-run-params.js";
 import type { FollowupRun } from "./queue/types.js";
@@ -12,6 +13,7 @@ export async function resolveReplySteeringAuthority(
   operation: ReplyOperation | undefined,
   assertCurrent: () => void = () => {},
 ) {
+  const requesterMismatch = hasReplySteeringRequesterMismatch(followupRun, operation);
   const activeFingerprint = operation?.toolAuthorityFingerprint;
   const activeRoute = operation?.toolAuthorityRoute;
   const incomingFingerprint = await resolveFollowupRunToolAuthorityFingerprintAsync(
@@ -29,6 +31,7 @@ export async function resolveReplySteeringAuthority(
       toolAuthorityFingerprint: incomingFingerprint,
       automaticFallbackRoute: undefined,
       pendingInputAuthorityFingerprint: undefined,
+      requesterMismatch,
       shouldQueueAuthorityMismatch: true,
     };
   }
@@ -41,6 +44,7 @@ export async function resolveReplySteeringAuthority(
   }
   const authorityMismatch = operation !== undefined && activeFingerprint !== incomingFingerprint;
   const routeOnlyMismatch =
+    !requesterMismatch &&
     authorityMismatch &&
     activeFingerprint !== undefined &&
     incomingAtActiveRoute === activeFingerprint;
@@ -69,7 +73,9 @@ export async function resolveReplySteeringAuthority(
       : incomingFingerprint,
     automaticFallbackRoute,
     pendingInputAuthorityFingerprint: routeOnlyMismatch ? activeFingerprint : undefined,
-    shouldQueueAuthorityMismatch: selectionChanged || (authorityMismatch && !routeOnlyMismatch),
+    requesterMismatch,
+    shouldQueueAuthorityMismatch:
+      requesterMismatch || selectionChanged || (authorityMismatch && !routeOnlyMismatch),
   };
 }
 
@@ -104,4 +110,22 @@ export function bindReplyFallbackSteeringRoute(params: {
   if (!resolved.ambiguous) {
     operation.setAutomaticFallbackRoute({ provider: resolved.provider, model: route.model });
   }
+}
+
+/** Human steering belongs only to the active execution's authenticated requester. */
+export function hasReplySteeringRequesterMismatch(
+  followupRun: FollowupRun,
+  operation: ReplyOperation | undefined,
+): boolean {
+  const requesterPrincipalKey = resolveRequesterPrincipalKey({
+    ...followupRun.run,
+    messageChannel: followupRun.originatingChannel,
+    operatorAuthority: followupRun.operatorAuthority,
+  });
+  return (
+    followupRun.currentInboundEventKind !== "room_event" &&
+    (!followupRun.run.inputProvenance ||
+      followupRun.run.inputProvenance.kind === "external_user") &&
+    (!requesterPrincipalKey || requesterPrincipalKey !== operation?.requesterPrincipalKey)
+  );
 }
