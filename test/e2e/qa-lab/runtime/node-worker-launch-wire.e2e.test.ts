@@ -593,13 +593,11 @@ describe("node worker launch wire", () => {
                 ).toMatchObject({ state: "final" });
               }),
             );
-            // Failed turns may never upload; observe their failure while waiting for finalization.
-            await Promise.race([
-              waveFinalizationStarted,
-              waits.then(() => {
-                throw new Error("load wave completed without workspace finalization");
-              }),
-            ]);
+            // Committed replies may precede workspace finalization; failures still stop the wait.
+            await withinTest(
+              Promise.race([waveFinalizationStarted, waits.then(() => waveFinalizationStarted)]),
+              signal,
+            );
             const freshConnectionStartedAt = performance.now();
             const freshClient = await connectWireClient({
               gateway,
