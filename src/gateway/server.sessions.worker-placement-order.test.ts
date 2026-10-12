@@ -1,5 +1,5 @@
-import { setImmediate as nextTurn } from "node:timers/promises";
 import { expect, test } from "vitest";
+import { withinTest } from "../../test/helpers/promise.js";
 import { createDeferredCore } from "../shared/deferred.js";
 import { createGatewayWorkerPlacementMoveBarrier } from "./server-worker-placement-move-barrier.js";
 import { loadSessionEntryAsync } from "./session-utils.js";
@@ -19,9 +19,9 @@ const unexpectedPlacementOperation = async (): Promise<never> => {
   throw new Error("Unexpected placement operation in lifecycle ordering test");
 };
 
-test.each(["delete", "archive", "recover"] as const)(
+test.for(["delete", "archive", "recover"] as const)(
   "%s lets an earlier move acquire its session fence before reclaim",
-  async (action) => {
+  async (action, { signal }) => {
     const { storePath } = await createSessionStoreDir();
     const sessionId = `lifecycle-order-${action}`;
     const sessionKey = `agent:main:${sessionId}`;
@@ -177,7 +177,8 @@ test.each(["delete", "archive", "recover"] as const)(
         }),
       ]);
       releaseMove.resolve();
-      await nextTurn();
+      // The retained worker read can finish after the next event-loop turn.
+      await withinTest(moving, signal);
       acquiredBeforeCleanup = moveAcquired;
     } finally {
       // Unwind the baseline's real queues before asserting the ordering failure.

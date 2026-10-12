@@ -92,6 +92,7 @@ suite.define(() => {
     const commands: unknown[] = [];
     const frames: Array<{ direction: "sent" | "received"; frame: Record<string, unknown> }> = [];
     const observations: Record<string, unknown> = {};
+    let completed = false;
     const call = async (method: string, params: Record<string, unknown>) => {
       const result = await instance.cli([
         "gateway",
@@ -248,8 +249,13 @@ suite.define(() => {
           }
         },
       );
+      completed = true;
     } finally {
-      const serialized = JSON.stringify({ commands, frames, observations }, null, 2)
+      const serialized = JSON.stringify(
+        { commands, frames, observations, ...(!completed ? { gatewayLogs: instance.logs() } : {}) },
+        null,
+        2,
+      )
         .replaceAll(instance.gatewayToken, "[synthetic token]")
         .replaceAll(instance.hookToken, "[synthetic token]")
         .replaceAll(instance.homeDir, "[fixture home]")

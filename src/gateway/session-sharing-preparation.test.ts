@@ -195,8 +195,8 @@ it("refuses a worker sharing result whose captured birthtime differs from its re
   });
 });
 
-it.each(["remove", "reassignment", "ABA", "unknown", "rollback"] as const)(
-  "retains only unchanged sharing sources after a %s registry publication",
+it.each(["unknown", "rollback"] as const)(
+  "applies %s topology publications to retained sharing facts",
   async (change) => {
     await withOpenClawTestState({ scenario: "minimal" }, async (state) => {
       const storePath = state.statePath("shared.sqlite");
@@ -217,7 +217,7 @@ it.each(["remove", "reassignment", "ABA", "unknown", "rollback"] as const)(
       try {
         if (change === "unknown") {
           sessionChanges.emit({ all: true, scope: "stores" });
-        } else if (change === "rollback") {
+        } else {
           expect(() =>
             runOpenClawStateWriteTransaction(
               () => {
@@ -227,13 +227,6 @@ it.each(["remove", "reassignment", "ABA", "unknown", "rollback"] as const)(
               { env: state.env },
             ),
           ).toThrow("Synthetic registry rollback");
-        } else if (change === "reassignment") {
-          registerOpenClawAgentDatabase({ ...registration, agentId: "other" });
-        } else {
-          unregisterOpenClawAgentDatabase(registration);
-          if (change === "ABA") {
-            registerOpenClawAgentDatabase(registration);
-          }
         }
         if (change === "rollback") {
           expect(prepared.readCurrent(cfg).target.entry.sessionId).toBe("registry-sharing");

@@ -30,6 +30,7 @@ import { observeGatewayRunExecution } from "./agent-command.test-helpers.js";
 import { callGatewayCli } from "./call.js";
 import * as chatAbort from "./chat-abort.js";
 import { flushPendingSessionsChangedEvents } from "./server-methods/session-change-event.js";
+import * as sessionSharingAuthorization from "./session-sharing-authorization.js";
 import {
   agentCommandMock,
   connectOk,
@@ -359,6 +360,15 @@ describe("native sessions.abort requester authorization over WebSocket", () => {
     const owner = await openOperator("recovered-owner");
     const sessionKey = "agent:main:recovered";
     const runId = "native-recovered";
+    const targetFailures: string[] = [];
+    const createTargetChangedError = sessionSharingAuthorization.sessionMutationTargetChanged;
+    const targetFailure = vi
+      .spyOn(sessionSharingAuthorization, "sessionMutationTargetChanged")
+      .mockImplementation((...args) => {
+        const error = createTargetChangedError(...args);
+        targetFailures.push(error.stack ?? error.message);
+        return error;
+      });
     const abort = vi.fn();
     const handle = {
       runId,
@@ -370,12 +380,20 @@ describe("native sessions.abort requester authorization over WebSocket", () => {
     setActiveEmbeddedRun("recovered-session", handle, sessionKey);
     try {
       const result = await rpcReq(owner.ws, "sessions.abort", { key: sessionKey, runId });
-      expect(result, JSON.stringify(result.error)).toMatchObject({
+      expect(
+        result,
+        JSON.stringify({
+          error: result.error,
+          abortCalls: abort.mock.calls.length,
+          targetFailures,
+        }),
+      ).toMatchObject({
         ok: true,
         payload: { status: "aborted", abortedRunId: runId },
       });
       expect(abort).toHaveBeenCalledTimes(1);
     } finally {
+      targetFailure.mockRestore();
       clearActiveEmbeddedRun("recovered-session", handle, sessionKey);
       owner.ws.close();
     }

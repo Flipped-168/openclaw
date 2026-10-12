@@ -144,7 +144,6 @@ export async function prepareSessionMutationFacts(
   let waitingForStorage = false;
   let invalidated = false;
   let facts: PreparedSessionSourceFacts | undefined;
-  let assertRegistryPublication: (() => void) | undefined;
   let creation: SessionEntryCreationOperation | undefined;
   let acknowledgesCreatedIdentity = (_change: SessionIdentityMutation): boolean => false;
   let expectedPlaceholder: SessionEntryPlaceholder | undefined;
@@ -209,23 +208,12 @@ export async function prepareSessionMutationFacts(
     if ("all" in change) {
       // RAM has its original handle/resource fence; durable discovery waits for writer promotion.
       if (isSessionStoreTopologyChange(change)) {
-        if (beforeDiscovery || incognito) {
+        if (beforeDiscovery || incognito || isOpenClawAgentDatabaseRegistryChange(change)) {
+          // Registry publications affect the next discovery. Retained sources keep
+          // their physical identity and resource retirement checks through the effect.
           return;
         }
-        if (isOpenClawAgentDatabaseRegistryChange(change) && assertRegistryPublication) {
-          // An absent selection stays absent until the next selection. Existing sources
-          // retain the registry owner that authorized their sharing facts.
-          if (facts?.target === null) {
-            return;
-          }
-          try {
-            assertRegistryPublication();
-          } catch {
-            invalidate();
-          }
-        } else {
-          invalidate();
-        }
+        invalidate();
         return;
       }
       if (
@@ -476,10 +464,6 @@ export async function prepareSessionMutationFacts(
             throw new SessionMutationFactsUnavailableError();
           }
         }
-      };
-      assertRegistryPublication = () => {
-        inventoryRead.assertRegistryCurrent();
-        assertPaths();
       };
       const sourceIdentities = new Map<string, CapturedSessionEntryReadSource>();
       const members = new Map<
