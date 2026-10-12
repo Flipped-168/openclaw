@@ -35,6 +35,7 @@ import type { SessionChatRouteData } from "./route-loader.ts";
 type RenderedPane = HTMLElement & {
   active: boolean;
   onOpenSplitView?: () => void;
+  onClosePane?: (paneId: string) => void;
   hasQueuedMessageEdit?: boolean;
   draft?: string;
   focusComposer: boolean;
@@ -272,6 +273,51 @@ describe("chat page retained sessions", () => {
     expect(loadSettings().sessionKey).toBe("agent:main:main");
     expect(navigate).not.toHaveBeenCalled();
     expect(replace).not.toHaveBeenCalled();
+  });
+
+  it("preserves a pending Home draft when its bound pane adopts the global wire key after collapsing", async () => {
+    const page = new ChatPage();
+    const { context, navigate, replace } = setNavigationContext(page);
+    context.agents.state.agentsList = {
+      defaultId: "main",
+      mainKey: "main",
+      scope: "global",
+      agents: [{ id: "main" }, { id: "research" }],
+    };
+    page.data = { sessionKey: "agent:main:main", agentId: "main" };
+    document.body.append(page);
+    await settleChatPage(page);
+    const pane = expectDefined(
+      page.querySelector<RenderedPane>("openclaw-chat-pane"),
+      "bound Home pane",
+    );
+    pane.onOpenSplitView?.();
+    await settleChatPage(page);
+    const added = expectDefined(
+      [...page.querySelectorAll<RenderedPane>("openclaw-chat-pane")].find(
+        (candidate) => candidate !== pane,
+      ),
+      "second split pane",
+    );
+    added.onClosePane?.(added.paneId);
+    await settleChatPage(page);
+    await settleChatPage(page);
+    expect(loadSettings().chatSplitLayout).toBeUndefined();
+    expect(page.querySelector("openclaw-chat-pane")).toBe(pane);
+    navigate.mockClear();
+    replace.mockClear();
+    const draft = {
+      sessionKey: "agent:main:main",
+      agentId: "main",
+      draft: "What can you do?",
+    };
+    page.data = draft;
+
+    expect(pane.onPaneSessionChange?.(pane.paneId, "global", { replace: true })).toBe(true);
+
+    expect(navigate).not.toHaveBeenCalled();
+    expect(replace).not.toHaveBeenCalled();
+    expect(page.data).toBe(draft);
   });
 
   it("hands each route-provided draft to the active pane only once", async () => {

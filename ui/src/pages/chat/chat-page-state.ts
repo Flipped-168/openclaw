@@ -545,9 +545,8 @@ export class ChatPageState extends ControllerHost {
     if (!pane || !areUiSessionKeysEquivalent(pane.sessionKey, sourceSessionKey)) {
       return false;
     }
-    // Canonical wire spelling must not erase the Home owner kept by a split.
+    // Canonical wire spelling must not erase a bound pane's Home owner.
     if (
-      this.layout &&
       isUiGlobalSessionKey(trimmed) &&
       resolveUiGlobalAliasAgentId(
         {

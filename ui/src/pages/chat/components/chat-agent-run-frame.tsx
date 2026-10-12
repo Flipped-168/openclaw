@@ -1,4 +1,20 @@
-import { createMemo, For, Match, Show, Switch } from "solid-js";
+import { insert, type JSX } from "@solidjs/web";
+import {
+  createMemo,
+  createRenderEffect,
+  createRoot,
+  createSignal,
+  For,
+  getOwner,
+  Match,
+  onCleanup,
+  onSettled,
+  runWithOwner,
+  Show,
+  Switch,
+  untrack,
+  type Accessor,
+} from "solid-js";
 import type { MessageGroup as MessageGroupData } from "../../../lib/chat/chat-types.ts";
 import { extractChatSourcePreviews } from "../../../lib/chat/source-previews.ts";
 import { LitContent } from "../../../lit/solid-bridge.ts";
@@ -39,6 +55,98 @@ type FrameProps = { frame: AgentRunFrameRenderItem; options: AgentRunFrameOption
 type BodyPart =
   | Exclude<AgentRunFrameRenderItem["parts"][number], { kind: "stream-run" }>
   | StreamGroupPart;
+type PartRange = {
+  start: Comment;
+  end: Comment;
+  write: (part: BodyPart) => void;
+  dispose: () => void;
+};
+
+/** Completion can reorder the reply after a live widget has moved into it. */
+function FrameBody(props: {
+  parts: readonly BodyPart[];
+  children: (part: Accessor<BodyPart>) => JSX.Element;
+}): JSX.Element {
+  const owner = getOwner();
+  const anchor = document.createComment("frame-body");
+  const [parent, setParent] = createSignal<HTMLElement | null>(null, { ownedWrite: true });
+  const ranges = new Map<string, PartRange>();
+  const retire = (range: PartRange) => {
+    // Lit descendants must park their widgets while the range is still connected.
+    range.dispose();
+    const after = range.end.nextSibling;
+    for (let node: Node | null = range.start; node && node !== after;) {
+      const following: Node | null = node.nextSibling;
+      node.parentNode?.removeChild(node);
+      node = following;
+    }
+  };
+  onCleanup(() => {
+    for (const range of ranges.values()) retire(range);
+    ranges.clear();
+  });
+  onSettled(() => {
+    const committedParent = anchor.parentElement;
+    if (!committedParent) throw new Error("Run frame body anchor was not committed");
+    setParent(committedParent);
+  });
+  createRenderEffect(
+    () => ({ parent: parent(), parts: props.parts }),
+    ({ parent, parts }) => {
+      if (!parent) return;
+      const keys = new Set(parts.map((part) => `${part.kind}:${part.key}`));
+      // Park outgoing canvas views before a new range looks them up.
+      for (const [key, range] of ranges) {
+        if (!keys.has(key)) {
+          retire(range);
+          ranges.delete(key);
+        }
+      }
+      const ordered = parts.map((value) => {
+        const key = `${value.kind}:${value.key}`;
+        const existing = ranges.get(key);
+        if (existing) {
+          existing.write(value);
+          return existing;
+        }
+        const start = document.createComment("frame-part");
+        const end = document.createComment("/frame-part");
+        parent.insertBefore(start, anchor);
+        parent.insertBefore(end, anchor);
+        const range = runWithOwner(owner, () =>
+          createRoot((dispose): PartRange => {
+            const [part, write] = createSignal(value, { ownedWrite: true });
+            insert(
+              parent,
+              untrack(() => props.children(part)),
+              end,
+            );
+            return { start, end, write, dispose };
+          }),
+        );
+        ranges.set(key, range);
+        return range;
+      });
+      let reference: Node = anchor;
+      for (const range of ordered.toReversed()) {
+        if (range.end.nextSibling !== reference) {
+          const after = range.end.nextSibling;
+          for (let node: Node | null = range.start; node && node !== after;) {
+            const following: Node | null = node.nextSibling;
+            if (parent.isConnected && typeof parent.moveBefore === "function") {
+              parent.moveBefore(node, reference);
+            } else {
+              parent.insertBefore(node, reference);
+            }
+            node = following;
+          }
+        }
+        reference = range.start;
+      }
+    },
+  );
+  return anchor;
+}
 
 function prepareFrame(frame: AgentRunFrameRenderItem, opts: AgentRunFrameOptions) {
   const groups = chatItemGroups(frame);
@@ -137,7 +245,7 @@ function RunFrame(props: FrameProps) {
     firstBubbleKey: state().firstBubbleKey,
   });
   const frameContent = [
-    <For each={state().bodyParts} keyed={(part) => part.kind + ":" + part.key}>
+    <FrameBody parts={state().bodyParts}>
       {(part) => {
         const streamPart = () => {
           const value = part();
@@ -227,7 +335,7 @@ function RunFrame(props: FrameProps) {
           </Switch>
         );
       }}
-    </For>,
+    </FrameBody>,
     <LitContent render={() => state().sourcePreviews} />,
   ];
   return (
