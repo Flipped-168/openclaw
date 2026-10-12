@@ -1183,13 +1183,13 @@ describe("codex conversation binding", () => {
             workspaceDir: tempDir,
             bindingStore: {
               ...testCodexAppServerBindingStore,
-              read: (identity) => {
+              readAsync: async (identity) => {
                 if (resumeAccepted) {
                   if (expiresDuring === "retention") {
                     elapsedClock.mockReturnValue(1_001);
                   }
                 }
-                return testCodexAppServerBindingStore.read(identity);
+                return await testCodexAppServerBindingStore.readAsync(identity);
               },
               mutate: async (...args) => {
                 if (expiresDuring === "commit") {

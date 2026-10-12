@@ -26,6 +26,7 @@ import type { AssistantMessage } from "openclaw/plugin-sdk/llm";
 import { registerMemoryCapability } from "openclaw/plugin-sdk/memory-core-host-runtime-core";
 import { MESSAGE_TOOL_DELIVERY_HINTS } from "openclaw/plugin-sdk/message-tool-delivery-hints";
 import { createMockPluginRegistry } from "openclaw/plugin-sdk/plugin-test-runtime";
+import { setRuntimeConfigSnapshot } from "openclaw/plugin-sdk/runtime-config-snapshot";
 import { upsertSessionEntry } from "openclaw/plugin-sdk/session-store-runtime";
 import { awaitGateBeforeSettlement } from "openclaw/plugin-sdk/test-fixtures";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
@@ -909,6 +910,7 @@ describe("runCodexAppServerAttempt", () => {
     params.authProfileId = authProfileId;
     params.authProfileStore = authProfileStore;
     params.config = config;
+    setRuntimeConfigSnapshot(params.config);
     const expected = await prepareCodexAppServerAuthBinding({
       authProfileId,
       authProfileStore,
@@ -1053,6 +1055,7 @@ describe("runCodexAppServerAttempt", () => {
           },
         },
       } as never;
+      setRuntimeConfigSnapshot(params.config);
       const nativeToolSurfaceEnabled = shouldEnableCodexAppServerNativeToolSurface(
         params,
         sandbox as never,
@@ -3122,7 +3125,8 @@ describe("runCodexAppServerAttempt", () => {
           bootstrapTotalMaxChars: 1000,
         },
       },
-    } as EmbeddedRunAttemptParams["config"];
+    } satisfies NonNullable<EmbeddedRunAttemptParams["config"]>;
+    setRuntimeConfigSnapshot(params.config);
     const run = runCodexAppServerAttempt(params);
     await harness.waitForMethod("turn/start");
     await new Promise<void>((resolve) => {
@@ -3232,6 +3236,7 @@ describe("runCodexAppServerAttempt", () => {
     );
     const params = createRunParams();
     params.config = { tools: { exec: { mode: "full" } } };
+    setRuntimeConfigSnapshot(params.config);
     const harness = createStartedThreadHarness();
     const run = runCodexAppServerAttempt(params);
     await completeStartedRun(run, harness.waitForMethod, harness.completeTurn);
@@ -4450,6 +4455,7 @@ describe("runCodexAppServerAttempt", () => {
         },
       },
     } as never;
+    setRuntimeConfigSnapshot(params.config);
     params.authProfileStore.profiles["openai:work"] =
       createCodexTestOAuthProfile("synthetic-account");
     const run = runCodexAppServerAttempt(params, {
