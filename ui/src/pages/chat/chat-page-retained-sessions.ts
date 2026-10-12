@@ -291,7 +291,7 @@ export class ChatPageRetainedSessions {
     if (
       !activePane ||
       !retainedKey ||
-      this.findPane(activePane.id, retainedKey)?.routeFace !== intent.face ||
+      (this.findPane(activePane.id, retainedKey)?.routeFace ?? "chat") !== intent.face ||
       areUiSessionKeysEquivalent(activePane.sessionKey, retainedKey)
     ) {
       return;
