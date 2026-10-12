@@ -195,7 +195,7 @@ function SidebarAgentRosterContent(
           </Show>
           <For each={roster.cards()} keyed={(card) => card.id}>
             {(card) => {
-              const runVisibility = sessionRunVisibility();
+              const runVisibility = sessionRunVisibility;
               const sections = () =>
                 (props.sections ?? []).filter((section) =>
                   section.id.startsWith(`agent:${card().id}:`),

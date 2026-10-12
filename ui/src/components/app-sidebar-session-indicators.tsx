@@ -119,7 +119,6 @@ export function renderSidebarSessionIndicators(
       password: gateway()?.connection.password,
     }),
   );
-  const runVisibility = createMemo(() => sessionRunVisibility());
   const teamSummary = createMemo<Parameters<typeof renderTeamSessionSlots>>(
     () =>
       headerSummary ?? [
@@ -127,7 +126,7 @@ export function renderSidebarSessionIndicators(
         !childrenExpanded(),
         readSession().childSessionKeys.length,
         0,
-        runVisibility(),
+        sessionRunVisibility,
       ],
   );
   const leadingState = createMemo(() =>
@@ -139,7 +138,7 @@ export function renderSidebarSessionIndicators(
       channelAvatarAuth(),
       team(),
       readIcon?.(),
-      runVisibility(),
+      sessionRunVisibility,
     ),
   );
   const running = createMemo(() => leadingState().running),

@@ -213,7 +213,7 @@ export function renderCatalogSessionRow(
             <SessionGlyph
               content={undefined}
               running={running()}
-              runVisibility={sessionRunVisibility()}
+              runVisibility={sessionRunVisibility}
             />
           ) : undefined}
         </span>

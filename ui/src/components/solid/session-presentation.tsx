@@ -36,8 +36,8 @@ import { SessionOwnerChip } from "./session-owner-chip.tsx";
 import { ViewerAvatar } from "./viewer-facepile.tsx";
 import "../tooltip.ts";
 
-export type SessionRunVisibility = (element: Element) => void;
-export function sessionRunVisibility(): SessionRunVisibility {
+export type SessionRunVisibility = typeof sessionRunVisibility;
+export function sessionRunVisibility(): (element: Element) => void {
   const controller = new SessionRunVisibilityController();
   onCleanup(() => controller.disconnect());
   return (element) => controller.connect(element);
@@ -116,29 +116,32 @@ export function SessionGlyph(props: SessionGlyphOptions) {
     >
       <span class="session-glyph__content">{props.content}</span>
       <Show when={props.running}>
-        {props.ring === "pair" ? (
-          <svg
-            class={["session-glyph__trace", { "session-glyph__trace--queued": props.queued }]}
-            viewBox="-16 -11 32 22"
-            role="img"
-            aria-label={label()}
-          >
-            <path class="session-glyph__trace-track" d={PAIR_TRACE_PATH} />
-            <path
-              ref={props.runVisibility}
-              class="session-glyph__trace-run"
-              d={PAIR_TRACE_PATH}
-              pathLength="100"
+        {() => {
+          const runVisibility = props.runVisibility?.();
+          return props.ring === "pair" ? (
+            <svg
+              class={["session-glyph__trace", { "session-glyph__trace--queued": props.queued }]}
+              viewBox="-16 -11 32 22"
+              role="img"
+              aria-label={label()}
+            >
+              <path class="session-glyph__trace-track" d={PAIR_TRACE_PATH} />
+              <path
+                ref={runVisibility}
+                class="session-glyph__trace-run"
+                d={PAIR_TRACE_PATH}
+                pathLength="100"
+              />
+            </svg>
+          ) : (
+            <span
+              ref={runVisibility}
+              class={["session-glyph__ring", { "session-glyph__ring--queued": props.queued }]}
+              role="img"
+              aria-label={label()}
             />
-          </svg>
-        ) : (
-          <span
-            ref={props.runVisibility}
-            class={["session-glyph__ring", { "session-glyph__ring--queued": props.queued }]}
-            role="img"
-            aria-label={label()}
-          />
-        )}
+          );
+        }}
       </Show>
       {props.badge}
     </span>
