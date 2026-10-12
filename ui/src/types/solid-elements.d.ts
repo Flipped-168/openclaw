@@ -10,8 +10,10 @@ import type WaTabPanel from "@awesome.me/webawesome/dist/components/tab-panel/ta
 import type WaTab from "@awesome.me/webawesome/dist/components/tab/tab.js";
 import type { WaTabShowEvent } from "@awesome.me/webawesome/dist/events/tab-show.js";
 import type { JSX } from "@solidjs/web";
+import type { UpdateRunRecord } from "../../../src/infra/update-run-record.ts";
 import type { ClawHubRecommendation } from "../../../src/shared/clawhub-recommendations.js";
 import type { MascotMood } from "../components/mascot-pose.ts";
+import type { SelectPicker } from "../components/select-picker.ts";
 import type { MessageActionDetails } from "../pages/chat/components/chat-message-markdown.types.ts";
 export type { JSX } from "@solidjs/web";
 
@@ -32,6 +34,12 @@ declare module "@solidjs/web" {
       messageActions: MessageActionDetails | null | undefined;
     }
     interface IntrinsicElements {
+      // Each caller validates the picker option/callback pairing before the DOM boundary.
+      "openclaw-select-picker": HTMLAttributes<SelectPicker> & { "prop:params": unknown };
+      "openclaw-update-run-view": HTMLAttributes<HTMLElement> & {
+        "prop:run": UpdateRunRecord | null;
+        "prop:connected": boolean;
+      };
       "openclaw-message-reaction-picker": HTMLAttributes<HTMLElement> & {
         compact?: boolean;
         placement?: "bottom-start" | "bottom-end";

@@ -4,6 +4,7 @@ import type { ApplicationGateway } from "../../app/gateway.ts";
 import type { MentionsCapability } from "../../app/mentions.ts";
 import type { ApplicationOverlays } from "../../app/overlays-types.ts";
 import type { SidebarAttentionStore } from "../../app/sidebar-attention-store.ts";
+import type { WebPushCapability } from "../../app/web-push.ts";
 import { projectOwner, projectSource } from "./projection.ts";
 
 /** Connection identity and its snapshot publish through the same owner subscription. */
@@ -45,4 +46,8 @@ export function projectMentions(source: MentionsCapability) {
 
 export function projectSidebarAttention(source: SidebarAttentionStore) {
   return projectOwner(source, (attention) => attention.entries);
+}
+
+export function projectWebPush(source: WebPushCapability) {
+  return projectOwner(source, (push) => push.snapshot);
 }
