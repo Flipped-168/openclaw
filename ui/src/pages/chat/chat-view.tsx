@@ -531,7 +531,7 @@ function ChatContent(input: { props: ChatProps }) {
                       <div class="chat-scroll-to-bottom-wrap">
                         <button
                           class="chat-scroll-to-bottom"
-                          data-visible={Boolean(input.props.showNewMessages)}
+                          data-visible={input.props.showNewMessages ? "true" : "false"}
                           type="button"
                           inert={!input.props.showNewMessages}
                           aria-hidden={!input.props.showNewMessages ? "true" : "false"}
