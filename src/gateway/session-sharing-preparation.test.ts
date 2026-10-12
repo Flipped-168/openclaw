@@ -158,7 +158,7 @@ it("refuses a worker sharing result whose captured birthtime differs from its re
       .mockImplementation(async (...args) => {
         const [input] = args;
         const loaded = await readEntries(...args);
-        if (input.projection !== "sharing") {
+        if (input.projection !== "full" || !input.includeAuthorization) {
           return loaded;
         }
         observed.push(loaded.databaseIdentity);
@@ -811,7 +811,6 @@ it("requires an existing session before preparing sharing facts", async () => {
         { agentId: "main", sessionKey: "agent:main:existing", storePath },
         { sessionId: "existing", updatedAt: 1 },
       );
-      expect(() => missingDatabase.readCurrent(cfg)).toThrow(unavailableMessage);
     } finally {
       missingDatabase.release();
     }

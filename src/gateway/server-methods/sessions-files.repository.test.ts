@@ -92,6 +92,12 @@ vi.mock("../../config/sessions/session-entry-read-facts.js", async (original) =>
         kind: "session-exact-entries",
         entries: [{ sessionKey: loaded.canonicalKey, entry: loaded.entry }],
         lifecycleTimestamps: {},
+        source: { ...database, databaseIdentity: "repository-files-fixture" },
+        databaseIdentity: {
+          identity: "repository-files-fixture",
+          incarnation: "repository-files-fixture",
+          filename: database.path,
+        },
       };
     }) satisfies typeof actual.readRetainedSessionEntryFacts,
   };

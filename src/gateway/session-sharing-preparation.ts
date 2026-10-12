@@ -216,8 +216,9 @@ export async function prepareSessionMutationFacts(
           return;
         }
         if (isOpenClawAgentDatabaseRegistryChange(change) && assertRegistryPublication) {
-          // Selected reads retain their physical sources; registrations affect the next selection.
-          if (facts) {
+          // An absent selection stays absent until the next selection. Existing sources
+          // retain the registry owner that authorized their sharing facts.
+          if (facts?.target === null) {
             return;
           }
           try {

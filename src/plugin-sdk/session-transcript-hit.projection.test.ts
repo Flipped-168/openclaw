@@ -72,7 +72,10 @@ it.each([
     const sql = observeHostDataSql();
     try {
       const { store } = await loadCombinedSessionStoreForGatewayAsync(cfg, options);
-      expect(sql.queries).toEqual([]);
+      // Seeded writers may run their independent idle WAL checkpoint while the read awaits.
+      expect(sql.queries.filter((query) => query !== "PRAGMA wal_checkpoint(PASSIVE);")).toEqual(
+        [],
+      );
       expect(Object.keys(store).toSorted()).toEqual(expectedKeys);
       for (const entry of Object.values(store)) {
         expect.soft(entry.skillsSnapshot).toEqual(skillsSnapshot);

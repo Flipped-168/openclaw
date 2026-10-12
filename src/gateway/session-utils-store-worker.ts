@@ -1,5 +1,6 @@
 import { isDeepStrictEqual } from "node:util";
 import { ok } from "@openclaw/normalization-core/result";
+import { listAgentIds } from "../agents/agent-scope.js";
 import { listSubagentSessionListRunsForControllers } from "../agents/subagents/registry/subagent-registry-read.js";
 import { readResolvedSessionEntriesInWorker } from "../config/sessions/session-accessor.entry.js";
 import { readExactSessionEntryRow } from "../config/sessions/session-accessor.sqlite-entry-read.js";
@@ -171,13 +172,16 @@ async function prepareGatewaySessionStoreReadInWorker(
 ): Promise<{ target: GatewaySessionStoreTargetWithStore; readPlan?: GatewaySessionStoreReadPlan }> {
   params.assertActive?.();
   const parsedAgent = parseAgentSessionKey(params.key)?.agentId;
-  // Discovery includes the stored owner before the lookup decides whether its legacy row wins.
-  const agentId = resolveSessionStoreIdentity({
-    cfg: params.cfg,
-    sessionKey: params.key,
-    agentId: params.agentId,
-    preserveQualifiedAddress: params.preserveQualifiedAddress,
-  }).agentId;
+  // A retained retired-owner row is selected before replacement-owner validation.
+  const retiredOwner = parsedAgent && !isConfiguredSessionStoreAgentId(params.cfg, parsedAgent);
+  const agentId = retiredOwner
+    ? parsedAgent
+    : resolveSessionStoreIdentity({
+        cfg: params.cfg,
+        sessionKey: params.key,
+        agentId: params.agentId,
+        preserveQualifiedAddress: params.preserveQualifiedAddress,
+      }).agentId;
   // Ephemeral databases belong to the process and cannot be opened by a worker.
   if (isIncognitoSessionKey(params.key)) {
     return {
@@ -191,7 +195,11 @@ async function prepareGatewaySessionStoreReadInWorker(
   }
   const { candidates, ...inventory } = prepareSessionStoreTargetInventory(
     params.cfg,
-    [agentId, ...(parsedAgent && parsedAgent !== agentId ? [parsedAgent] : [])],
+    [
+      agentId,
+      ...(retiredOwner ? listAgentIds(params.cfg) : []),
+      ...(parsedAgent && parsedAgent !== agentId ? [parsedAgent] : []),
+    ],
     params.env,
   );
   const identities = retainPlan ? captureSessionStoreCandidateIdentities(candidates) : undefined;

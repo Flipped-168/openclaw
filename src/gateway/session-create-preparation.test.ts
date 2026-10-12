@@ -21,6 +21,7 @@ import { createDeferredCore } from "../shared/deferred.js";
 import { StateDatabaseReadAdmissionInvalidatedError } from "../state/openclaw-state-db-async-lifecycle.js";
 import { closeOpenClawStateDatabaseByPathAsync } from "../state/openclaw-state-db-cache.js";
 import * as repositoryWorkspaces from "../state/session-repository-workspaces.js";
+import { prepareUserProfileCatalog } from "../state/user-profile-list.js";
 import { withOpenClawTestState } from "../test-utils/openclaw-test-state.js";
 import { createDirectChatContext } from "./server-chat.agent-events.test-helpers.js";
 import { prepareSessionRepositoryWorkspace } from "./server-methods/session-create-project.js";
@@ -393,6 +394,7 @@ describe("Gateway creation preparation", () => {
       await withOpenClawTestState({ scenario: "minimal" }, async () => {
         const client = roleClient("view", "creation-caller");
         client.connect.scopes = ["operator.sessions.write"];
+        using _ = { [Symbol.dispose]: (await prepareUserProfileCatalog()).release };
         const profileId = client.authenticatedUserProfile!.profileId;
         const cfg = rolePolicyConfig();
         const key = "agent:main:created-handoff";

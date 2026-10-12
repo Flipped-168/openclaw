@@ -40,6 +40,8 @@ it("publishes agent mutations before acknowledging immediate session and roster 
   const publicationEntered = createDeferred();
   const releasePublication = createDeferred();
   const creationBookkeepingCompleted = createDeferred();
+  const reloadFailures: string[] = [];
+  const restoreReloadLogging: Array<() => void> = [];
   let publicationHeld = false;
   let reloadScheduler: GatewayScheduler | undefined;
   const startReloader = configReload.startGatewayConfigReloader;
@@ -47,6 +49,14 @@ it("publishes agent mutations before acknowledging immediate session and roster 
     .spyOn(configReload, "startGatewayConfigReloader")
     .mockImplementation((options) => {
       reloadScheduler = options.scheduler;
+      for (const level of ["warn", "error"] as const) {
+        const write = options.log[level].bind(options.log);
+        const spy = vi.spyOn(options.log, level).mockImplementation((message) => {
+          reloadFailures.push(message);
+          write(message);
+        });
+        restoreReloadLogging.push(() => spy.mockRestore());
+      }
       return startReloader({
         ...options,
         onHotReload: async (...args) => {
@@ -72,6 +82,9 @@ it("publishes agent mutations before acknowledging immediate session and roster 
     releasePublication.resolve();
     reloaderSpy.mockRestore();
     revivalSpy.mockRestore();
+    for (const restore of restoreReloadLogging) {
+      restore();
+    }
   });
   await withOpenClawTestState(
     {
@@ -262,10 +275,17 @@ it("publishes agent mutations before acknowledging immediate session and roster 
                   for (let round = 0; round < 4; round += 1) {
                     const overlapAgentId = `overlap-${index}-${round}`;
                     await expect(
-                      operator.request("agents.create", {
-                        name: overlapAgentId,
-                        workspace: path.join(state.home, overlapAgentId),
-                      }),
+                      operator
+                        .request("agents.create", {
+                          name: overlapAgentId,
+                          workspace: path.join(state.home, overlapAgentId),
+                        })
+                        .catch((error: unknown) => {
+                          throw new Error(
+                            `Agent ${overlapAgentId} creation failed; reload diagnostics:\n${reloadFailures.join("\n")}`,
+                            { cause: error },
+                          );
+                        }),
                     ).resolves.toMatchObject({ agentId: overlapAgentId });
                     await expect(
                       operator.request("sessions.create", {

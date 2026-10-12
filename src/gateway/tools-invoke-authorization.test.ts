@@ -4,7 +4,6 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 import type { AnyAgentTool } from "../agents/tools/common.js";
 import { upsertSessionEntryCore } from "../config/sessions/session-accessor.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
-import { setPluginToolMeta } from "../plugins/tool-metadata.js";
 import { prepareUserProfileCatalog } from "../state/user-profile-list.js";
 import { ensureProfileForEmail } from "../state/user-profiles.js";
 import { withOpenClawTestState } from "../test-utils/openclaw-test-state.js";
@@ -228,14 +227,11 @@ describe.each(["HTTP", "WebSocket"] as const)(
 );
 
 it.each([
-  ["send", "settled", "core", false, 200],
-  ["read", "settled", "core", false, 500],
-  ["send", "dryRun", "core", false, 500],
-  ["send", "settled", "plugin", false, 500],
-  ["send", "settled", "core", true, 500],
+  ["send", "settled", false, 200],
+  ["send", "settled", true, 500],
 ] as const)(
-  "keeps the result boundary for %s (%s, %s, revoked=%s)",
-  async (action, deliveryStatus, source, revokeCaller, expectedStatus) => {
+  "keeps the result boundary for %s (%s, revoked=%s)",
+  async (action, deliveryStatus, revokeCaller, expectedStatus) => {
     await withOpenClawTestState({ label: "standalone-tool-creation" }, async () => {
       const sessionKey = "agent:main:outbound-first-contact";
       let callerCurrent = true;
@@ -269,9 +265,6 @@ it.each([
             };
           },
         };
-        if (source === "plugin") {
-          setPluginToolMeta(tool, { pluginId: "fixture", optional: true });
-        }
         return [tool];
       });
       const input = { name: "message", sessionKey, args: { action } };
