@@ -40,6 +40,7 @@ export function SidebarNotificationCard(props: {
   critical?: boolean;
   dismissing?: boolean;
   onDismiss?: () => void;
+  onToggle?: (open: boolean) => void;
   body: JSX.Element;
   bodyClass?: string;
 }) {
@@ -49,6 +50,7 @@ export function SidebarNotificationCard(props: {
         "sidebar-issues-panel__details",
         props.severity && `sidebar-issues-panel__details--${props.severity}`,
       ]}
+      onToggle={(event) => props.onToggle?.(event.currentTarget.open)}
     >
       <summary class="sidebar-issues-panel__summary" data-issue-row-focus>
         <span

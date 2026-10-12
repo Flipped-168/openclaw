@@ -180,7 +180,7 @@ function SidebarAgentRosterContent(
   return (
     <>
       {renderSessionListFrame(
-        roster.host(),
+        untrack(roster.host),
         <div class="sidebar-agent-roster">
           <Show when={error()}>
             <button

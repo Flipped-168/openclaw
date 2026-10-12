@@ -1,11 +1,15 @@
-import { Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js";
+import { Show, createEffect, createMemo, createSignal, flush, onCleanup } from "solid-js";
 import type { UpdateRunRecord } from "../../../src/infra/update-run-record.ts";
 import type { UpdateAvailable, UpdateScheduleState } from "../api/types.ts";
 import {
   hasNativeUpdateBridge,
   NATIVE_UPDATE_AVAILABILITY_CHANGED_EVENT,
 } from "../app/native-link-routing.ts";
-import { confirmAndStartUpdate, type UpdateProgress } from "../app/update-confirmation.ts";
+import {
+  confirmAndStartUpdate,
+  type ConfirmAndStartUpdateParams,
+  type UpdateProgress,
+} from "../app/update-confirmation.ts";
 import type { ApplicationStatusBanner } from "../app/update-overlay-helpers.ts";
 import { projectUpdateRun } from "../app/update-run-projection.ts";
 import {
@@ -36,10 +40,13 @@ export type SidebarUpdateCardProps = {
   updateRunAcknowledged: boolean;
   connected: boolean;
   onCheckStatus?: () => Promise<boolean>;
+  prepareRetry?: ConfirmAndStartUpdateParams["prepareRetry"];
   onAcknowledge?: () => void;
   statusBanner: ApplicationStatusBanner | null;
   watchUpdateProgress?: (listener: (progress: UpdateProgress) => void) => () => void;
   canUpdate: boolean;
+  canNativeUpdate: boolean;
+  canStartNativeUpdate?: ConfirmAndStartUpdateParams["canStartNativeUpdate"];
   canHoldUpdate: boolean;
   onUpdate: () => void;
   refreshRequired: boolean;
@@ -60,9 +67,12 @@ function SidebarUpdateCardContent(props: SidebarUpdateCardProps, host: HTMLEleme
   });
   const refreshInFlight = () => refreshState().inFlight;
   const refreshFailed = () => refreshState().failed;
+  const [checkingTarget, setCheckingTarget] = createSignal(false);
+  const [targetCheckFailed, setTargetCheckFailed] = createSignal(false);
   const [now, setNow] = createSignal(Date.now());
   let refreshAttempt = 0;
   let refreshPending = false;
+  let targetCheckPending = false;
   const updateNativeAvailability = () => setNativeUpdateAvailable(hasNativeUpdateBridge());
   window.addEventListener(NATIVE_UPDATE_AVAILABILITY_CHANGED_EVENT, updateNativeAvailability);
   onCleanup(() =>
@@ -87,8 +97,12 @@ function SidebarUpdateCardContent(props: SidebarUpdateCardProps, host: HTMLEleme
       return () => clearInterval(timer);
     },
   );
+  const visibleStatusBanner = () =>
+    props.statusBanner?.source === "read" || !props.updateRun ? props.statusBanner : null;
   function renderStatus() {
-    const statusBanner = props.updateRun ? null : props.statusBanner;
+    const statusBanner =
+      visibleStatusBanner() ??
+      (targetCheckFailed() ? { tone: "warn", text: t("updates.sidebar.checkFailed") } : null);
     // The Gateway recorded this outcome; unlike the client's own update
     // metadata it stays true even when this client is stale.
     return statusBanner ? (
@@ -108,28 +122,70 @@ function SidebarUpdateCardContent(props: SidebarUpdateCardProps, host: HTMLEleme
     confirmUpdate(props.updateRun);
   };
 
-  const startUpdate = () => {
-    const campaign = props.updateSchedule?.campaign;
-    const busy = props.updateBusy || campaign?.state === "applying";
-    if (busy || !props.canUpdate) {
-      return;
+  const checkTarget = async () => {
+    if (!props.onCheckStatus) {
+      return true;
     }
-    confirmUpdate();
+    if (targetCheckPending || !props.connected || props.updateBusy) {
+      return false;
+    }
+    targetCheckPending = true;
+    setCheckingTarget(true);
+    setTargetCheckFailed(false);
+    try {
+      const refreshed = await props.onCheckStatus();
+      setTargetCheckFailed(!refreshed);
+      // The overlay publishes before resolving; commit its fresh presentation props.
+      flush();
+      return refreshed;
+    } catch {
+      setTargetCheckFailed(true);
+      return false;
+    } finally {
+      targetCheckPending = false;
+      setCheckingTarget(false);
+    }
   };
 
-  function confirmUpdate(existingRun?: UpdateRunRecord) {
+  const startUpdate = async () => {
+    const campaign = props.updateSchedule?.campaign;
+    const busy = props.updateBusy || campaign?.state === "applying";
+    const viaNativeApp = hasNativeUpdateBridge();
+    const canStart = () => (viaNativeApp ? props.canNativeUpdate : props.canUpdate);
+    // Native-app updates own their discovery; Gateway freshness cannot gate them.
+    if (busy || !canStart() || (!viaNativeApp && !(await checkTarget()))) {
+      return;
+    }
+    if (
+      !host.isConnected ||
+      !props.connected ||
+      hasNativeUpdateBridge() !== viaNativeApp ||
+      !canStart() ||
+      props.refreshRequired ||
+      props.updateBusy ||
+      props.updateSchedule?.campaign?.state === "applying" ||
+      !isUpdateActionable(props.updateAvailable, props.updateSchedule, false)
+    ) {
+      return;
+    }
+    confirmUpdate(undefined, viaNativeApp);
+  };
+
+  function confirmUpdate(existingRun?: UpdateRunRecord, viaNativeApp = hasNativeUpdateBridge()) {
     void confirmAndStartUpdate({
       existingRun,
-      startGatewayUpdate: () => props.onUpdate(),
+      prepareRetry: viaNativeApp ? undefined : props.prepareRetry,
+      prepareGatewayFallback: props.prepareRetry,
+      canStartNativeUpdate: props.canStartNativeUpdate,
+      startGatewayUpdate: props.onUpdate,
       onCheckStatus: props.onCheckStatus,
       onReviewUpdate: props.onReviewUpdate,
       onAcknowledge: props.onAcknowledge,
       watchUpdateProgress: props.watchUpdateProgress,
       updateAvailable: props.updateAvailable,
       updateSchedule: props.updateSchedule,
-      // Read the bridge at click time: a Mac app that installed it
-      // after the last availability event still owns this update.
-      viaNativeApp: hasNativeUpdateBridge(),
+      // Keep the preflight owner; a lost native bridge needs fresh Gateway reconfirmation.
+      viaNativeApp,
     });
   }
 
@@ -179,7 +235,12 @@ function SidebarUpdateCardContent(props: SidebarUpdateCardProps, host: HTMLEleme
       const view = projectUpdateRun(props.updateRun, props.connected);
       return {
         title: view.headline,
-        detail: view.compactLabel,
+        detail:
+          props.statusBanner?.source === "read"
+            ? props.statusBanner.text
+            : targetCheckFailed()
+              ? t("updates.sidebar.checkFailed")
+              : view.compactLabel,
         timestampMs:
           props.updateRun.status === "running"
             ? props.updateRun.createdAtMs
@@ -201,7 +262,7 @@ function SidebarUpdateCardContent(props: SidebarUpdateCardProps, host: HTMLEleme
     }
     const campaign = props.updateSchedule?.campaign;
     const busy = props.updateBusy || campaign?.state === "applying";
-    const statusBanner = props.updateRun ? null : props.statusBanner;
+    const statusBanner = visibleStatusBanner();
     if (!statusBanner && !isUpdateActionable(props.updateAvailable, props.updateSchedule, busy)) {
       return null;
     }
@@ -241,11 +302,20 @@ function SidebarUpdateCardContent(props: SidebarUpdateCardProps, host: HTMLEleme
         {(current) => (
           <SidebarNotificationCard
             title={current().title}
-            detail={current().detail}
+            detail={checkingTarget() ? t("updates.sidebar.checking") : current().detail}
             timestampMs={current().timestampMs}
             icon={current().icon}
             severity={current().severity}
             critical={current().critical}
+            onToggle={(open) => {
+              if (
+                open &&
+                !hasNativeUpdateBridge() &&
+                !isUpdateRunAttentionVisible(props.updateRun, props.updateRunAcknowledged)
+              ) {
+                void checkTarget();
+              }
+            }}
             onDismiss={props.onDismiss}
             body={<CompactDetails />}
             bodyClass="sidebar-update-issue__body"
@@ -256,7 +326,10 @@ function SidebarUpdateCardContent(props: SidebarUpdateCardProps, host: HTMLEleme
   }
 
   function CompactDetails() {
-    const statusBanner = () => (props.updateRun ? null : props.statusBanner);
+    const statusBanner = () => {
+      const banner = visibleStatusBanner();
+      return banner?.source === "read" ? null : banner;
+    };
     return (
       <Show when={statusBanner()} fallback={<Card />}>
         {(banner) => (
@@ -350,6 +423,7 @@ function SidebarUpdateCardContent(props: SidebarUpdateCardProps, host: HTMLEleme
     const view = createMemo(() => projectUpdateRun(current.run, props.connected));
     return (
       <div class="sidebar-update-card" role="status" aria-live="polite">
+        {renderStatus()}
         <button class="sidebar-update-card__action" type="button" onClick={openRun}>
           <span class="sidebar-update-card__icon" aria-hidden="true">
             <Icon
@@ -376,7 +450,8 @@ function SidebarUpdateCardContent(props: SidebarUpdateCardProps, host: HTMLEleme
   function AvailableCard() {
     const campaign = () => props.updateSchedule?.campaign;
     const busy = () => props.updateBusy || campaign()?.state === "applying";
-    const statusBanner = () => (props.updateRun ? null : props.statusBanner);
+    const statusBanner = () => props.statusBanner;
+    const canUpdate = () => (nativeUpdateAvailable() ? props.canNativeUpdate : props.canUpdate);
     const actionable = () =>
       isUpdateActionable(props.updateAvailable, props.updateSchedule, busy());
     const countdownActive = () =>
@@ -400,21 +475,25 @@ function SidebarUpdateCardContent(props: SidebarUpdateCardProps, host: HTMLEleme
     function UpdateAction() {
       return (
         <button
-          class={["sidebar-update-card__action", { "sidebar-update-card__action--busy": busy() }]}
+          class={[
+            "sidebar-update-card__action",
+            { "sidebar-update-card__action--busy": busy() || checkingTarget() },
+          ]}
           type="button"
-          aria-disabled={props.canUpdate ? undefined : "true"}
-          disabled={busy()}
+          aria-disabled={canUpdate() ? undefined : "true"}
+          disabled={busy() || checkingTarget()}
+          aria-busy={checkingTarget() ? "true" : "false"}
           onClick={startUpdate}
         >
           <span class="sidebar-update-card__icon" aria-hidden="true">
-            <Icon name={busy() ? "refresh" : "download"} />
+            <Icon name={busy() || checkingTarget() ? "refresh" : "download"} />
           </span>
           <span
             class="sidebar-update-card__text"
             role={countdownActive() ? "timer" : undefined}
             aria-live={countdownActive() ? "off" : undefined}
           >
-            {text()}
+            {checkingTarget() ? t("updates.sidebar.checking") : text()}
           </span>
         </button>
       );
@@ -428,10 +507,20 @@ function SidebarUpdateCardContent(props: SidebarUpdateCardProps, host: HTMLEleme
           aria-live={campaign() ? undefined : "polite"}
         >
           {renderStatus()}
+          <Show when={!actionable() && statusBanner()?.source === "read"}>
+            <button
+              type="button"
+              class="sidebar-update-card__review"
+              disabled={checkingTarget() || !props.connected}
+              onClick={() => void checkTarget()}
+            >
+              {checkingTarget() ? t("updates.sidebar.checking") : t("connection.retryNow")}
+            </button>
+          </Show>
           <Show when={actionable()}>
             <div class="sidebar-update-card__actions">
               <Show
-                when={props.canUpdate}
+                when={canUpdate()}
                 fallback={
                   <openclaw-tooltip open-on-click prop:content={t("updates.adminRequired")}>
                     <UpdateAction />
@@ -452,7 +541,7 @@ function SidebarUpdateCardContent(props: SidebarUpdateCardProps, host: HTMLEleme
               {t("updates.reviewUpdate")}
             </button>
           </Show>
-          {actionable() && !busy()
+          {actionable() && !busy() && !checkingTarget() && !targetCheckFailed()
             ? renderUpdateGitRevisions(props.updateSchedule, props.updateAvailable)
             : null}
         </div>
@@ -502,10 +591,13 @@ export const SidebarUpdateCard = defineSolidBridge<SidebarUpdateCardProps>(
       updateRunAcknowledged: { default: false, attribute: false },
       connected: { default: true, attribute: false },
       onCheckStatus: { default: undefined, attribute: false },
+      prepareRetry: { default: undefined, attribute: false },
       onAcknowledge: { default: undefined, attribute: false },
       statusBanner: { default: null, attribute: false },
       watchUpdateProgress: { default: undefined, attribute: false },
       canUpdate: { default: false, attribute: false },
+      canNativeUpdate: { default: false, attribute: false },
+      canStartNativeUpdate: { default: undefined, attribute: false },
       canHoldUpdate: { default: false, attribute: false },
       onUpdate: { default: () => undefined, attribute: false },
       refreshRequired: { default: false, attribute: false },

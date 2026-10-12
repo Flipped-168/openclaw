@@ -5,7 +5,9 @@ import { pathForRoute } from "../app-route-paths.ts";
 import type { ApplicationContext } from "../app/context.ts";
 import type { ScopeUpgradeState } from "../app/device-scope-upgrade-availability.ts";
 import type { ExecApprovalDecision, ExecApprovalRequest } from "../app/exec-approval.ts";
+import { hasNativeUpdateBridge } from "../app/native-link-routing.ts";
 import type { UpdateProgress } from "../app/update-confirmation.ts";
+import { isUpdateActionable } from "../app/update-schedule-projection.ts";
 import { registerSidebarAttentionEnglish } from "../i18n/locales/en-sidebar-attention.ts";
 import { canCallGatewayMethod } from "../lib/gateway-methods.ts";
 import { shouldHandleNavigationClick } from "../lib/navigation-click.ts";
@@ -172,8 +174,36 @@ export function renderSidebarUpdateSurface(params: {
   onNavigate: () => void;
   watchUpdateProgress: ((listener: (progress: UpdateProgress) => void) => () => void) | undefined;
 }) {
+  const context = params.context;
   const snapshot = () => params.context.overlays.snapshot;
   const gateway = () => params.context.gateway.snapshot;
+  const canCheck = () => canCallGatewayMethod(gateway(), "update.status", "operator.admin");
+  const statusBanner = () => {
+    const banner = snapshot().updateStatusCheckBanner;
+    return banner ? { ...banner, source: "read" as const } : snapshot().updateStatusBanner;
+  };
+  const prepareRetry = async () => {
+    const canRetry = () => {
+      const liveGateway = context.gateway.snapshot;
+      const liveUpdate = context.overlays.snapshot;
+      return (
+        !hasNativeUpdateBridge() &&
+        liveGateway.phase === "connected" &&
+        canCallGatewayMethod(liveGateway, "update.status", "operator.admin") &&
+        canCallGatewayMethod(liveGateway, "update.run", "operator.admin") &&
+        !liveUpdate.updateRunning &&
+        !liveUpdate.updateReconciliationPending &&
+        liveUpdate.updateSchedule?.campaign?.state !== "applying"
+      );
+    };
+    if (!canRetry() || !(await context.overlays.refreshUpdateStatus()) || !canRetry()) {
+      return null;
+    }
+    const { updateAvailable, updateSchedule } = context.overlays.snapshot;
+    return isUpdateActionable(updateAvailable, updateSchedule, false)
+      ? { updateAvailable, updateSchedule }
+      : null;
+  };
   return (
     <SidebarUpdateCard
       class="sidebar-issues-panel__update"
@@ -186,15 +216,20 @@ export function renderSidebarUpdateSurface(params: {
       updateRun={snapshot().updateRun}
       updateRunAcknowledged={snapshot().updateRunAcknowledged}
       connected={gateway().phase === "connected"}
-      onAcknowledge={() => params.context.overlays.acknowledgeUpdateRun()}
-      onCheckStatus={() => params.context.overlays.refreshUpdateStatus()}
-      statusBanner={snapshot().updateStatusBanner}
+      onAcknowledge={() => context.overlays.acknowledgeUpdateRun()}
+      prepareRetry={prepareRetry}
+      canStartNativeUpdate={() =>
+        canCallGatewayMethod(context.gateway.snapshot, "update.run", "operator.admin")
+      }
+      onCheckStatus={canCheck() ? () => context.overlays.refreshUpdateStatus() : undefined}
+      statusBanner={statusBanner()}
       watchUpdateProgress={params.watchUpdateProgress}
-      canUpdate={canCallGatewayMethod(gateway(), "update.run", "operator.admin")}
+      canUpdate={canCheck() && canCallGatewayMethod(gateway(), "update.run", "operator.admin")}
+      canNativeUpdate={canCallGatewayMethod(gateway(), "update.run", "operator.admin")}
       canHoldUpdate={canCallGatewayMethod(gateway(), "update.hold", "operator.admin")}
-      onUpdate={() => void params.context.overlays.runUpdate()}
+      onUpdate={() => void context.overlays.runUpdate()}
       refreshRequired={false}
-      onHoldUpdate={() => params.context.overlays.holdUpdate()}
+      onHoldUpdate={() => context.overlays.holdUpdate()}
       onReviewUpdate={params.onNavigate}
       onDismiss={params.onDismiss}
     />

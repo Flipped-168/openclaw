@@ -116,7 +116,7 @@ export function SessionGlyph(props: SessionGlyphOptions) {
     >
       <span class="session-glyph__content">{props.content}</span>
       <Show when={props.running}>
-        {() => {
+        {(_running) => {
           const runVisibility = props.runVisibility?.();
           return props.ring === "pair" ? (
             <svg

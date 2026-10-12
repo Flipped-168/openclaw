@@ -39,7 +39,7 @@ export type SessionRowBadgesParams = {
 
 export type SessionRowBadge = {
   label: string;
-  icon: "lock" | "gitMerge" | "gitPullRequest" | "alertTriangle" | "pencil" | "globe";
+  icon: "incognito" | "gitMerge" | "gitPullRequest" | "alertTriangle" | "pencil" | "globe";
   modifier: string;
   count?: number;
   pullRequestState?: SessionCatalogPullRequestSummary["state"];
@@ -130,7 +130,7 @@ export function resolveSessionRowBadges(
   if (params.incognito) {
     badges.push({
       label: translate("sessionsView.incognito"),
-      icon: "lock",
+      icon: "incognito",
       modifier: "incognito",
     });
   }
