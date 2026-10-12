@@ -80,7 +80,7 @@ for (const { name, fault, replaceParent } of [
     replaceParent: false,
   },
   {
-    name: "typed Stop rejects a replaced parent while child cancellation drains",
+    name: "typed Stop rejects a replaced parent while settling its accepted child cancellation",
     fault: false,
     replaceParent: true,
   },
@@ -137,6 +137,7 @@ for (const { name, fault, replaceParent } of [
         >
       | undefined;
     let responseSettled = false;
+    let acceptedKillRequestedAt: number | undefined;
 
     await runQaGatewayFixture(
       async () => {
@@ -311,7 +312,10 @@ for (const { name, fault, replaceParent } of [
         expect(responseSettled).toBe(false);
         expect(start).not.toHaveBeenCalled();
         if (replaceParent) {
-          expect(subagentRuns.get(firstRunId)?.killIntent).toBeDefined();
+          acceptedKillRequestedAt = expectDefined(
+            subagentRuns.get(firstRunId)?.killIntent,
+            "accepted child kill intent",
+          ).requestedAt;
           replaceSessionEntrySync(replacementScope, {
             sessionId: replacementScope.sessionId,
             lifecycleRevision: "replacement",
@@ -402,7 +406,7 @@ for (const { name, fault, replaceParent } of [
         expect([...persistedRuns.keys()].toSorted()).toEqual(selected.toSorted());
         for (const runId of selected) {
           const run = persistedRuns.get(runId)!;
-          if (replaceParent || runId === failedRunId) {
+          if (runId === failedRunId) {
             expect(run.execution.status).toBe("running");
             expect(run.execution.endedAt).toBeUndefined();
           } else {
@@ -412,11 +416,17 @@ for (const { name, fault, replaceParent } of [
             });
           }
           if (replaceParent) {
+            // Parent replacement refuses new effects; the already-interrupted child
+            // still settles the exact cancellation accepted before replacement.
+            expect(run.killReconciliation).toMatchObject({
+              killedAt: acceptedKillRequestedAt,
+              taskCancellationAccepted: true,
+            });
             expect(run.killIntent).toBeUndefined();
             expect(
               loadExactSessionEntryReadOnly({ storePath, sessionKey: sessionKey(runId) })?.entry
                 .abortedLastRun,
-            ).not.toBe(true);
+            ).toBe(true);
           }
           if (queued.includes(runId)) {
             expect(run.execution.startedAt).toBeUndefined();
