@@ -1457,7 +1457,7 @@ describe("main-session-restart-recovery", () => {
     });
     expect(notice?.isCurrent?.({})).toBe(false);
     await writeStore(sessionsDir, { [sessionKey]: current });
-    expect(notice?.isCurrent?.({})).toBe(true);
+    expect(notice?.isCurrent?.({})).toBe(false);
     dispatchSettlement.resolve();
     await waitForFast(() => expect(notice?.isCurrent?.({})).toBe(false));
   });

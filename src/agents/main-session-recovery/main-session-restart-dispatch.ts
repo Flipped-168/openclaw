@@ -443,20 +443,6 @@ async function resumeMainSessionWithinAdmission(
       sessionKey: dispatchSessionKey,
       storePath: params.storePath,
     });
-    deliveryCurrent = deliveryContext
-      ? await captureRestartRecoveryDeliveryCurrent({
-          ...target,
-          storePath: requesterStorePath,
-          sessionKey: dispatchSessionKey,
-          sessionId: params.entry.sessionId,
-          recoveryRunId,
-          lifecycleGeneration,
-          deliveryContext,
-          cfg: params.cfg,
-          shouldContinue: params.shouldContinue,
-        })
-      : undefined;
-    const isDeliveryCurrent = deliveryCurrent;
     const agentParams: AgentRunRequest = {
       agentId: params.agentId,
       message: buildResumeMessage(
@@ -595,6 +581,18 @@ async function resumeMainSessionWithinAdmission(
     }
     const resumeResult = terminalStatus ? "settled" : "started";
     if (resumeResult === "started" && agentParams.deliver && deliveryContext && taskRemainsOwed()) {
+      deliveryCurrent = await captureRestartRecoveryDeliveryCurrent({
+        ...target,
+        storePath: requesterStorePath,
+        sessionKey: dispatchSessionKey,
+        sessionId: params.entry.sessionId,
+        recoveryRunId,
+        lifecycleGeneration,
+        deliveryContext,
+        cfg: params.cfg,
+        shouldContinue: params.shouldContinue,
+      });
+      const isDeliveryCurrent = deliveryCurrent;
       if (!dispatchSettled) {
         stopTyping = params.gatewayRuntime.startRecoveryTyping?.({
           ...deliveryContext,
@@ -624,8 +622,7 @@ async function resumeMainSessionWithinAdmission(
         sanitizedPendingText ? " (with pending payload)" : ""
       }`,
     );
-    deliveryCurrentTransferred =
-      resumeResult === "started" && !dispatchSettled && Boolean(stopTyping);
+    deliveryCurrentTransferred = resumeResult === "started" && !dispatchSettled;
     return resumeResult;
   } catch (error) {
     const explicitlyRejected = error instanceof GatewayClientRequestError && !dispatchAccepted;
