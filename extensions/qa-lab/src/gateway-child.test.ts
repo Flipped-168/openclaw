@@ -200,7 +200,9 @@ describe("waitForGatewayReady", () => {
   it("waits for healthy readiness and configured agent admission", async () => {
     vi.useFakeTimers();
     vi.mocked(sleep).mockImplementation(async (delay, value) => {
-      await new Promise<void>((resolve) => setTimeout(resolve, delay));
+      await new Promise<void>((resolve) => {
+        setTimeout(resolve, delay);
+      });
       return value;
     });
     const baseUrl = "http://127.0.0.1:43124";
