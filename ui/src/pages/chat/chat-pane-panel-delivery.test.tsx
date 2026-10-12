@@ -27,7 +27,7 @@ it("opens the requested desktop through a cold native pane panel", async () => {
   ]);
   const snapshot = fixture.context.gateway.snapshot;
   snapshot.hello = gatewayHelloForMethods([
-    ...(snapshot.hello?.features.methods ?? []),
+    ...(snapshot.hello?.features?.methods ?? []),
     "desktop.observe",
     "environments.list",
     "environments.status",
@@ -49,7 +49,8 @@ it("opens the requested desktop through a cold native pane panel", async () => {
     }
     return originalRequest(method, ...args);
   });
-  client.request = createTestGatewayClient(request).request;
+  const requestClient = createTestGatewayClient(request);
+  client.request = requestClient.request.bind(requestClient);
   onTestFinished(() => {
     client.request = originalRequest;
   });
