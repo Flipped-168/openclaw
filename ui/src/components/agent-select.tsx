@@ -8,6 +8,7 @@ import { generateUUID } from "../lib/uuid.ts";
 import { defineSolidBridge, type SolidBridgeElement } from "../lit/solid-bridge.ts";
 import type { AgentSelectOption } from "./agent-select.ts";
 import { avatarArtwork } from "./identity-avatar-view.ts";
+import { revealInScrollRegion } from "./scroll-state.ts";
 import { Icon } from "./solid/icon.tsx";
 import { AgentIdentityAvatar } from "./solid/identity-avatar.tsx";
 import { Menu, type MenuItem, type MenuHandle } from "./solid/menu.tsx";
@@ -182,6 +183,13 @@ export const AgentSelect = defineSolidBridge<AgentSelectProps>(
         disabled={props.disabled || (props.options.length === 0 && !props.onCreateAgent)}
         items={items()}
         placement="bottom-start"
+        onAfterShow={() => {
+          const surface = menu?.overlay.surface;
+          const option = surface?.querySelector<HTMLElement>("[data-selected]");
+          if (surface && option) {
+            revealInScrollRegion(surface, option);
+          }
+        }}
         trigger={
           <>
             <Show when={triggerOption()}>{(option) => <Avatar option={option()} />}</Show>

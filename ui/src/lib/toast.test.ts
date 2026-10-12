@@ -117,47 +117,57 @@ describe("shared toast", () => {
     expect(appHost.textContent).toContain("Outer dialog notice");
   });
 
-  it("keeps shadow-root Undo focused through hover exit and resumes only after focus leaves", async () => {
-    vi.useFakeTimers();
-    const host = await mountHost();
-    const shadowOwner = document.createElement("div");
-    const root = shadowOwner.attachShadow({ mode: "open" });
-    const modal = document.createElement("openclaw-modal-dialog");
-    modal.open = true;
-    root.append(modal);
-    document.body.append(shadowOwner);
-    await modal.updateComplete;
-    const onDismiss = vi.fn();
-    showToast({
-      message: "Session archived",
-      actionLabel: "Undo",
-      onAction: vi.fn(),
-      durationMs: 100,
-      onDismiss,
-    });
-    await settleHost(host);
-    expect(host.parentElement).toBe(modal.getOverlayContainer());
-    await vi.advanceTimersByTimeAsync(40);
-    const action = host.querySelector<HTMLButtonElement>(".app-toast__action")!;
-    const toast = host.querySelector<HTMLElement>(".app-toast")!;
-    toast.dispatchEvent(new Event("pointerenter"));
-    action.focus();
-    expect(document.activeElement).toBe(shadowOwner);
-    expect(root.activeElement).toBe(action);
-    toast.dispatchEvent(new Event("pointerleave"));
-    await vi.advanceTimersByTimeAsync(200);
-    expect(onDismiss).not.toHaveBeenCalled();
-    expect(root.activeElement).toBe(action);
-    const dismiss = host.querySelector<HTMLButtonElement>(".app-toast__dismiss")!;
-    dismiss.focus();
-    await vi.advanceTimersByTimeAsync(200);
-    expect(onDismiss).not.toHaveBeenCalled();
-    dismiss.blur();
-    await vi.advanceTimersByTimeAsync(59);
-    expect(onDismiss).not.toHaveBeenCalled();
-    await vi.advanceTimersByTimeAsync(1);
-    expect(onDismiss).toHaveBeenCalledExactlyOnceWith("timeout");
-  });
+  it.each(["hover exit", "render update"])(
+    "keeps shadow-root Undo focused through %s and resumes only after focus leaves",
+    async (trigger) => {
+      vi.useFakeTimers();
+      const host = await mountHost();
+      const shadowOwner = document.createElement("div");
+      const root = shadowOwner.attachShadow({ mode: "open" });
+      const modal = document.createElement("openclaw-modal-dialog");
+      modal.open = true;
+      root.append(modal);
+      document.body.append(shadowOwner);
+      await modal.updateComplete;
+      const onDismiss = vi.fn();
+      showToast({
+        message: "Session archived",
+        actionLabel: "Undo",
+        onAction: vi.fn(),
+        durationMs: 100,
+        onDismiss,
+      });
+      await settleHost(host);
+      expect(host.parentElement).toBe(modal.getOverlayContainer());
+      await vi.advanceTimersByTimeAsync(40);
+      const action = host.querySelector<HTMLButtonElement>(".app-toast__action")!;
+      const toast = host.querySelector<HTMLElement>(".app-toast")!;
+      if (trigger === "hover exit") {
+        toast.dispatchEvent(new Event("pointerenter"));
+      }
+      action.focus();
+      expect(document.activeElement).toBe(shadowOwner);
+      expect(root.activeElement).toBe(action);
+      if (trigger === "hover exit") {
+        toast.dispatchEvent(new Event("pointerleave"));
+      } else {
+        host.toast = { ...host.toast! };
+        await settleHost(host);
+      }
+      await vi.advanceTimersByTimeAsync(200);
+      expect(onDismiss).not.toHaveBeenCalled();
+      expect(root.activeElement).toBe(action);
+      const dismiss = host.querySelector<HTMLButtonElement>(".app-toast__dismiss")!;
+      dismiss.focus();
+      await vi.advanceTimersByTimeAsync(200);
+      expect(onDismiss).not.toHaveBeenCalled();
+      dismiss.blur();
+      await vi.advanceTimersByTimeAsync(59);
+      expect(onDismiss).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(onDismiss).toHaveBeenCalledExactlyOnceWith("timeout");
+    },
+  );
 
   it("resumes remaining time when relocation out of a shadow root drops focus", async () => {
     vi.useFakeTimers();
