@@ -49,7 +49,6 @@ export class SessionMutationFactsUnavailableError extends Error {
   constructor(options?: ErrorOptions) {
     super("Session access facts are unavailable; retry after session storage is ready.", options);
     this.name = "SessionMutationFactsUnavailableError";
-    console.error("SESSION_FACTS_DIAGNOSIS", this);
   }
 }
 

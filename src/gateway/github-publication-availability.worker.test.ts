@@ -9,6 +9,7 @@ import {
 } from "../agents/worktrees/registry.js";
 import { findLiveRegistryWorktreeByOwner } from "../agents/worktrees/registry.test-support.js";
 import type { ManagedWorktreeRecord } from "../agents/worktrees/types.js";
+import * as configIo from "../config/io.js";
 import { patchSessionEntryCore } from "../config/sessions/session-accessor.sqlite-entry.js";
 import { withIncognitoSessionBinding } from "../config/sessions/session-incognito-binding.js";
 import { captureOpenClawAgentDatabaseExecution } from "../state/openclaw-agent-execution.js";
@@ -28,15 +29,7 @@ import { prepareGitHubPublicationFact } from "./worker-environments/worker-githu
 async function prepareGitHubPublicationAvailability(
   params: Parameters<typeof prepareGitHubPublicationFact>[0],
 ) {
-  const facts = await prepareGitHubPublicationFact(params);
-  if (!facts) {
-    const selected = mocks.session.mock.results.at(-1)?.value;
-    console.error("[publication availability fixture diagnosis]", {
-      source: selected?.readSource,
-      capturedSource: selected?.capturedReadSource,
-    });
-  }
-  return facts?.available ?? false;
+  return (await prepareGitHubPublicationFact(params))?.available ?? false;
 }
 
 const identity = {
@@ -141,6 +134,7 @@ const worktree: ManagedWorktreeRecord = {
 beforeEach(async () => {
   vi.stubEnv("OPENCLAW_STATE_DIR", tempDirs.make("publication-worktree-read-"));
   mocks.config.mockReset().mockReturnValue({});
+  vi.spyOn(configIo, "getRuntimeConfig").mockImplementation(mocks.config);
   mocks.session.mockReset().mockReturnValue({
     canonicalKey: session.sessionKey,
     agentId: session.agentId,

@@ -252,14 +252,7 @@ describe("committed session mutation authorization", () => {
         addSessionMember(scope, { identityId, addedBy: "test-owner" });
         expect(() => authorization.assertCurrent()).not.toThrow();
         await projection?.ensureMaterialized();
-        const originalParse = JSON.parse;
-        const unrelatedParseErrors: Error[] = [];
-        const parse = vi.spyOn(JSON, "parse").mockImplementation((...args) => {
-          if (args[0].includes("unrelated-committed-probe-")) {
-            unrelatedParseErrors.push(new Error("Unrelated committed parse"));
-          }
-          return originalParse(...args);
-        });
+        const parse = vi.spyOn(JSON, "parse");
         const unrelatedParses = () =>
           parse.mock.calls.filter(([value]) => value.includes("unrelated-committed-probe-")).length;
         inWriterTransaction(owner.db, () => {
@@ -317,12 +310,7 @@ describe("committed session mutation authorization", () => {
             "session changed before chat.send",
           );
         });
-        const unrelatedParseCount = unrelatedParses();
-        parse.mockRestore();
-        expect({
-          count: unrelatedParseCount,
-          stacks: unrelatedParseErrors.map((error) => error.stack ?? "no stack"),
-        }).toEqual({ count: 0, stacks: [] });
+        expect(unrelatedParses()).toBe(0);
       } finally {
         projection?.dispose();
       }

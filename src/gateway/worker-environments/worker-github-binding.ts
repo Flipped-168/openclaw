@@ -65,8 +65,7 @@ export async function prepareGitHubPublicationFact(
       ...(gitAuthor ? { gitAuthor } : {}),
     });
     return { available: Boolean(identity.env.GH_TOKEN), ...(binding ? { github: binding } : {}) };
-  } catch (error) {
-    console.error("[publication availability diagnosis]", error);
+  } catch {
     return undefined;
   }
 }
