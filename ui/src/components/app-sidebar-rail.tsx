@@ -233,15 +233,13 @@ function renderRailPin(
           {(user) => renderSessionOwnerAvatar(user())}
         </Show>
       </a>
+    ) : entry.type === "route" ? (
+      host.sidebarMenus.renderRoute(entry.route)
     ) : (
       <Show
         when={session()}
         fallback={
-          entry.type === "route" ? (
-            <Show when={host.sidebarMenus.isRouteEnabled(entry.route)} fallback={undefined}>
-              {host.sidebarMenus.renderRoute(entry.route)}
-            </Show>
-          ) : entry.type === "plugin" ? (
+          entry.type === "plugin" ? (
             <Show
               when={tab()}
               fallback={

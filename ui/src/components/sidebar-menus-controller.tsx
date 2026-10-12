@@ -621,22 +621,22 @@ export class SidebarMenusController {
         ? sessionNavigationTarget({ context, face: routeId, sessionKey: routeSessionKey })
         : null;
     });
-    return (
-      <Show when={this.isRouteEnabled(routeId)}>
-        {renderSidebarNavLink({
-          icon: <Icon name={navigationIconForRoute(routeId)} />,
-          label: titleForRoute(routeId),
-          get href() {
-            return sessionTarget()?.href ?? pathForRoute(routeId, host.basePath);
-          },
-          get active() {
-            return isSidebarRouteActive(host.activeRouteId, routeId);
-          },
-          onNavigate: () => host.onNavigate?.(routeId, sessionTarget()?.options),
-          onPreload: (event, immediate) => this.preloadRoute(routeId, event, immediate),
-          onCancelPreload: this.cancelPreload,
-        })}
-      </Show>
-    );
+    // Menus retain this anchor as their return-focus target across sidebar updates.
+    const link = renderSidebarNavLink({
+      icon: <Icon name={navigationIconForRoute(routeId)} />,
+      get label() {
+        return titleForRoute(routeId);
+      },
+      get href() {
+        return sessionTarget()?.href ?? pathForRoute(routeId, host.basePath);
+      },
+      get active() {
+        return isSidebarRouteActive(host.activeRouteId, routeId);
+      },
+      onNavigate: () => host.onNavigate?.(routeId, sessionTarget()?.options),
+      onPreload: (event, immediate) => this.preloadRoute(routeId, event, immediate),
+      onCancelPreload: this.cancelPreload,
+    });
+    return <Show when={this.isRouteEnabled(routeId)}>{link}</Show>;
   }
 }

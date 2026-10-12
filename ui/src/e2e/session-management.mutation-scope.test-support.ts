@@ -49,7 +49,7 @@ export async function installMutationScopeDiagnostics(page: Page, scenario: Muta
               const list = owner?.sessions.listSnapshot({
                 source: "sidebar",
                 excludeDock: true,
-                agentId,
+                agentId: agentId ?? undefined,
                 archivedFilter: caseInfo.filter === "All" ? "all" : "active",
                 rowMode: "compact",
                 includeDerivedTitles: true,

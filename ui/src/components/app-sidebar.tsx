@@ -10,7 +10,7 @@ import {
   Show,
   untrack,
 } from "solid-js";
-import { useApplication } from "../lib/reactive/context.ts";
+import { useApplication, useOptionalApplication } from "../lib/reactive/context.ts";
 import { projectSource } from "../lib/reactive/projection.ts";
 import { defineSolidBridge, type SolidBridgeElement } from "../lit/solid-bridge.ts";
 import { PluginView } from "../plugins/control-ui-view.solid.tsx";
@@ -143,7 +143,8 @@ export type AppSidebarElement = SolidBridgeElement<AppSidebarProps, AppSidebarMe
 export const AppSidebar = defineSolidBridge<AppSidebarProps, AppSidebarMethods>(
   "openclaw-app-sidebar",
   // Component setup must not subscribe the bridge's provider to this owner's revision.
-  (props, host) => untrack(() => AppSidebarContent(props, host)),
+  (props, host) =>
+    untrack(() => (useOptionalApplication() ? AppSidebarContent(props, host) : props.children)),
   {
     properties: appSidebarProperties,
     connected: (host) => sidebarOwners.get(host)?.attach(),

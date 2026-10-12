@@ -578,8 +578,9 @@ suite.define(() => {
             const app = document.querySelector<
               HTMLElement & { runtime?: { context: ApplicationContext } }
             >("openclaw-app");
-            return app?.runtime?.context.sessions.listSnapshot(scope).result?.sessions[0]?.placement
-              ?.runner?.status;
+            const placement =
+              app?.runtime?.context.sessions.listSnapshot(scope).result?.sessions[0]?.placement;
+            return placement?.state === "active" ? placement.runner?.status : undefined;
           }, childSessionListQuery(parent.key)),
         )
         .toBe("available");
@@ -641,9 +642,10 @@ suite.define(() => {
           const app = document.querySelector<
             HTMLElement & { runtime?: { context: ApplicationContext } }
           >("openclaw-app");
-          return app?.runtime?.context.sessions.presentation.result?.sessions.find(
+          const placement = app?.runtime?.context.sessions.presentation.result?.sessions.find(
             (row) => row.key === key,
-          )?.placement?.runner?.status;
+          )?.placement;
+          return placement?.state === "active" ? placement.runner?.status : undefined;
         }, available.key),
       ).toBe("offline");
       expect(await gateway.getSocketCount()).toBe(1);

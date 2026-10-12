@@ -594,14 +594,13 @@ describe("SidebarUpdateCard", () => {
         expect(details.open).toBe(true);
       }
 
-      element.setProps({
-        updateRun: createUpdateRunFixture({
-          status: "succeeded",
-          phase: "finished",
-          finishedAtMs: Date.now(),
-          after: { version: "2026.9.2" },
-        }),
+      const completedRun = createUpdateRunFixture({
+        status: "succeeded",
+        phase: "finished",
+        finishedAtMs: Date.now(),
+        after: { version: "2026.9.2" },
       });
+      element.setProps({ updateRun: completedRun });
       await settle();
       expect(element.element.textContent).toContain("OpenClaw updated to 2026.9.2");
       element.setProps({ updateRunAcknowledged: true });
@@ -609,7 +608,7 @@ describe("SidebarUpdateCard", () => {
       expect(element.element.querySelector(".sidebar-update-card")).toBeNull();
       element.setProps({ updateRunAcknowledged: false });
       element.setProps({
-        updateRun: { ...element.props().updateRun, finishedAtMs: Date.now() - 24 * 60 * 60 * 1000 },
+        updateRun: { ...completedRun, finishedAtMs: Date.now() - 24 * 60 * 60 * 1000 },
       });
       await settle();
       expect(element.element.querySelector(".sidebar-update-card")).toBeNull();

@@ -125,7 +125,7 @@ describe.runIf("__vitest_browser__" in globalThis)("shared control theme inherit
             onNavigate() {},
             onPairMobile() {},
           })}
-          <wa-select label="Language" with-clear value="en">
+          <wa-select label="Language" prop:withClear={true} prop:value="en">
             <wa-option value="en">English</wa-option>
           </wa-select>
           <wa-tab-group>

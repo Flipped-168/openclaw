@@ -127,7 +127,7 @@ export function SessionGlyph(props: SessionGlyphOptions) {
             >
               <path class="session-glyph__trace-track" d={PAIR_TRACE_PATH} />
               <path
-                ref={runVisibility}
+                ref={(element) => runVisibility?.(element)}
                 class="session-glyph__trace-run"
                 d={PAIR_TRACE_PATH}
                 pathLength="100"
@@ -135,7 +135,7 @@ export function SessionGlyph(props: SessionGlyphOptions) {
             </svg>
           ) : (
             <span
-              ref={runVisibility}
+              ref={(element) => runVisibility?.(element)}
               class={["session-glyph__ring", { "session-glyph__ring--queued": props.queued }]}
               role="img"
               aria-label={label()}

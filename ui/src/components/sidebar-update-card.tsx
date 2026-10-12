@@ -483,7 +483,7 @@ function SidebarUpdateCardContent(props: SidebarUpdateCardProps, host: HTMLEleme
           aria-disabled={canUpdate() ? undefined : "true"}
           disabled={busy() || checkingTarget()}
           aria-busy={checkingTarget() ? "true" : "false"}
-          onClick={startUpdate}
+          onClick={() => void startUpdate()}
         >
           <span class="sidebar-update-card__icon" aria-hidden="true">
             <Icon name={busy() || checkingTarget() ? "refresh" : "download"} />

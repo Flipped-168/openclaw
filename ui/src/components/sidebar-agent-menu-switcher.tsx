@@ -149,16 +149,17 @@ function renderAgentRow(
               tabindex="-1"
               ref={(button) => {
                 // Stop the click before Web Awesome's shadow menu selects the enclosing agent.
-                button.addEventListener("click", async (event) => {
+                button.addEventListener("click", (event) => {
                   event.stopPropagation();
                   // Moving a keyed row into pinned-first order can drop native focus.
                   const focused = button === document.activeElement;
-                  await params.onTogglePinnedAgent(agentId());
-                  if (focused && button.isConnected) {
-                    button.focus({
-                      preventScroll: true,
-                    });
-                  }
+                  void params.onTogglePinnedAgent(agentId()).then(() => {
+                    if (focused && button.isConnected) {
+                      button.focus({
+                        preventScroll: true,
+                      });
+                    }
+                  });
                 });
               }}
             >
