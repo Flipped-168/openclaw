@@ -351,18 +351,18 @@ export function renderPluginSettingsInventory(props: InventoryProps): JSX.Elemen
           ariaLabel={t("pluginsPage.settingsTabs")}
           panelId="plugin-settings-panel"
           variant="sub"
-          className="plugins-settings-tabs"
+          class="plugins-settings-tabs"
           carapace
           onSelect={props.onTabChange}
         />
-        <wa-tab-panel
+        <div
           id="plugin-settings-panel"
-          name={props.tab}
-          prop:active={true}
+          role="tabpanel"
+          tabindex="0"
           aria-labelledby={`plugin-settings-tab-${props.tab}`}
         >
           {body}
-        </wa-tab-panel>
+        </div>
       </div>
     </SettingsPage>
   );

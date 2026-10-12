@@ -18,7 +18,7 @@ export type HubTabsProps<T extends string> = {
   tabs: ReadonlyArray<HubTabOption<T>>;
   ariaLabel: string;
   panelId: string;
-  className?: string;
+  class?: string;
   carapace?: boolean;
   variant?: "primary" | "sub";
   onSelect: (tab: T) => void;
@@ -118,7 +118,7 @@ export function HubTabs<T extends string>(props: HubTabsProps<T>) {
         "hub-tabs",
         `hub-tabs--${props.variant ?? "primary"}`,
         `${props.id}-hub-tabs`,
-        props.className,
+        props.class,
         { "oc-segmented": props.carapace },
       ]}
       aria-label={props.ariaLabel}

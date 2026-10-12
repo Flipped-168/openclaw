@@ -52,6 +52,7 @@ export class PluginsPageController {
     private readonly options: {
       context: () => ApplicationContext;
       notify: () => void;
+      onRemoval: (trigger: Element | null) => void;
     },
   ) {}
 
@@ -649,6 +650,7 @@ export class PluginsPageController {
   async uninstall(pluginId: string, rowKey: string): Promise<void> {
     const name =
       this.state.result?.plugins.find((plugin) => plugin.id === pluginId)?.name ?? pluginId;
+    const trigger = this.element.contains(document.activeElement) ? document.activeElement : null;
     await this.consentController.runMutation(
       rowKey,
       (client) => uninstallPlugin(client, pluginId),
@@ -667,6 +669,9 @@ export class PluginsPageController {
           }
         }
         await this.refreshCatalog(client);
+        if (isLatest()) {
+          this.options.onRemoval(trigger);
+        }
       },
       {
         action: "uninstall",

@@ -1,6 +1,7 @@
-import { createEffect, createSignal, onCleanup } from "solid-js";
+import { createEffect, createSignal, onCleanup, onSettled } from "solid-js";
 import { useApplication } from "../../lib/reactive/context.ts";
 import { defineSolidBridge } from "../../lit/solid-bridge.ts";
+import { focusHeadingAfterRemoval } from "./plugin-removal-focus.ts";
 import { PluginsPageView } from "./plugins-page-view.tsx";
 import { PluginsPageController } from "./plugins-page.ts";
 import type { PluginsRouteData } from "./route-data.ts";
@@ -17,6 +18,7 @@ export const PluginsPage = defineSolidBridge<PluginsPageProps>(
     const page = new PluginsPageController({
       context: () => context,
       notify: () => setRevision((value) => value + 1),
+      onRemoval: (trigger) => onSettled(() => focusHeadingAfterRemoval(host, trigger)),
     });
     page.element = host;
     createEffect(
