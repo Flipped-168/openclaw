@@ -76,6 +76,7 @@ vi.mock("../session-sharing.js", () => ({
     }
   },
 }));
+// mock-isolation: Target preparation uses fixture custody without loading the native sharing owner.
 vi.mock("../session-sharing-preparation.js", () => ({
   captureSessionMutationRouting: () => () => {},
   prepareSessionMutationFacts: edge.prepareTarget,
@@ -99,6 +100,7 @@ vi.mock("./gateway-client-identity.js", () => ({
   gatewayClientSessionCreator: () => ({ type: "human", id: "operator" }),
 }));
 vi.mock("./session-change-event.js", () => ({ emitSessionsChanged: edge.emit }));
+// mock-isolation: Fingerprint settlement is controlled without creating a process device identity.
 vi.mock("./session-goal-request.js", () => ({
   fingerprintSessionGoalRequest: edge.fingerprint,
 }));

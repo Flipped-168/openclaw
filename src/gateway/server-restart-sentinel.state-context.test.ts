@@ -119,9 +119,9 @@ const sessionWorker = await vi.importActual<typeof import("./session-utils-store
   "./session-utils-store-worker.js",
 );
 const realLoadSessionEntry: typeof import("./session-entry-load.test-support.js").loadSessionEntryAsync =
-  (key, opts, cfg = getRuntimeConfig()) =>
+  (key, opts) =>
     sessionWorker.loadGatewaySessionEntryReadOnlyInWorker({
-      cfg,
+      cfg: getRuntimeConfig(),
       key,
       ...opts,
       excludeInternalEffects: true,

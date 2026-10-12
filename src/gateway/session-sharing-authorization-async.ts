@@ -4,6 +4,7 @@ import {
   retainPreparedSessionSharingFacts,
   projectSessionSharingEntry,
 } from "../config/sessions/session-accessor.sqlite-entry-cache.js";
+import { SessionCanonicalKeyMigrationRequiredError } from "../config/sessions/session-canonical-key-error.js";
 import { releaseSessionSourceAuthorities } from "../config/sessions/session-source-authority.js";
 import { readDatabasePathIdentitySync } from "../infra/sqlite-worker-identity.js";
 import { errorShapeFromError } from "./error-shape.js";
@@ -315,7 +316,11 @@ export async function resolveSessionMutationAuthorizationAsync(
     };
   } catch (error) {
     release();
-    if (!talk && !(error instanceof AgentSelectionRequiredError)) {
+    if (
+      !talk &&
+      !(error instanceof AgentSelectionRequiredError) &&
+      !(error instanceof SessionCanonicalKeyMigrationRequiredError)
+    ) {
       throw error;
     }
     return {
