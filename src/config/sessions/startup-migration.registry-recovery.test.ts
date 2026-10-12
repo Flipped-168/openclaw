@@ -83,12 +83,14 @@ it.each(["cold", "preexisting"] as const)(
     } finally {
       statements.restore();
     }
-    // Schema re-admission preserves the unchanged stored policy.
-    expect(
-      statements.queries.filter((sql) =>
-        /select "main_key" from "session_key_contract"/iu.test(sql),
-      ),
-    ).toEqual([]);
+    // Open handles retain the stored policy; final close retires it before cold re-admission.
+    if (lifetime === "preexisting") {
+      expect(
+        statements.queries.filter((sql) =>
+          /select "main_key" from "session_key_contract"/iu.test(sql),
+        ),
+      ).toEqual([]);
+    }
 
     expect(withOpenClawAgentDatabaseReadOnly(readCanonicalSessionMainKey, options)).toEqual({
       found: true,

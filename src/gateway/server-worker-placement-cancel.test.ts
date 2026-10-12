@@ -24,6 +24,8 @@ import { cancelGatewayWorkerSessionWork } from "./server-worker-placement-cancel
 import { createGatewayWorkerPlacementReclaimBarriers } from "./server-worker-placement-reclaim.js";
 import { admitWorkerStopChat } from "./server-worker-placement.test-harness.js";
 import * as lifecycleState from "./session-lifecycle-state.js";
+import { resolveGatewaySessionStoreTargetWithStoreAsync } from "./session-utils-store-lookup.js";
+import { resolveCanonicalSessionEntryFromStoreKeys } from "./session-utils-store.js";
 import { closeSessionSqliteDatabasesForTest } from "./session-utils.test-support.js";
 const routing = vi.hoisted(() => ({
   load: vi.fn<
@@ -184,13 +186,6 @@ it.each(["success", "failed-write", "setup-failed-write"] as const)(
         return null;
       });
       await writerEntered.promise;
-      const sessionTarget = {
-        storePath: target.storePath,
-        canonicalKey: target.sessionKey,
-        storeKeys: [target.sessionKey],
-        agentId: "main",
-        store: { [target.sessionKey]: entry },
-      };
       const barriers = createGatewayWorkerPlacementReclaimBarriers({
         placements: {
           get: () => placement as never,
@@ -206,8 +201,14 @@ it.each(["success", "failed-write", "setup-failed-write"] as const)(
                 path: root,
               }),
             },
-            resolveGatewaySessionStoreTargetWithStoreAsync: async () => sessionTarget,
-            resolveCanonicalSessionEntryFromStoreKeys: () => entry,
+            resolveGatewaySessionStoreTargetWithStoreAsync: (
+              params: Parameters<typeof resolveGatewaySessionStoreTargetWithStoreAsync>[0],
+            ) =>
+              resolveGatewaySessionStoreTargetWithStoreAsync({
+                ...params,
+                cfg: { ...params.cfg, session: { ...params.cfg.session, store: target.storePath } },
+              }),
+            resolveCanonicalSessionEntryFromStoreKeys,
           }) as never,
         cancelSessionWork: (request) => cancelGatewayWorkerSessionWork(context, request),
         revokeSessionAuthority: vi.fn(),
