@@ -76,9 +76,6 @@ function defineSessionGitHubMethod<Method extends SessionGitHubMethod>(
     try {
       return await handler(options);
     } catch (error) {
-      if (method === "sessions.github.publish") {
-        console.error("[publication owner diagnosis]", error);
-      }
       const publishing = method === "sessions.github.publish";
       if (publishing && error instanceof SessionMutationAuthorizationChangedError) {
         throw error;
