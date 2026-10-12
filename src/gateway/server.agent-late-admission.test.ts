@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createDeferred } from "../../test/helpers/promise.js";
 import { captureSessionWorkRunInterruptions } from "../sessions/session-lifecycle-admission.js";
 import { startGatewayServerHarness, type GatewayServerHarness } from "./server.e2e-ws-harness.js";
-import { loadSessionEntry } from "./session-utils.js";
+import { loadSessionEntryAsync } from "./session-utils.js";
 import {
   agentCommandMock,
   installGatewayTestHooks,
@@ -120,7 +120,7 @@ describe("Gateway close during agent admission", () => {
       );
       await admissionHeld.promise;
       expect(kernel.gatewayRequestContext.chatAbortControllers.size).toBe(0);
-      const session = loadSessionEntry("main");
+      const session = await loadSessionEntryAsync("main");
       expect(
         captureSessionWorkRunInterruptions({
           scope: session.storePath,

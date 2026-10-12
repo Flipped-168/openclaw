@@ -202,7 +202,11 @@ export async function retainGatewaySessionEntryReadOnly(
   agentId: string | undefined,
   allowMetadataChanges?: (previous: SessionEntry, current: SessionEntry) => boolean,
   cfg: OpenClawConfig = getRuntimeConfig(),
-  options: { exactRead?: true; preserveQualifiedAddress?: true } = {},
+  options: {
+    exactRead?: true;
+    preserveQualifiedAddress?: true;
+    prepared?: Awaited<ReturnType<typeof loadGatewaySessionEntryReadOnlyInWorker>>;
+  } = {},
 ) {
   const memory = captureMemoryRead({ cfg, key: sessionKey, agentId, projection: "list" });
   if (memory) {
@@ -288,13 +292,17 @@ export async function retainGatewaySessionEntryReadOnly(
     unregister();
   };
   try {
-    const selected = await loadGatewaySessionEntryReadOnlyInWorker({
-      cfg,
-      key: sessionKey,
-      agentId,
-      projection: "list",
-      ...options,
-    });
+    // A caller that already selected a physical source retains that source without discovery.
+    const selected =
+      options.prepared ??
+      (await loadGatewaySessionEntryReadOnlyInWorker({
+        cfg,
+        key: sessionKey,
+        agentId,
+        projection: "list",
+        exactRead: options.exactRead,
+        preserveQualifiedAddress: options.preserveQualifiedAddress,
+      }));
     const source = selected.capturedReadSource;
     const selectedPath = captureSessionStoreReadCandidate(selected.storePath);
     if (source && typeof source.databaseIdentity === "string") {

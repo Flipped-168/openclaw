@@ -344,29 +344,11 @@ export async function resolveWorkerPlacementSessionTarget(params: {
   const resolveTarget = (cfg: OpenClawConfig) =>
     params.readTarget?.(cfg) ??
     resolveWorkerPlacementSessionStoreTarget(params.sessionRuntime, cfg, params);
-  const retained =
-    !memory && !actorBinding && !params.readTarget
-      ? await retainGatewaySessionEntryReadOnly(
-          params.sessionKey,
-          params.agentId,
-          (previous, current) =>
-            previous.archivedAt === current.archivedAt &&
-            previous.worktree?.id === current.worktree?.id &&
-            previous.repositoryWorkspaceId === current.repositoryWorkspaceId,
-          params.config,
-          { exactRead: true, preserveQualifiedAddress: true },
-        )
-      : undefined;
+  let retained: Awaited<ReturnType<typeof retainGatewaySessionEntryReadOnly>> | undefined;
   try {
-    const initialTarget =
-      retained ??
-      (actorBinding
-        ? await resolveWorkerPlacementSessionStoreTarget(
-            params.sessionRuntime,
-            params.config,
-            params,
-          )
-        : await resolveTarget(params.config));
+    const initialTarget = actorBinding
+      ? await resolveWorkerPlacementSessionStoreTarget(params.sessionRuntime, params.config, params)
+      : await resolveTarget(params.config);
     const initialEntry: InternalSessionEntry | undefined = memory
       ? memory.actor.snapshot(memory.authority)?.entry
       : actorBinding
@@ -403,6 +385,25 @@ export async function resolveWorkerPlacementSessionTarget(params: {
           initialEntry.repositoryWorkspaceId !== params.expectedEntry.repositoryWorkspaceId))
     ) {
       throw targetChangedError();
+    }
+    if (!memory && !actorBinding && !params.readTarget) {
+      retained = await retainGatewaySessionEntryReadOnly(
+        params.sessionKey,
+        params.agentId,
+        (previous, current) =>
+          previous.archivedAt === current.archivedAt &&
+          previous.worktree?.id === current.worktree?.id &&
+          previous.repositoryWorkspaceId === current.repositoryWorkspaceId,
+        params.config,
+        {
+          prepared: {
+            ...initialTarget,
+            cfg: params.config,
+            entry: initialEntry,
+            legacyKey: undefined,
+          },
+        },
+      );
     }
     const initialIdentity = {
       lifecycleRevision: initialEntry.lifecycleRevision,

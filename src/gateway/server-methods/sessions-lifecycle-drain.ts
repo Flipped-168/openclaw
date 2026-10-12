@@ -58,7 +58,7 @@ import type { GatewayRequestContext } from "./types.js";
 type LifecyclePlacementService = NonNullable<
   GatewayRequestContext["workerSessionPlacementService"]
 > &
-  Partial<Pick<WorkerSessionPlacementStore, "waitForTurnClaimRelease">>;
+  Partial<Pick<WorkerSessionPlacementStore, "waitForTurnClaimRelease" | "readProjection">>;
 
 type SessionLifecycleParams = {
   action: "archive" | "delete";
@@ -291,15 +291,26 @@ export async function prepareSessionLifecycleDrain(
       params.context.workerSessionPlacementService;
     let placement: WorkerSessionPlacementRecord | undefined;
     if (params.sessionId) {
-      const preparedPlacement = await placementService?.prepareRuntimeRefresh?.(params.sessionId);
+      // Cleanup can advance placement while this consistent snapshot is in flight.
+      const projection = await placementService?.readProjection?.([params.sessionId], {
+        current: true,
+      });
+      // Released custom readers may expose only the prepared-read contract.
+      const preparedPlacement = projection
+        ? undefined
+        : await placementService?.prepareRuntimeRefresh?.(params.sessionId);
       let pending: WorkerWorkspacePendingResult | undefined;
       try {
-        pending = preparedPlacement
-          ? preparedPlacement.pendingResult
-          : (await placementService?.listPendingWorkspaceResultsAsync?.(params.sessionId))?.[0];
-        placement = preparedPlacement
-          ? preparedPlacement.placement
-          : await readSessionWorkerPlacementAsync(params);
+        pending = projection
+          ? projection.pendingResults.get(params.sessionId)
+          : preparedPlacement
+            ? preparedPlacement.pendingResult
+            : (await placementService?.listPendingWorkspaceResultsAsync?.(params.sessionId))?.[0];
+        placement = projection
+          ? projection.placements.get(params.sessionId)
+          : preparedPlacement
+            ? preparedPlacement.placement
+            : await readSessionWorkerPlacementAsync(params);
         params.authorize?.();
         preparedPlacement?.assertCurrent();
       } finally {

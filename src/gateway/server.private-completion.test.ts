@@ -775,7 +775,7 @@ describe("private subagent completion processing receipts", () => {
           runId: descendantRunId,
           childSessionKey,
           childAgentId: "main",
-          sessionEntry: loadSessionEntry(childSessionKey).entry,
+          sessionEntry: (await loadSessionEntryAsync(childSessionKey)).entry,
           requesterSessionKey: sessionKey,
           requesterAgentId: "main",
           requesterTurnRunId: runId,
