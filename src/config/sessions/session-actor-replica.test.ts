@@ -176,7 +176,6 @@ it("keeps actor facts after usage cache writes and refresh lock release", async 
       operations["usageCache.writeRollup"](
         {
           rollupId: "usage-rollup",
-          previousValueJson: null,
           valueJson,
           blob: null,
           updatedAt: 1,
