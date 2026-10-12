@@ -46,11 +46,11 @@ import type {
 import { getSessionRowProjection } from "./session-row-projection-access.js";
 import { createGatewaySessionEntryReader } from "./session-utils-store-lineage.native.js";
 import {
-  resolveGatewaySessionStoreTargetAsync,
   resolveGatewaySessionStoreTargetWithStoreAsync,
   withGatewaySessionStoreTarget,
 } from "./session-utils-store-lookup.js";
 import { withQualifiedGatewaySessionStoreTarget } from "./session-utils-store-retained.js";
+import { resolveGatewaySessionStoreTargetInWorker } from "./session-utils-store-worker.js";
 
 vi.mock("./github-publication-availability.js", async () => {
   const actual = await vi.importActual<typeof import("./github-publication-availability.js")>(
@@ -109,9 +109,15 @@ describe("global session lookup ownership", () => {
         .db.prepare("UPDATE session_nodes SET entry_json = ? WHERE session_key = ?")
         .run("{", "global");
 
-      await expect(resolveGatewaySessionStoreTargetAsync({ cfg, key: alias })).rejects.toThrow(
-        /persisted row.*global/u,
-      );
+      await expect(
+        resolveGatewaySessionStoreTargetInWorker({
+          cfg,
+          key: alias,
+          projection: "list",
+          exactRead: true,
+          readOnly: false,
+        }),
+      ).rejects.toThrow(/persisted row.*global/u);
     });
   });
 
@@ -142,15 +148,18 @@ describe("global session lookup ownership", () => {
           mkdirSync(path.join(stateDir, "state", "openclaw.sqlite"), { recursive: true });
         }
         const resolve = async () =>
-          await resolveGatewaySessionStoreTargetAsync({
+          await resolveGatewaySessionStoreTargetInWorker({
             cfg,
             key,
             clone: scenario.clone,
+            projection: "list",
+            exactRead: true,
+            readOnly: false,
           });
         if (scenario.unreadableRegistry) {
           await expect(resolve()).rejects.toThrow();
         } else {
-          expect(await resolve()).toEqual({
+          expect(await resolve()).toMatchObject({
             agentId: scenario.agentId,
             canonicalKey: key,
             storeKeys: [key],

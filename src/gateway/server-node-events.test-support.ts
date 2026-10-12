@@ -7,7 +7,7 @@ import type { SessionEntry } from "../config/sessions/types.js";
 import { normalizeLegacySessionEntryDelivery } from "../infra/state-migrations.legacy-session-store.js";
 import { resolveAgentIdFromSessionKey } from "../routing/session-key.js";
 import type { GatewayWsClient } from "./server/ws-types.js";
-import type { loadSessionEntryAsync as loadSessionEntryTypeAsync } from "./session-utils.js";
+import type { loadSessionEntryAsync as loadSessionEntryTypeAsync } from "./session-entry-load.test-support.js";
 
 export const buildSessionLookup = (
   sessionKey: string,

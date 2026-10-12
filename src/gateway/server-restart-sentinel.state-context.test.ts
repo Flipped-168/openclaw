@@ -4,6 +4,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { createDeferred } from "../../test/helpers/promise.js";
 import { useAutoCleanupTempDirTracker } from "../../test/helpers/temp-dir.js";
 import { resetConfigRuntimeState, setRuntimeConfigSnapshot } from "../config/config.js";
+import { getRuntimeConfig } from "../config/io.js";
 import { replaceSessionEntry } from "../config/sessions/session-accessor.js";
 import { captureDeliveryQueueStateContext } from "../infra/delivery-queue-state-context.js";
 import { acquireGatewayLock } from "../infra/gateway-lock.js";
@@ -40,7 +41,8 @@ import { configureRestartSessionEventMocks } from "./server-restart-sentinel.tes
 import { scheduleRestartSentinelWakeAfterReady } from "./server-startup-restart-sentinel.js";
 
 const mocks = vi.hoisted(() => ({
-  loadSessionEntryAsync: vi.fn<typeof import("./session-utils.js").loadSessionEntryAsync>(),
+  loadSessionEntryAsync:
+    vi.fn<typeof import("./session-entry-load.test-support.js").loadSessionEntryAsync>(),
   resolveSessionTarget:
     vi.fn<
       typeof import("./session-utils-store-worker.js").resolveGatewaySessionStoreTargetInWorker
@@ -113,8 +115,18 @@ vi.mock("../auto-reply/reply/dispatch-from-config.runtime-loaders.js", () => ({
   loadGetReplyFromConfigRuntime: async () => ({ prewarmConfigDrivenReplyRuntime: async () => {} }),
 }));
 const { startGatewaySidecars } = await import("./server-startup-post-attach.js");
-const { loadSessionEntryAsync: realLoadSessionEntry } =
-  await vi.importActual<typeof import("./session-utils.js")>("./session-utils.js");
+const sessionWorker = await vi.importActual<typeof import("./session-utils-store-worker.js")>(
+  "./session-utils-store-worker.js",
+);
+const realLoadSessionEntry: typeof import("./session-entry-load.test-support.js").loadSessionEntryAsync =
+  (key, opts, cfg = getRuntimeConfig()) =>
+    sessionWorker.loadGatewaySessionEntryReadOnlyInWorker({
+      cfg,
+      key,
+      ...opts,
+      excludeInternalEffects: true,
+      readOnly: false,
+    });
 const sidecars: Array<{ stop: () => void | Promise<void> }> = [];
 const gatewayLocks: Array<{ release: () => Promise<void> }> = [];
 const { scheduleRestartSentinelWake } = await import("./server-restart-sentinel.js");

@@ -17,14 +17,12 @@ import {
   createSessionMessageSubscriberRegistry,
 } from "./server-chat.js";
 import { persistGatewaySessionLifecycleEvent } from "./session-lifecycle-state.js";
-import { loadSessionEntryAsync } from "./session-utils.js";
 
 vi.mock("../config/io.js", () => ({ getRuntimeConfig: vi.fn(() => ({})) }));
 // mock-isolation: The fixture supplies its persisted session entry to the lifecycle worker adapter.
-vi.mock("./session-utils.js", () => {
-  const load = vi.fn();
-  return { loadSessionEntryAsync: load, loadGatewaySessionEntryReadOnlyAsync: load };
-});
+const loadSessionEntryAsync = vi.hoisted(() =>
+  vi.fn<typeof import("./session-entry-load.test-support.js").loadSessionEntryAsync>(),
+);
 vi.mock("./session-utils-store-worker.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./session-utils-store-worker.js")>()),
   loadGatewaySessionEntryReadOnlyInWorker: async () =>

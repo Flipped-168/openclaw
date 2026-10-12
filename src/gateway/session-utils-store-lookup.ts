@@ -54,10 +54,7 @@ import {
   type GatewaySessionStorePlan,
   type GatewaySessionStoreLookup,
 } from "./session-utils-store-selection.js";
-import type {
-  GatewaySessionStoreTarget,
-  GatewaySessionStoreTargetWithStore,
-} from "./session-utils-store.types.js";
+import type { GatewaySessionStoreTargetWithStore } from "./session-utils-store.types.js";
 export type { GatewaySessionStoreCache } from "./session-utils-store-read.js";
 
 export type GatewaySessionStoreLookupParams = {
@@ -291,24 +288,6 @@ export async function resolveGatewaySessionStoreTargetWithStoreAsync(
     exactRead: params.exactRead ?? false,
     readOnly: params.readOnly ?? false,
   });
-}
-
-export async function resolveGatewaySessionStoreTargetAsync(
-  params: GatewaySessionStoreLookupParams,
-): Promise<GatewaySessionStoreTarget> {
-  const {
-    store: _store,
-    readSource: _readSource,
-    capturedReadSource: _capturedReadSource,
-    capturedReadSources: _capturedReadSources,
-    ...target
-  } = await resolveGatewaySessionStoreTargetWithStoreAsync({
-    ...params,
-    projection: "list",
-    exactRead: true,
-    readOnly: false,
-  });
-  return target;
 }
 
 /** Retain discovery and exact worker rows through one synchronous authority consumer. */

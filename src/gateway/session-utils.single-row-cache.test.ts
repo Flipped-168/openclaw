@@ -39,8 +39,9 @@ async function withStateDirEnv<T>(
   });
 }
 
+import { loadSessionEntryAsync } from "./session-entry-load.test-support.js";
 import { loadGatewaySessionEntryReadOnlyInWorker } from "./session-utils-store-worker.js";
-import { loadGatewaySessionEntryReadOnlyAsync, loadSessionEntryAsync } from "./session-utils.js";
+import { loadGatewaySessionEntryReadOnlyAsync } from "./session-utils.js";
 
 const MAIN_AGENT_ID = "main";
 const TEST_MODEL = "openai/gpt-5.4";

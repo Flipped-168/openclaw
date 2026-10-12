@@ -34,10 +34,7 @@ import {
 import { createSessionRowProjection } from "../session-row-projection.js";
 import { resolveSessionMutationAuthorizationAsync } from "../session-sharing-authorization-async.js";
 import { SessionMutationFactsUnavailableError } from "../session-sharing-preparation.js";
-import {
-  authorizeResolvedSessionMutation,
-  resolveSessionSharingTargetAsync,
-} from "../session-sharing.js";
+import { authorizeResolvedSessionMutationAsync } from "../session-sharing.js";
 import { createWorkerSessionPlacementStore } from "../worker-environments/placement-store.js";
 import {
   initializeSessionReadContext,
@@ -236,15 +233,12 @@ describe("session member picker identities", () => {
         profileReads.mockRestore();
       }
       expect(
-        authorizeResolvedSessionMutation(
-          {
-            cfg: {},
-            client: identifiedClient(profile.id, "Member"),
-            sessionKey,
-            agentId: "main",
-          },
-          await resolveSessionSharingTargetAsync({ cfg: {}, sessionKey, agentId: "main" }),
-        ),
+        await authorizeResolvedSessionMutationAsync({
+          cfg: {},
+          client: identifiedClient(profile.id, "Member"),
+          sessionKey,
+          agentId: "main",
+        }),
       ).toBeNull();
       expect(unrelatedDecodes).toBe(0);
     });

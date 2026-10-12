@@ -44,7 +44,7 @@ import type { GatewayRequestContext } from "./server-methods/types.js";
 import { createOperatorClient } from "./server-plugin-in-process-dispatch.test-support.js";
 import { startGatewayServerHarness, type GatewayServerHarness } from "./server.e2e-ws-harness.js";
 import { createRegisteredCompletionPair } from "./server.subagent-completion-authority.test-support.js";
-import { loadSessionEntryAsync } from "./session-utils.js";
+import { loadSessionEntryAsync } from "./session-entry-load.test-support.js";
 import {
   agentCommandMock,
   installGatewayTestHooks,

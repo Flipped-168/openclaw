@@ -26,7 +26,8 @@ const mocks = vi.hoisted(() => ({
     vi.fn<
       typeof import("./session-utils-store-worker.js").resolveGatewaySessionStoreTargetInWorker
     >(),
-  loadSessionEntryAsync: vi.fn<(typeof import("./session-utils.js"))["loadSessionEntryAsync"]>(),
+  loadSessionEntryAsync:
+    vi.fn<(typeof import("./session-entry-load.test-support.js"))["loadSessionEntryAsync"]>(),
   captureSessionEventTarget:
     vi.fn<
       typeof import("../auto-reply/reply/session-event-handoff.js").captureSessionEventTargetForHost

@@ -8,7 +8,7 @@ import { waitForGatewayActiveWork } from "../infra/gateway-active-work.js";
 import { callGateway } from "./call.js";
 import { registerChatAbortController } from "./chat-abort.js";
 import { startGatewayServerHarness, type GatewayServerHarness } from "./server.e2e-ws-harness.js";
-import { loadSessionEntryAsync } from "./session-utils.js";
+import { loadSessionEntryAsync } from "./session-entry-load.test-support.js";
 import {
   agentCommandMock,
   installGatewayTestHooks,

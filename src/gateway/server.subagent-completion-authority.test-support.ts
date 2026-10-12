@@ -20,7 +20,7 @@ import { captureGatewayOperatorRunAuthority } from "./operator-run-authority.js"
 import type { GatewayRequestContext } from "./server-methods/types.js";
 import { dispatchGatewayMethodInProcess } from "./server-plugin-in-process-dispatch.js";
 import { createOperatorClient } from "./server-plugin-in-process-dispatch.test-support.js";
-import { loadSessionEntryAsync } from "./session-utils.js";
+import { loadSessionEntryAsync } from "./session-entry-load.test-support.js";
 
 /** Real registered runs share a child session but retain independent completion sources. */
 export async function createRegisteredCompletionPair(context: GatewayRequestContext) {

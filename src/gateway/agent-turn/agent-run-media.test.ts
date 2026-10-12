@@ -36,7 +36,7 @@ import { resolveManagedOutgoingMediaArtifactDownload } from "../managed-image-at
 import { listManagedImageRecordEntries } from "../managed-image-record-store.js";
 import * as replyMedia from "../server-methods/chat-reply-media.js";
 import * as transcriptMedia from "../server-methods/chat-transcript-persistence.js";
-import { loadSessionEntryAsync } from "../session-utils.js";
+import { loadSessionEntryAsync } from "../session-entry-load.test-support.js";
 import { createWorkerSessionPlacementStore } from "../worker-environments/placement-store.js";
 import { createTrackedDispatch } from "./agent-run-dispatch.test-support.js";
 import { dispatchAgentRunWithMedia } from "./agent-run-media.js";

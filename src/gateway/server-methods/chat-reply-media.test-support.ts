@@ -1,6 +1,6 @@
 import { replaceSessionEntry } from "../../config/sessions/session-accessor.js";
 import type { SessionEntry } from "../../config/sessions/types.js";
-import { loadSessionEntryAsync } from "../session-utils.js";
+import { loadSessionEntryAsync } from "../session-entry-load.test-support.js";
 import { captureWebchatReplyMediaScope } from "./chat-reply-media.js";
 
 export async function seedWebchatReplyMediaScope(

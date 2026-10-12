@@ -34,6 +34,7 @@ import {
 import { normalizeSessionDeliveryState } from "../utils/delivery-context.shared.js";
 import type { GatewayModelCatalogSnapshot } from "./server-model-catalog.types.js";
 import { registerSessionAutomationSource } from "./session-automation-index.js";
+import { loadSessionEntryAsync } from "./session-entry-load.test-support.js";
 import { buildGatewaySessionSnapshot } from "./session-event-payload.js";
 import { projectSessionActor } from "./session-identity-projection.js";
 import { buildSessionRowFixture, listSessionFixture } from "./session-list.test-support.js";
@@ -46,15 +47,14 @@ import {
 } from "./session-utils-model.js";
 import { buildSessionListRowMetadataContext } from "./session-utils-projection.js";
 import { buildGatewaySessionRow as buildGatewaySessionRowOwner } from "./session-utils-row.js";
+import { resolveGatewaySessionStoreTargetWithStoreAsync } from "./session-utils-store-lookup.js";
 import {
-  resolveGatewaySessionStoreTargetAsync,
-  resolveGatewaySessionStoreTargetWithStoreAsync,
-} from "./session-utils-store-lookup.js";
-import { loadGatewaySessionEntryReadOnlyInWorker } from "./session-utils-store-worker.js";
+  loadGatewaySessionEntryReadOnlyInWorker,
+  resolveGatewaySessionStoreTargetInWorker,
+} from "./session-utils-store-worker.js";
 import {
   listAgentsForGateway,
   loadGatewaySessionEntryReadOnlyAsync,
-  loadGatewaySessionEntryAsync as loadSessionEntryAsync,
 } from "./session-utils-store.js";
 import { withAgentPermissionState } from "./session-utils.permissions.test-support.js";
 import {
@@ -1300,7 +1300,13 @@ describe("gateway session utils", () => {
       agents: { entries: { ops: {} } },
     } as OpenClawConfig;
     expect(resolveSessionStoreKey({ cfg, sessionKey: "main" })).toBe("global");
-    const target = await resolveGatewaySessionStoreTargetAsync({ cfg, key: "main" });
+    const target = await resolveGatewaySessionStoreTargetInWorker({
+      cfg,
+      key: "main",
+      projection: "list",
+      exactRead: true,
+      readOnly: false,
+    });
     expect(target.canonicalKey).toBe("global");
     expect(target.agentId).toBe("ops");
   });
@@ -1611,10 +1617,13 @@ describe("gateway session utils", () => {
           } as OpenClawConfig;
           setRuntimeConfigSnapshot(cfg, cfg);
 
-          const target = await resolveGatewaySessionStoreTargetAsync({
+          const target = await resolveGatewaySessionStoreTargetInWorker({
             cfg,
             key: "agent:main:main",
             agentId,
+            projection: "list",
+            exactRead: true,
+            readOnly: false,
           });
           const loaded = await loadSessionEntryAsync("agent:main:main", { agentId });
 

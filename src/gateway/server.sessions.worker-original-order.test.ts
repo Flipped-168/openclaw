@@ -16,7 +16,7 @@ import {
   type OpenClawStateDatabase,
 } from "../state/openclaw-state-db.js";
 import { createTestGatewayScheduler } from "../test-utils/gateway-scheduler-clock.js";
-import { loadSessionEntryAsync } from "./session-utils.js";
+import { loadSessionEntryAsync } from "./session-entry-load.test-support.js";
 import { writeSessionStore } from "./test-helpers.js";
 import {
   bundleMcpRuntimeMocks,

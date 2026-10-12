@@ -48,8 +48,8 @@ import { withOpenClawTestState } from "../../test-utils/openclaw-test-state.js";
 import { projectChatDisplayMessages } from "../chat-display-projection.js";
 import { cleanupManagedOutgoingMediaRecords } from "../managed-image-attachments.js";
 import { listManagedImageRecordEntries } from "../managed-image-record-store.js";
+import { loadSessionEntryAsync } from "../session-entry-load.test-support.js";
 import { projectTranscriptEntryMessage } from "../session-transcript-entry-message.js";
-import { loadSessionEntryAsync } from "../session-utils.js";
 import { createChatSendReplyDispatch } from "./chat-send-reply-dispatch.js";
 import * as chatTranscriptPersistence from "./chat-transcript-persistence.js";
 

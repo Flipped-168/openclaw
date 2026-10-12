@@ -405,17 +405,6 @@ export function isResolvedIncognitoSession(
   });
 }
 
-export async function isResolvedIncognitoSessionAsync(params: {
-  cfg: OpenClawConfig;
-  sessionKey: string;
-  agentId?: string;
-}): Promise<boolean> {
-  return isIncognitoSessionTarget({
-    sessionKey: params.sessionKey,
-    target: await resolveSessionSharingTargetAsync(params),
-  });
-}
-
 export function authorizeIncognitoSessionTarget(params: {
   client: GatewayClient | null;
   sessionKey: string;
@@ -435,18 +424,6 @@ export function authorizeIncognitoSessionTarget(params: {
     return null;
   }
   return hiddenSessionNotFound(params.sessionKey, true);
-}
-
-export function authorizeResolvedSessionMutation(
-  params: {
-    cfg: OpenClawConfig;
-    client: GatewayClient | null;
-    sessionKey: string;
-    agentId?: string;
-  },
-  target: SessionSharingTarget | null,
-): ErrorShape | null {
-  return authorizeSessionMutationTarget(params, () => target);
 }
 
 export async function authorizeResolvedSessionMutationAsync(params: {
@@ -489,30 +466,14 @@ export function authorizePreparedSessionMutation(
     authorizesAgentRun?: boolean;
   },
 ): ErrorShape | null {
-  return authorizeSessionMutationTarget(params, () => facts.target, {
-    ...prepared,
-    membership: facts.membership,
-  });
-}
-
-function authorizeSessionMutationTarget(
-  params: Parameters<typeof authorizeResolvedSessionMutationAsync>[0],
-  readTarget: () => SessionSharingTarget | null,
-  prepared?: {
-    policy: GatewayOperatorRoleDefinition | undefined;
-    aliases: ReadonlySet<string>;
-    membership: ReadonlySet<string>;
-    authorizesAgentRun?: boolean;
-  },
-): ErrorShape | null {
-  const authorizesAgentRun = prepared?.authorizesAgentRun !== false;
+  const authorizesAgentRun = prepared.authorizesAgentRun !== false;
   if (isGatewayAdmin(params.client) && (!authorizesAgentRun || !params.cfg.gateway?.roles)) {
     return null;
   }
   if (isGatewayClientProfilePending(params.client)) {
     return authenticatedProfileUnavailableError();
   }
-  const target = readTarget();
+  const target = facts.target;
   if (target && authorizesAgentRun) {
     const agentError = authorizeSessionAgentRun(
       { cfg: params.cfg, client: params.client, target },
@@ -537,15 +498,12 @@ function authorizeSessionMutationTarget(
     return null;
   }
   const sharing = { cfg: params.cfg, client: params.client, target };
-  if (!prepared) {
-    return authorizeSessionSharingTarget(sharing);
-  }
   const identity = sharingIdentity(params.client, resolveGatewayOperatorRoleActor(params.client));
   const cap = { value: prepared.policy?.sessions.others };
   return authorizeSessionSharingTarget(sharing, {
     ...cap,
     role: resolveSessionSharingRole(
-      { ...sharing, isMember: Boolean(identity && prepared.membership.has(identity.id)) },
+      { ...sharing, isMember: Boolean(identity && facts.membership.has(identity.id)) },
       cap,
       prepareSessionCreatorProfile(identity?.id, prepared.aliases),
     ),

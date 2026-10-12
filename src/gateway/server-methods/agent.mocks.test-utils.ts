@@ -102,21 +102,15 @@ export function resolveAgentTestConfig(
 }
 
 function loadAgentSessionFixture(
-  ...args: Parameters<typeof import("../session-utils.js").loadSessionEntryAsync>
-): Awaited<ReturnType<typeof import("../session-utils.js").loadSessionEntryAsync>> {
+  ...args: Parameters<typeof import("../session-entry-load.test-support.js").loadSessionEntryAsync>
+): Awaited<
+  ReturnType<typeof import("../session-entry-load.test-support.js").loadSessionEntryAsync>
+> {
   const loaded = mocks.loadSessionEntry(...args) as Awaited<
-    ReturnType<typeof import("../session-utils.js").loadSessionEntryAsync>
+    ReturnType<typeof import("../session-entry-load.test-support.js").loadSessionEntryAsync>
   >;
   return { ...loaded, cfg: resolveAgentTestConfig(loaded.cfg) };
 }
-
-vi.mock("../session-utils.js", async () => {
-  const actual = await vi.importActual<typeof import("../session-utils.js")>("../session-utils.js");
-  return {
-    ...actual,
-    loadSessionEntryAsync: loadAgentSessionFixture,
-  };
-});
 
 vi.mock("../session-utils-store-worker.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../session-utils-store-worker.js")>()),

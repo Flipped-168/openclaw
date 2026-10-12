@@ -29,21 +29,11 @@ import { createHarness } from "./worker-environments/placement-dispatch-test-har
 import { createWorkerSessionPlacementStore } from "./worker-environments/placement-store.js";
 import { prepareSessionWorkerPlacementStop } from "./worker-environments/session-placement-lifecycle.js";
 
-const lookup = vi.hoisted(() => ({
-  value: undefined as
-    | Awaited<ReturnType<typeof import("./session-utils.js").loadSessionEntryAsync>>
-    | undefined,
-}));
-vi.mock("./session-utils.js", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("./session-utils.js")>()),
-  loadSessionEntryAsync: async () => lookup.value,
-}));
 const roots: string[] = [];
 afterEach(async () => {
   closeOpenClawAgentDatabasesForTest();
   await closeStateDatabaseForTest();
   clearRuntimeConfigSnapshot();
-  lookup.value = undefined;
   await Promise.all(roots.splice(0).map((root) => fs.rm(root, { recursive: true, force: true })));
 });
 
@@ -68,11 +58,6 @@ async function cancellationLoadFixture(
     { storePath, sessionKey: REQUEST.sessionKey, agentId: REQUEST.agentId },
     entry,
   );
-  const target = await resolveGatewaySessionStoreTargetInWorker({
-    cfg,
-    key: REQUEST.sessionKey,
-    agentId: REQUEST.agentId,
-  });
   const runtime = {
     managedWorktrees: {
       findLiveByOwner: async () => ({
@@ -98,7 +83,6 @@ async function cancellationLoadFixture(
       }),
     resolveCanonicalSessionEntryFromStoreKeys,
   };
-  lookup.value = { ...target, cfg, entry, legacyKey: undefined };
   const context = createWorkerStopChatContext();
   let delayCancellation = false;
   const loading = createDeferredCore();

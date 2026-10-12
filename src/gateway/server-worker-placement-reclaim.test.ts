@@ -34,15 +34,6 @@ import { createHarness } from "./worker-environments/placement-dispatch-test-har
 import { createWorkerSessionPlacementStore } from "./worker-environments/placement-store.js";
 import { workerWorkspaceResultStaging } from "./worker-environments/workspace-result-staging.js";
 
-const lookup = vi.hoisted(() => ({
-  value: undefined as
-    | Awaited<ReturnType<typeof import("./session-utils.js").loadSessionEntryAsync>>
-    | undefined,
-}));
-vi.mock("./session-utils.js", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("./session-utils.js")>()),
-  loadSessionEntryAsync: async () => lookup.value,
-}));
 const roots: string[] = [];
 const tempDirs = useAutoCleanupTempDirTracker(afterEach);
 function resolveFixtureTarget(storePath: string): typeof resolveGatewaySessionStoreTargetInWorker {
@@ -56,7 +47,6 @@ afterEach(async () => {
   closeOpenClawAgentDatabasesForTest();
   await closeStateDatabaseForTest();
   clearRuntimeConfigSnapshot();
-  lookup.value = undefined;
   await Promise.all(roots.splice(0).map((root) => fs.rm(root, { recursive: true, force: true })));
 });
 
@@ -98,12 +88,6 @@ async function scenario(
     { storePath, sessionKey: REQUEST.sessionKey, agentId: REQUEST.agentId },
     entry,
   );
-  const target = await resolveGatewaySessionStoreTargetInWorker({
-    cfg,
-    key: REQUEST.sessionKey,
-    agentId: REQUEST.agentId,
-  });
-  lookup.value = { ...target, cfg, entry, legacyKey: undefined };
   const barrierEntered = createDeferred();
   const releaseBarrier = createDeferred();
   const context = createWorkerStopChatContext();
@@ -639,12 +623,6 @@ it.each(["missing", "local"] as const)(
       { storePath, sessionKey: REQUEST.sessionKey, agentId: REQUEST.agentId },
       entry,
     );
-    const target = await resolveGatewaySessionStoreTargetInWorker({
-      cfg,
-      key: REQUEST.sessionKey,
-      agentId: REQUEST.agentId,
-    });
-    lookup.value = { ...target, cfg, entry, legacyKey: undefined };
     if (state === "local") {
       await placements.releaseTurn(
         await placements.claimTurn({

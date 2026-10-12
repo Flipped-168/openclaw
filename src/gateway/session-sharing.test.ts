@@ -14,7 +14,7 @@ import { resolveSessionMutationAuthorizationAsync } from "./session-sharing-auth
 import {
   allowedSessionVisibilities,
   authorizeIncognitoSessionTarget,
-  authorizeResolvedSessionMutation,
+  authorizeResolvedSessionMutationAsync,
   authorizeSessionSharingTarget,
   createSessionListEntryFilter,
   resolveSessionSharingRole,
@@ -142,10 +142,7 @@ describe("session sharing policy", () => {
       expect((await mutation(member)).error).toMatchObject({ code: "FORBIDDEN" });
       // The generic owner must not subtract an independently admitted capability.
       expect(
-        authorizeResolvedSessionMutation(
-          { cfg, client: member, ...scope },
-          await resolveSessionSharingTargetAsync({ cfg, ...scope }),
-        ),
+        await authorizeResolvedSessionMutationAsync({ cfg, client: member, ...scope }),
       ).toBeNull();
       owner.connect.scopes = ["operator.sessions.write"];
       const owned = await mutation(owner);
@@ -207,15 +204,12 @@ describe("session sharing policy", () => {
       );
 
       expect(
-        authorizeResolvedSessionMutation(
-          {
-            cfg,
-            client: writer,
-            sessionKey,
-            agentId: "main",
-          },
-          await resolveSessionSharingTargetAsync({ cfg, sessionKey, agentId: "main" }),
-        ),
+        await authorizeResolvedSessionMutationAsync({
+          cfg,
+          client: writer,
+          sessionKey,
+          agentId: "main",
+        }),
       ).toMatchObject({ code: "FORBIDDEN", message: expect.stringContaining("main") });
       const context = { getRuntimeConfig: () => cfg } as GatewayRequestContext;
       for (const [method, requestParams] of [

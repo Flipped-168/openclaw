@@ -119,7 +119,9 @@ const mocks = vi.hoisted(() => {
       vi.fn<
         (
           sessionKey: string,
-          options?: Parameters<typeof import("./session-utils.js").loadSessionEntryAsync>[1],
+          options?: Parameters<
+            typeof import("./session-entry-load.test-support.js").loadSessionEntryAsync
+          >[1],
         ) => Promise<LoadedSessionEntry>
       >(),
     deliveryContextFromSession: vi.fn<

@@ -9,7 +9,7 @@ import { withOpenClawTestState } from "../test-utils/openclaw-test-state.js";
 import { sessionMutationHandlers } from "./server-methods/sessions-mutations.js";
 import * as sessionPatchPreflight from "./server-methods/sessions-shared.js";
 import { SessionMutationAuthorizationChangedError } from "./session-sharing.js";
-import { resolveGatewaySessionStoreTargetWithStoreAsync } from "./session-utils.js";
+import { resolveGatewaySessionStoreTargetWithStoreAsync } from "./session-utils-store-lookup.js";
 
 describe("sessions.patchMany orchestration", () => {
   const context = (overrides: Record<string, unknown> = {}) =>

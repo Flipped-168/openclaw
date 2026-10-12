@@ -20,7 +20,7 @@ import {
   reach,
   type Response,
 } from "./server.agent-runtime-authority-proof.test-support.js";
-import { loadSessionEntryAsync } from "./session-utils.js";
+import { loadSessionEntryAsync } from "./session-entry-load.test-support.js";
 import { agentCommandMock } from "./test-helpers.js";
 
 async function inboundMediaFiles(): Promise<string[]> {

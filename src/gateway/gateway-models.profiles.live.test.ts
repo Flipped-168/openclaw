@@ -150,8 +150,8 @@ import {
 } from "./live-tool-probe.test-helpers.js";
 import { READ_SCOPE, WRITE_SCOPE } from "./operator-scopes.js";
 import type { GatewayServer } from "./server-public.js";
+import { loadSessionEntryAsync } from "./session-entry-load.test-support.js";
 import { readSessionMessagesAsync } from "./session-transcript-readers.js";
-import { loadSessionEntryAsync } from "./session-utils.js";
 
 const ZAI_FALLBACK = isTruthyEnvValue(process.env.OPENCLAW_LIVE_GATEWAY_ZAI_FALLBACK);
 const REQUIRE_PROFILE_KEYS = isLiveProfileKeyModeEnabled();

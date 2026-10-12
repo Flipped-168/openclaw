@@ -154,7 +154,9 @@ export function mockMainSessionEntry(
     entry: sessionEntry,
     canonicalKey: "agent:main:main",
     legacyKey: undefined,
-  } satisfies Awaited<ReturnType<typeof import("../session-utils.js").loadSessionEntryAsync>>);
+  } satisfies Awaited<
+    ReturnType<typeof import("../session-entry-load.test-support.js").loadSessionEntryAsync>
+  >);
 }
 
 export function buildExistingMainStoreEntry(overrides: Record<string, unknown> = {}) {

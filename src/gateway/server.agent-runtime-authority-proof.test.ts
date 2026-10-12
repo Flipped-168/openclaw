@@ -31,8 +31,8 @@ import {
   rpcObservation,
   type Response,
 } from "./server.agent-runtime-authority-proof.test-support.js";
+import { loadSessionEntryAsync } from "./session-entry-load.test-support.js";
 import * as resets from "./session-reset-service.js";
-import { loadSessionEntryAsync } from "./session-utils.js";
 import { agentCommandMock } from "./test-helpers.js";
 
 describe("agent RPC real delegated-authority effects", () => {

@@ -5,7 +5,7 @@ import type { GatewayBroadcastToConnIdsFn } from "./server-broadcast-types.js";
 import type { deliverQueuedSessionDelivery } from "./server-restart-sentinel.js";
 
 type LoadedSessionEntryBase = Awaited<
-  ReturnType<typeof import("./session-utils.js").loadSessionEntryAsync>
+  ReturnType<typeof import("./session-entry-load.test-support.js").loadSessionEntryAsync>
 >;
 export type RestartSentinelSessionFixture = Omit<LoadedSessionEntryBase, "agentId"> &
   Partial<Pick<LoadedSessionEntryBase, "agentId">>;
@@ -181,7 +181,9 @@ export function configureRestartSessionEventMocks(
   mocks: {
     loadSessionEntryAsync: (
       key: string,
-      options?: Parameters<typeof import("./session-utils.js").loadSessionEntryAsync>[1],
+      options?: Parameters<
+        typeof import("./session-entry-load.test-support.js").loadSessionEntryAsync
+      >[1],
     ) => Promise<RestartSentinelSessionFixture>;
     resolveSessionTarget: Mock<ResolveSessionTarget>;
     captureSessionEventTarget: Mock<SessionEventHandoff["captureSessionEventTargetForHost"]>;

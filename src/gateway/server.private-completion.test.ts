@@ -56,9 +56,9 @@ import {
   readPrivateCompletionRecorder,
   registerSessionsSendPrivateCompletionTests,
 } from "./server.private-completion.sessions-send.test-support.js";
+import { loadSessionEntryAsync } from "./session-entry-load.test-support.js";
 import * as lifecycleState from "./session-lifecycle-state.js";
 import { createPreparedLifecycleWriteTracker } from "./session-lifecycle-state.test-support.js";
-import { loadSessionEntryAsync } from "./session-utils.js";
 import {
   agentCommandMock,
   installGatewayTestHooks,

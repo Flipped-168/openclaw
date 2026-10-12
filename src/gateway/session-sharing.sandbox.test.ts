@@ -11,7 +11,7 @@ import { withOpenClawTestState } from "../test-utils/openclaw-test-state.js";
 import type { GatewayClient, GatewayRequestContext } from "./server-methods/types.js";
 import { resolveSessionMutationAuthorizationAsync } from "./session-sharing-authorization-async.js";
 import {
-  authorizeResolvedSessionMutation,
+  authorizeResolvedSessionMutationAsync,
   resolveSessionSharingRole,
   resolveSessionSharingTargetAsync,
   SessionMutationAuthorizationChangedError,
@@ -110,15 +110,12 @@ describe("session sharing sandbox requirements", () => {
       }
       expect(resolveSessionSharingRole({ cfg, client: guest, target: hostTarget })).toBe("member");
       expect(
-        authorizeResolvedSessionMutation(
-          {
-            cfg,
-            client: guest,
-            sessionKey: hostSessionKey,
-            agentId: "main",
-          },
-          hostTarget,
-        ),
+        await authorizeResolvedSessionMutationAsync({
+          cfg,
+          client: guest,
+          sessionKey: hostSessionKey,
+          agentId: "main",
+        }),
       ).toMatchObject({ code: "FORBIDDEN", message: expect.stringMatching(/sandbox/i) });
 
       const context = { getRuntimeConfig: () => cfg } as GatewayRequestContext;

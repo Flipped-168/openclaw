@@ -16,7 +16,7 @@ import {
 } from "../../test-utils/openclaw-test-state.js";
 import { cleanupSessionStateForTest } from "../../test-utils/session-state-cleanup.js";
 import { listManagedImageRecordEntries } from "../managed-image-record-store.js";
-import { loadSessionEntryAsync } from "../session-utils.js";
+import { loadSessionEntryAsync } from "../session-entry-load.test-support.js";
 import {
   captureWebchatReplyMediaScope,
   prepareWebchatReplyMediaForDisplay,

@@ -20,7 +20,7 @@ import {
 import { createUserTurnTranscriptRecorder } from "../../sessions/user-turn-transcript.js";
 import { openOpenClawAgentDatabase } from "../../state/openclaw-agent-db.js";
 import { withOpenClawTestState } from "../../test-utils/openclaw-test-state.js";
-import { loadSessionEntryAsync } from "../session-utils.js";
+import { loadSessionEntryAsync } from "../session-entry-load.test-support.js";
 import { createChatSendReplyDispatch } from "./chat-send-reply-dispatch.js";
 
 vi.mock("node:worker_threads", async () =>

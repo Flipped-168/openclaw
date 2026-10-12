@@ -73,13 +73,9 @@ vi.mock("../infra/heartbeat-visibility.js", () => ({
 }));
 
 // mock-isolation: Session projection fixtures own their entries without native database admission.
-vi.mock("./session-utils.js", () => {
-  const loadSessionEntryAsync = vi.fn(async () => emptySessionLookup());
-  return {
-    loadSessionEntryAsync,
-    loadGatewaySessionEntryReadOnlyAsync: loadSessionEntryAsync,
-  };
-});
+const loadSessionEntryAsync = vi.hoisted(() =>
+  vi.fn<typeof import("./session-entry-load.test-support.js").loadSessionEntryAsync>(),
+);
 
 // mock-isolation: Reuse controlled session state without admitting a worker database.
 vi.mock("./session-utils-store-worker.js", () => ({
@@ -108,7 +104,6 @@ import { broadcastChatFinal } from "./server-methods/chat-broadcast.js";
 import { createGatewayNodeSessionRuntime } from "./server-node-session-runtime.js";
 import * as sessionEventRows from "./session-event-prepared-row.js";
 import { createSessionRowProjectionFixture } from "./session-row-projection.test-support.js";
-import { loadSessionEntryAsync } from "./session-utils.js";
 
 function waitForFast<T>(
   callback: () => T | Promise<T>,

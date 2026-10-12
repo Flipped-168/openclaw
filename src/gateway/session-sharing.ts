@@ -89,13 +89,11 @@ export {
 export {
   allowedSessionVisibilities,
   authorizeIncognitoSessionTarget,
-  authorizeResolvedSessionMutation,
   authorizeResolvedSessionMutationAsync,
   authorizeSessionSharingTarget,
   canManageSessionSharing,
   isGatewayAdmin,
   isResolvedIncognitoSession,
-  isResolvedIncognitoSessionAsync,
   isSessionVisibilityAllowed,
   resolveSessionSharingRole,
   resolveSessionSharingTargetAsync,

@@ -13,7 +13,7 @@ import {
   createOpenClawTestState,
   type OpenClawTestState,
 } from "../../test-utils/openclaw-test-state.js";
-import { loadSessionEntryAsync } from "../session-utils.js";
+import { loadSessionEntryAsync } from "../session-entry-load.test-support.js";
 import { createWorkerSessionPlacementStore } from "../worker-environments/placement-store.js";
 import { buildAssistantReplyContent } from "./chat-assistant-content.js";
 import {

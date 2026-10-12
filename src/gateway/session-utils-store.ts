@@ -223,22 +223,6 @@ export function loadIncognitoGatewaySessionEntryReadOnly(
 
 export type GatewaySessionEntryRead = ReturnType<typeof loadIncognitoGatewaySessionEntryReadOnly>;
 
-export async function loadGatewaySessionEntryAsync(
-  sessionKey: string,
-  opts?: Parameters<typeof loadIncognitoGatewaySessionEntryReadOnly>[1],
-  cfg: OpenClawConfig = getRuntimeConfig(),
-) {
-  const { loadGatewaySessionEntryReadOnlyInWorker } =
-    await import("./session-utils-store-worker.js");
-  return loadGatewaySessionEntryReadOnlyInWorker({
-    cfg,
-    key: sessionKey,
-    ...opts,
-    excludeInternalEffects: true,
-    readOnly: false,
-  });
-}
-
 export async function loadGatewaySessionEntryReadOnlyAsync(
   sessionKey: string,
   opts?: Parameters<typeof loadIncognitoGatewaySessionEntryReadOnly>[1],

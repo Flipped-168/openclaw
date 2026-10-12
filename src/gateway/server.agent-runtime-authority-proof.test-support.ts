@@ -25,7 +25,8 @@ import type { PreparedAgentRunDispatch } from "./agent-turn/agent-run-admission-
 import { withInProcessAgentRuntimeIdentity } from "./in-process-agent-runtime-identity.js";
 import { dispatchGatewayMethodInProcessRaw } from "./server-plugin-in-process-dispatch.js";
 import { startGatewayServerHarness, type GatewayServerHarness } from "./server.e2e-ws-harness.js";
-import { loadSessionEntryAsync, resolveGatewayModelSupportsImages } from "./session-utils.js";
+import { loadSessionEntryAsync } from "./session-entry-load.test-support.js";
+import { resolveGatewayModelSupportsImages } from "./session-utils.js";
 import {
   installGatewayTestHooks,
   prepareGatewayReplyRuntimeForTest,

@@ -66,10 +66,6 @@ beforeEach(() => {
 });
 
 const routing = vi.hoisted(() => ({ loadSessionEntry: vi.fn() }));
-vi.mock("./session-utils.js", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("./session-utils.js")>()),
-  loadSessionEntryAsync: routing.loadSessionEntry,
-}));
 vi.mock("./session-utils-store-worker.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./session-utils-store-worker.js")>()),
   loadGatewaySessionEntryReadOnlyInWorker: async (

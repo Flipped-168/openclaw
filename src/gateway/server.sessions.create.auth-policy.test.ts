@@ -16,7 +16,7 @@ import {
   chatSendOwner,
   dashboardTitleScheduleMocks,
 } from "./server.sessions.create.test-support.js";
-import { resolveGatewaySessionStoreTargetAsync } from "./session-utils-store-lookup.js";
+import { resolveGatewaySessionStoreTargetInWorker } from "./session-utils-store-worker.js";
 import { loadGatewayTestConfig } from "./test-helpers.config-runtime.js";
 import {
   connectOk,
@@ -50,10 +50,13 @@ it("retains committed initial turns through fencing and denies their final write
   const cases = await Promise.all(
     ["retained", "revoked"].map(async (name) => {
       const key = `agent:main:dashboard:initial-source-${name}`;
-      const { storePath } = await resolveGatewaySessionStoreTargetAsync({
+      const { storePath } = await resolveGatewaySessionStoreTargetInWorker({
         cfg: configIO.getRuntimeConfig(),
         agentId: "main",
         key,
+        projection: "list",
+        exactRead: true,
+        readOnly: false,
       });
       return {
         key,

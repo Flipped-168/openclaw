@@ -39,8 +39,8 @@ import * as gatewayDispatch from "./server-plugin-in-process-dispatch.js";
 import { createOperatorClient } from "./server-plugin-in-process-dispatch.test-support.js";
 import { dispatchGatewayMethodInProcess } from "./server-plugins.js";
 import { startGatewayServerHarness, type GatewayServerHarness } from "./server.e2e-ws-harness.js";
+import { loadSessionEntryAsync } from "./session-entry-load.test-support.js";
 import { getSessionRowProjection } from "./session-row-projection-access.js";
-import { loadSessionEntryAsync } from "./session-utils.js";
 import { withPreparedSessionResolve } from "./sessions-resolve.js";
 import {
   agentCommandMock,

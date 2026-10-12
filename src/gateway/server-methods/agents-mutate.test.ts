@@ -441,15 +441,6 @@ vi.mock("../../utils.js", async () => {
 vi.mock("../session-utils.js", async () => ({
   resolveSessionStoreKey: (await import("../session-store-key.js")).resolveSessionStoreKey,
   listAgentsForGateway: mocks.listAgentsForGateway,
-  loadSessionEntryAsync: async (sessionKey: string, opts?: { agentId?: string }) => ({
-    cfg: mocks.loadConfigReturn,
-    agentId: opts?.agentId ?? "main",
-    canonicalKey: sessionKey,
-    storePath: mocks.resolveOpenClawAgentSqlitePath(),
-    storeKeys: [sessionKey],
-    store: {},
-    entry: undefined,
-  }),
 }));
 
 vi.mock("../../infra/fs-safe.js", async () => {
