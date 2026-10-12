@@ -198,15 +198,18 @@ describe("board and progress-card database write admission", () => {
             ...handlers,
             [method]: async (invocation) => {
               // Authorization may read through the same writer queue before handler entry.
-              const { mutationRequest } = await runOpenClawAgentWorkerWrite(database, async () => {
-                const mutationRequest = Promise.resolve(handler(invocation));
-                // Observe early failure while reserved; the await below still propagates it.
-                void mutationRequest.catch(() => {});
-                entered.resolve();
-                await release.promise;
-                return { mutationRequest };
-              });
-              await mutationRequest;
+              const { mutationRequest: pendingMutation } = await runOpenClawAgentWorkerWrite(
+                database,
+                async () => {
+                  const mutationRequest = Promise.resolve(handler(invocation));
+                  // Observe early failure while reserved; the await below still propagates it.
+                  void mutationRequest.catch(() => {});
+                  entered.resolve();
+                  await release.promise;
+                  return { mutationRequest };
+                },
+              );
+              await pendingMutation;
             },
           },
           signal: controller.signal,

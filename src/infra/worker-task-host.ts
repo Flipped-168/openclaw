@@ -141,7 +141,9 @@ export function createWorkerTaskHost(
     },
     receiveMessage: receiveWorkerMemoryPort,
     workerStarted(worker, pool) {
-      trackSqliteDatabaseAdmissionWorker(worker);
+      if (owner.databaseAccess !== "read-only") {
+        trackSqliteDatabaseAdmissionWorker(worker);
+      }
       attributeWorkerToPool(worker, pool);
     },
     workerRetiring(worker, reason) {

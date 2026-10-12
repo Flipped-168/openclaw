@@ -293,7 +293,7 @@ function hasRestartUnsafeChatWork(params: {
 
 export type PreparedRestartSafeChatPlacement = {
   sessionId: string;
-  facts: Awaited<ReturnType<WorkerSessionPlacementStore["prepareRuntimeRefresh"]>>;
+  facts: Awaited<ReturnType<WorkerSessionPlacementStore["prepareSessionPlacement"]>>;
 };
 
 /** Borrow placement facts only while the chat owner revalidates and commits admission. */
@@ -302,10 +302,10 @@ export async function withRestartSafeChatPlacement(
   sessionId: string,
   consume: (prepared: PreparedRestartSafeChatPlacement) => Promise<void>,
 ): Promise<void> {
-  if (!service.prepareRuntimeRefresh) {
+  if (!service.prepareSessionPlacement) {
     throw new Error("Worker placement admission reader is unavailable; retry.");
   }
-  const facts = await service.prepareRuntimeRefresh(sessionId);
+  const facts = await service.prepareSessionPlacement(sessionId);
   try {
     await consume({ sessionId, facts });
   } finally {

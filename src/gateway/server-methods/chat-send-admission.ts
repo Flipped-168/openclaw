@@ -323,7 +323,6 @@ export async function admitChatSend(params: ChatSendAdmissionParams) {
         refreshPlacement = true;
         return;
       }
-      preparedPlacement?.facts.assertCurrent();
       restartSafeAdmission = resolveRestartSafeChatAdmission({
         activeRunScopeKey,
         agentId,
@@ -335,7 +334,7 @@ export async function admitChatSend(params: ChatSendAdmissionParams) {
         lifecycleTimestamps: latestSession.lifecycleTimestamps,
         acpMeta,
         now: Date.now(),
-        placement: preparedPlacement?.facts.placement,
+        placement: preparedPlacement?.facts.current(),
         request: restartSafeRequest,
         requestedSessionId,
         sessionId: admittedSessionId,

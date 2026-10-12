@@ -159,7 +159,7 @@ function readPool(state: ReadRuntime, admitted: boolean): ReadPool {
         maxPendingTasks: DEFAULT_WORKER_PENDING_TASKS,
         maxPendingBytes: DEFAULT_WORKER_PENDING_BYTES,
       },
-      { retainedTransport: true, nativeSource: state.nativeSource },
+      { retainedTransport: true, nativeSource: state.nativeSource, databaseAccess: "read-only" },
     );
     if (process.env.NODE_ENV === "test" || process.env.NODE_ENV === "development") {
       const pool = state.pool;
