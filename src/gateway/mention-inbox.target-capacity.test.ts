@@ -1,11 +1,7 @@
 import { expect, it, vi } from "vitest";
-import { runOpenClawStateWriteTransaction } from "../state/openclaw-state-db.js";
-import {
-  MENTION_RETENTION_MS,
-  readMentionStoreHead,
-  writeMentionStoreChanges,
-  type MentionStoreSource,
-} from "./mention-inbox-store.js";
+import { captureOpenClawStateWorkerContext } from "../state/openclaw-state-worker-context.js";
+import { MENTION_RETENTION_MS, type MentionStoreSource } from "./mention-inbox-store.js";
+import { commitMentionChanges, readMentionSnapshot } from "./mention-inbox-worker.js";
 import {
   SESSION_ID,
   SESSION_KEY,
@@ -57,10 +53,18 @@ it("keeps every retained mention visible when query-only target aliases fill the
         ];
       }),
     );
-    runOpenClawStateWriteTransaction(({ db }) => {
-      const head = readMentionStoreHead(db);
-      writeMentionStoreChanges(db, { ...head, nextSequence: sources.size }, sources);
-    });
+    const context = captureOpenClawStateWorkerContext();
+    const snapshot = await readMentionSnapshot(context, -1);
+    if (!snapshot) {
+      throw new Error("Expected the mention fixture snapshot");
+    }
+    expect(
+      await commitMentionChanges(
+        context,
+        { expectedHead: snapshot.head, nextSequence: sources.size, changes: [...sources] },
+        () => context.admission.assertCurrent(),
+      ),
+    ).toMatchObject({ kind: "committed" });
 
     expect(
       (await readMentionInbox(f.inbox, f.bobClient)).items.map((item) => item.sessionKey),

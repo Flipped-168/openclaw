@@ -77,7 +77,7 @@ export function assertAssistantMediaPolicyCurrent(
   return current;
 }
 
-export type AssistantMediaReader = Pick<
+type AssistantMediaReader = Pick<
   AuthorizedControlUiReadRequest,
   "authMethod" | "operatorScopes"
 > & {
