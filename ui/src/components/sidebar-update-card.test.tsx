@@ -28,6 +28,8 @@ async function mount(
     updateSchedule: schedule,
     canUpdate,
     canHoldUpdate,
+    captureUpdateTarget: () => () => true,
+    canStartNativeUpdate: (): boolean => props().canNativeUpdate ?? false,
   });
   const element = document.createElement("div");
   document.body.append(element);

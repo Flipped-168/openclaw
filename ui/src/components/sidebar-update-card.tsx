@@ -49,6 +49,7 @@ export type SidebarUpdateCardProps = {
   canStartNativeUpdate?: ConfirmAndStartUpdateParams["canStartNativeUpdate"];
   canHoldUpdate: boolean;
   onUpdate: () => void;
+  captureUpdateTarget?: () => () => boolean;
   refreshRequired: boolean;
   onRefresh: () => Promise<boolean>;
   onHoldUpdate: () => Promise<boolean>;
@@ -172,12 +173,18 @@ function SidebarUpdateCardContent(props: SidebarUpdateCardProps, host: HTMLEleme
   };
 
   function confirmUpdate(existingRun?: UpdateRunRecord, viaNativeApp = hasNativeUpdateBridge()) {
+    const isCurrentTarget = props.captureUpdateTarget?.();
+    if (!isCurrentTarget) {
+      return;
+    }
+    const onUpdate = props.onUpdate;
     void confirmAndStartUpdate({
+      isCurrentTarget,
       existingRun,
       prepareRetry: viaNativeApp ? undefined : props.prepareRetry,
       prepareGatewayFallback: props.prepareRetry,
       canStartNativeUpdate: props.canStartNativeUpdate,
-      startGatewayUpdate: props.onUpdate,
+      startGatewayUpdate: onUpdate,
       onCheckStatus: props.onCheckStatus,
       onReviewUpdate: props.onReviewUpdate,
       onAcknowledge: props.onAcknowledge,
@@ -600,6 +607,7 @@ export const SidebarUpdateCard = defineSolidBridge<SidebarUpdateCardProps>(
       canStartNativeUpdate: { default: undefined, attribute: false },
       canHoldUpdate: { default: false, attribute: false },
       onUpdate: { default: () => undefined, attribute: false },
+      captureUpdateTarget: { default: undefined, attribute: false },
       refreshRequired: { default: false, attribute: false },
       onRefresh: { default: async () => false, attribute: false },
       onHoldUpdate: { default: async () => false, attribute: false },
