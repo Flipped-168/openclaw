@@ -49,9 +49,9 @@ export {
   readPreviousIndexedTranscriptEventSync,
 } from "./session-accessor.sqlite-suffix-read.js";
 export {
-  rewriteAssistantTranscriptMessageForRun,
-  rewriteTranscriptMessageAtAnchor,
-} from "./session-accessor.sqlite-transcript-message-rewrite.js";
+  rewritePreparedAssistantTranscriptMessageForRun as rewriteAssistantTranscriptMessageForRun,
+  rewritePreparedTranscriptMessageAtAnchor as rewriteTranscriptMessageAtAnchor,
+} from "./session-message-rewrite.js";
 export {
   appendTranscriptEvent,
   appendTranscriptMessage,

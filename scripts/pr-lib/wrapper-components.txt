@@ -2291,8 +2291,8 @@ src/sessions/provider-review.ts
 src/sessions/transcript-anchor-page.ts
 src/sessions/transcript-display-position.ts
 src/sessions/transcript-visible-record.ts
-src/sessions/user-turn-transcript.message.ts
 src/sessions/user-turn-transcript.metadata.ts
+src/sessions/user-turn-transcript.message.ts
 src/shared/assistant-display-content.ts
 src/shared/chat-content.ts
 src/shared/chat-envelope.ts
