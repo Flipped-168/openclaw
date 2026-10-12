@@ -30,6 +30,29 @@ vi.mock("../server-idle-task.js", async (importOriginal) => ({
   scheduleGatewayIdleTask: () => ({ stop: vi.fn() }),
 }));
 
+vi.mock(
+  "../../config/sessions/session-transcript-writer-claim-error.js",
+  async (importOriginal) => {
+    const actual =
+      await importOriginal<
+        typeof import("../../config/sessions/session-transcript-writer-claim-error.js")
+      >();
+    return {
+      ...actual,
+      SessionTranscriptWriterClaimReboundError: class
+        extends actual.SessionTranscriptWriterClaimReboundError
+      {
+        constructor(
+          ...args: ConstructorParameters<typeof actual.SessionTranscriptWriterClaimReboundError>
+        ) {
+          super(...args);
+          console.error("transcript writer claim diagnostic", this.stack, this.cause);
+        }
+      },
+    };
+  },
+);
+
 type ResponseInput = {
   type?: string;
   role?: string;
