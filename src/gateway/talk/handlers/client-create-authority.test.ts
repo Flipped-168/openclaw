@@ -51,6 +51,7 @@ import { clientVoiceSessionTesting } from "../../../talk/client-voice-session.te
 import { captureEnv, setTestEnvValue } from "../../../test-utils/env.js";
 import { cleanupSessionStateForTest } from "../../../test-utils/session-state-cleanup.js";
 import { captureGatewayDeviceRevocation } from "../../device-revocation.js";
+import { prepareGatewayRecipientProfile } from "../../expected-profile.js";
 import { makeClient } from "../../server-broadcast.test-helpers.js";
 import { createDirectChatContext } from "../../server-chat.agent-events.test-helpers.js";
 import {
@@ -128,16 +129,6 @@ async function invokeCreate(options: GatewayRequestHandlerOptions) {
   } finally {
     admission.authorization?.release?.();
   }
-}
-async function invokeClose(params: Record<string, unknown>) {
-  const respond = vi.fn();
-  await talkClientHandlers["talk.client.close"]?.({
-    params,
-    respond,
-    context: { getRuntimeConfig: () => ({}) },
-    client: { connId: "conn-close" },
-  } as never);
-  return respond;
 }
 
 describe("voice creation authority", () => {
@@ -276,6 +267,8 @@ describe("voice creation authority", () => {
       };
       setRuntimeConfigSnapshot(config);
       const client = roleClient("write", "cross-store-voice");
+      using _ = { [Symbol.dispose]: (await prepareUserProfileCatalog()).release };
+      prepareGatewayRecipientProfile(client);
       const authorities: Array<{ release?: () => void }> = [];
       const prepare = async (scope: typeof local, method = "sessions.patch") => {
         const result = await resolveSessionMutationAuthorizationAsync({
@@ -486,11 +479,14 @@ describe("voice creation authority", () => {
       expect.objectContaining({ message: "A voice replacement requires a fresh voice session id" }),
     );
     expect(createBrowserSession).toHaveBeenCalledOnce();
-    expect(await invokeClose({ sessionKey, voiceSessionId: originalId })).toHaveBeenCalledWith(
-      true,
-      { ok: true },
-      undefined,
-    );
+    const closeRespond = vi.fn();
+    await talkClientHandlers["talk.client.close"]?.({
+      params: { sessionKey, voiceSessionId: originalId },
+      respond: closeRespond,
+      context: { getRuntimeConfig: () => ({}) },
+      client: { connId: "conn-close" },
+    } as never);
+    expect(closeRespond).toHaveBeenCalledWith(true, { ok: true }, undefined);
     await create({ voiceChangeId: changeId, model: "gpt-realtime-2.1", voice: "cove" });
     expect(respond).toHaveBeenLastCalledWith(
       true,

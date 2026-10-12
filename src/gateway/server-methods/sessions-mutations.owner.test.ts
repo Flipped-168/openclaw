@@ -727,6 +727,7 @@ describe("sessions.assignOwner", () => {
     await withSessionMutationState(async (state) => {
       const sessionKey = "agent:main:handoff";
       const ownerProfile = ensureProfileForEmail("requester@example.test");
+      using _ = { [Symbol.dispose]: (await prepareUserProfileCatalog({ env: state.env })).release };
       await upsertSessionEntryCore(
         { agentId: "main", env: state.env, sessionKey },
         {
@@ -839,6 +840,9 @@ describe("sessions.assignOwner", () => {
           assignedAt: 4242,
         });
         const durableOwner = ensureProfileForEmail(`next-owner-${caseNumber}@example.test`);
+        using _ = {
+          [Symbol.dispose]: (await prepareUserProfileCatalog({ env: state.env })).release,
+        };
         const reassigned = await invoke({
           cfg,
           client: client("profile-viewer"),

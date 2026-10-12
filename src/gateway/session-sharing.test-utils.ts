@@ -11,6 +11,7 @@ import {
   canReceiveSessionEvent,
   prepareProjectedSessionSharing,
   prepareSessionSharingProfiles,
+  type resolveSessionSharingRole,
 } from "./session-sharing-read.js";
 import { resolveSessionStoreIdentity } from "./session-store-key.js";
 
@@ -163,4 +164,31 @@ export async function canReceivePreparedSessionEvent(
       read.release();
     }
   }
+}
+
+type SharingTarget = Parameters<typeof resolveSessionSharingRole>[0]["target"];
+
+export function sharingPolicyTarget(createdActor?: {
+  type: "human";
+  id: string;
+  label?: string;
+}): SharingTarget {
+  return {
+    agentId: "main",
+    canonicalKey: "agent:main:main",
+    entry: {
+      sessionId: "session-main",
+      updatedAt: 1,
+      visibility: "draft",
+      ...(createdActor
+        ? {
+            createdVia: "operator" as const,
+            createdActor: { ...createdActor, source: "profile" as const },
+          }
+        : {}),
+    },
+    storeKey: "agent:main:main",
+    storeKeys: ["agent:main:main"],
+    storePath: "/tmp/sessions.json",
+  };
 }
