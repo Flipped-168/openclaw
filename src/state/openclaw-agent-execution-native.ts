@@ -109,14 +109,13 @@ export function createAgentDatabaseNativeGeneration(
   let assertIntegrityVerifierCurrent: (() => void) | undefined;
   let preparationPublished = false;
 
-  // The actor outlives its opener; keep its callback outside the caller-capturing scope.
+  // The actor retains this observer; keep it outside the opening caller's scope.
   const onNativeLost = () => {
     // Before the lease handoff this generation has borrowed no validation.
     if (lease) {
       invalidateOpenClawAgentDatabaseValidation(pathname);
     }
   };
-
   const assertCurrent = () => {
     assertLogicalCurrent();
     if (retiring) {
