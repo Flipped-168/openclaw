@@ -42,10 +42,10 @@ import { createDeferredCore } from "../../shared/deferred.js";
 import * as storeWriterQueue from "../../shared/store-writer-queue.js";
 import {
   closeOpenClawAgentDatabaseByPathAsync,
-  openOpenClawAgentDatabase,
   resolveIncognitoOpenClawAgentSqlitePath,
   resolveOpenClawAgentSqlitePath,
   runOpenClawAgentWriteTransaction,
+  withOpenClawAgentDatabaseRuntime,
 } from "../../state/openclaw-agent-db.js";
 import { getSessionRepositoryWorkspaceStore } from "../../state/session-repository-workspaces.js";
 import { withOpenClawTestState } from "../../test-utils/openclaw-test-state.js";
@@ -210,44 +210,49 @@ async function revokeDuringWriterWait(
 ) {
   const resolved = resolveSqliteScope(scope);
   await waitForSessionTranscriptIndexReconcile(toDatabaseOptions(resolved));
-  const entered = createDeferredCore();
-  const release = createDeferredCore();
-  const queued = createDeferredCore();
-  const heldWriter = runExclusiveSqliteSessionWrite(
-    resolved,
-    async () => {
-      entered.resolve();
-      await release.promise;
-    },
-    "session.transcript.batch",
-  );
-  await entered.promise;
-  const enqueueWrite = storeWriterQueue.runQueuedStoreWrite;
-  const writer = vi.spyOn(storeWriterQueue, "runQueuedStoreWrite").mockImplementation((params) => {
-    const pending = enqueueWrite(params);
-    if (
-      params.label === "agent database write admission" &&
-      params.storePath === resolveOpenClawAgentSqlitePath(toDatabaseOptions(resolved))
-    ) {
-      queued.resolve();
-    }
-    return pending;
-  });
-  const mutation = invoke();
-  try {
-    await awaitGateBeforeSettlement(
-      queued.promise,
-      mutation.error,
-      "Message cut settled before joining its physical writer queue",
+  // Admit the native fault-injection handle before this test holds the writer queue.
+  return withOpenClawAgentDatabaseRuntime(toDatabaseOptions(resolved), async () => {
+    const entered = createDeferredCore();
+    const release = createDeferredCore();
+    const queued = createDeferredCore();
+    const heldWriter = runExclusiveSqliteSessionWrite(
+      resolved,
+      async () => {
+        entered.resolve();
+        await release.promise;
+      },
+      "session.transcript.batch",
     );
-    await revoke();
-  } finally {
-    writer.mockRestore();
-    release.resolve();
-    await heldWriter;
-    await mutation.error;
-  }
-  return mutation;
+    await entered.promise;
+    const enqueueWrite = storeWriterQueue.runQueuedStoreWrite;
+    const writer = vi
+      .spyOn(storeWriterQueue, "runQueuedStoreWrite")
+      .mockImplementation((params) => {
+        const pending = enqueueWrite(params);
+        if (
+          params.label === "agent database write admission" &&
+          params.storePath === resolveOpenClawAgentSqlitePath(toDatabaseOptions(resolved))
+        ) {
+          queued.resolve();
+        }
+        return pending;
+      });
+    const mutation = invoke();
+    try {
+      await awaitGateBeforeSettlement(
+        queued.promise,
+        mutation.error,
+        "Message cut settled before joining its physical writer queue",
+      );
+      await revoke();
+    } finally {
+      writer.mockRestore();
+      release.resolve();
+      await heldWriter;
+      await mutation.error;
+    }
+    return mutation;
+  });
 }
 
 async function revokeWithPublicLifecyclePredecessor(
@@ -347,7 +352,10 @@ it.each(
         before = await readMutationStorage(scope);
       };
       if (!lockWhileQueued) {
-        await lockSource();
+        await withOpenClawAgentDatabaseRuntime(
+          toDatabaseOptions(resolveSqliteScope(scope)),
+          lockSource,
+        );
       }
       const mutation = lockWhileQueued
         ? await revokeDuringWriterWait(scope, () => invokeMessageCut(method, scope), lockSource)
@@ -448,13 +456,15 @@ describe("sessions.fork storage ownership", () => {
                 .mockImplementation(async (...args) => {
                   const target = await prepareRepository(...args);
                   repositoryForkId = target.workspaceId;
-                  runOpenClawAgentWriteTransaction(
-                    (database) =>
-                      writeSessionEntry(database, sessionKey, {
-                        ...sourceEntry,
-                        repositoryWorkspaceId: undefined,
-                      }),
-                    { agentId: sourceScope.agentId },
+                  await withOpenClawAgentDatabaseRuntime({ agentId: sourceScope.agentId }, () =>
+                    runOpenClawAgentWriteTransaction(
+                      (database) =>
+                        writeSessionEntry(database, sessionKey, {
+                          ...sourceEntry,
+                          repositoryWorkspaceId: undefined,
+                        }),
+                      { agentId: sourceScope.agentId },
+                    ),
                   );
                   racedStorage = await readMutationStorage(sourceScope);
                   expect(racedStorage.source?.repositoryWorkspaceId).toBeUndefined();
@@ -714,56 +724,57 @@ it("sessions.fork retains member authority while restoring cold source history",
     });
     const options = toDatabaseOptions(resolveSqliteScope(scope));
     await waitForSessionTranscriptIndexReconcile(options);
-    // Age the idle source past the cold-storage threshold through its entry owner.
-    runOpenClawAgentWriteTransaction((database) => {
-      const source = expectDefined(loadSessionEntryReadOnly(scope), "source entry");
-      writeSessionEntry(database, scope.sessionKey, { ...source, updatedAt: 1 });
-      database.db
-        .prepare(
-          "UPDATE session_nodes SET last_activity_at = NULL, last_interaction_at = NULL WHERE session_key = ?",
-        )
-        .run(scope.sessionKey);
-      database.db
-        .prepare(
-          "UPDATE session_windows SET updated_at = 1, transcript_updated_at = 1 WHERE session_id = ?",
-        )
-        .run(scope.sessionId);
-    }, options);
-    expect(
-      await runSessionColdStorageMaintenance({
-        config: { ...cfg, session: { maintenance: { coldStorage: { enabled: true } } } },
-      }),
-    ).toEqual({ archivedTranscripts: 1, externalizedTranscripts: 0 });
-    const database = openOpenClawAgentDatabase(options).db;
-    expect(readSessionColdTranscript(database, scope.sessionId)).toBeDefined();
-    const client = {
-      authenticatedUserId: "member@example.com",
-      authenticatedUserProfile: {
-        profileId: "member",
-        displayName: "Member",
-        hasAvatar: false,
-        updatedAt: 1,
-      },
-      connect: { role: "operator", scopes: ["operator.write"] },
-    } as GatewayClient;
-    const requestContext = context();
-    await initializeSessionReadContext(requestContext);
-    const admission = resolveSessionMutationAuthorization({
-      client,
-      method: "sessions.fork",
-      requestParams: mutationParams("sessions.fork", scope.sessionKey),
-      context: requestContext,
-    });
-    expect(admission.error).toBeNull();
+    await withOpenClawAgentDatabaseRuntime(options, async ({ db: coldDatabase }) => {
+      // Age the idle source past the cold-storage threshold through its entry owner.
+      runOpenClawAgentWriteTransaction((database) => {
+        const source = expectDefined(loadSessionEntryReadOnly(scope), "source entry");
+        writeSessionEntry(database, scope.sessionKey, { ...source, updatedAt: 1 });
+        database.db
+          .prepare(
+            "UPDATE session_nodes SET last_activity_at = NULL, last_interaction_at = NULL WHERE session_key = ?",
+          )
+          .run(scope.sessionKey);
+        database.db
+          .prepare(
+            "UPDATE session_windows SET updated_at = 1, transcript_updated_at = 1 WHERE session_id = ?",
+          )
+          .run(scope.sessionId);
+      }, options);
+      expect(
+        await runSessionColdStorageMaintenance({
+          config: { ...cfg, session: { maintenance: { coldStorage: { enabled: true } } } },
+        }),
+      ).toEqual({ archivedTranscripts: 1, externalizedTranscripts: 0 });
+      expect(readSessionColdTranscript(coldDatabase, scope.sessionId)).toBeDefined();
+      const client = {
+        authenticatedUserId: "member@example.com",
+        authenticatedUserProfile: {
+          profileId: "member",
+          displayName: "Member",
+          hasAvatar: false,
+          updatedAt: 1,
+        },
+        connect: { role: "operator", scopes: ["operator.write"] },
+      } as GatewayClient;
+      const requestContext = context();
+      await initializeSessionReadContext(requestContext);
+      const admission = resolveSessionMutationAuthorization({
+        client,
+        method: "sessions.fork",
+        requestParams: mutationParams("sessions.fork", scope.sessionKey),
+        context: requestContext,
+      });
+      expect(admission.error).toBeNull();
 
-    const mutation = invokeMessageCut("sessions.fork", scope, {
-      client,
-      context: requestContext,
-      sessionMutationAuthorization: expectDefined(admission.authorization, "source authority"),
-    });
+      const mutation = invokeMessageCut("sessions.fork", scope, {
+        client,
+        context: requestContext,
+        sessionMutationAuthorization: expectDefined(admission.authorization, "source authority"),
+      });
 
-    expect(await mutation.error).toBeUndefined();
-    expect(mutation.respond).toHaveBeenCalledWith(true, expect.any(Object), undefined);
-    expect(readSessionColdTranscript(database, scope.sessionId)).toBeUndefined();
+      expect(await mutation.error).toBeUndefined();
+      expect(mutation.respond).toHaveBeenCalledWith(true, expect.any(Object), undefined);
+      expect(readSessionColdTranscript(coldDatabase, scope.sessionId)).toBeUndefined();
+    });
   });
 });

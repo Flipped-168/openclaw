@@ -16,6 +16,7 @@ import type {
 } from "../../config/sessions/session-accessor.js";
 import { mutateSessionAtMessageWithPreconditions } from "../../config/sessions/session-accessor.sqlite-message-cut.js";
 import {
+  captureSessionActorStorageOwner,
   getSessionActorStorageBinding,
   runWithSessionActorStorage,
 } from "../../config/sessions/session-actor-storage-binding.js";
@@ -431,6 +432,7 @@ async function mutatePreparedSessionAtMessage({
         agentId: current.readSource?.agentId ?? current.agentId,
         storePath: current.readSource?.path ?? current.storePath,
       };
+      const memoryOwner = memory && captureSessionActorStorageOwner(memory);
       const mutationParams = {
         agentId: current.agentId,
         commitGuard: assertMutationCurrent,
@@ -475,10 +477,12 @@ async function mutatePreparedSessionAtMessage({
             assertRepositoryOwnerCurrent();
             assertLocalUpstreamCurrent();
           };
-          const sourceEntry = await readSessionEntryReadOnlyInWorker(
-            { ...repositoryEntryScope, sessionKey: current.canonicalKey, projection: "list" },
-            assertRepositoryCurrent,
-          );
+          const sourceEntry = memory
+            ? memoryOwner?.owner?.readSession(current.canonicalKey, memory.authority)?.entry
+            : await readSessionEntryReadOnlyInWorker(
+                { ...repositoryEntryScope, sessionKey: current.canonicalKey, projection: "list" },
+                assertRepositoryCurrent,
+              );
           if (
             sourceEntry?.sessionId !== initialSessionId ||
             sourceEntry.lifecycleRevision !== initialLifecycleRevision ||
@@ -535,13 +539,26 @@ async function mutatePreparedSessionAtMessage({
       } finally {
         if (forkRepository && !repositoryForkCommitted) {
           const { workspaceId, store, source } = forkRepository;
-          const child = await captureSessionEntryCurrentCheckAsyncInternal({
-            ...repositoryEntryScope,
-            sessionKey: targetKey,
-            fields: ["repositoryWorkspaceId"],
-            matchGeneration: false,
-            errorMessage: "Repository fork changed before cleanup",
-          });
+          const child = memory
+            ? {
+                entry: memoryOwner?.owner?.readSession(targetKey, memory.authority)?.entry,
+                entryCurrent: undefined,
+                source: () => {
+                  if (
+                    memoryOwner?.owner?.readSession(targetKey, memory.authority)?.entry
+                      .repositoryWorkspaceId === workspaceId
+                  ) {
+                    throw new Error("Repository fork was committed before cleanup");
+                  }
+                },
+              }
+            : await captureSessionEntryCurrentCheckAsyncInternal({
+                ...repositoryEntryScope,
+                sessionKey: targetKey,
+                fields: ["repositoryWorkspaceId"],
+                matchGeneration: false,
+                errorMessage: "Repository fork changed before cleanup",
+              });
           if (child.entry?.repositoryWorkspaceId !== workspaceId) {
             await store.delete({
               workspaceId,
