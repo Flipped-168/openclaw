@@ -2,7 +2,7 @@ import type { JSX } from "@solidjs/web";
 import { For, Show, createMemo } from "solid-js";
 import { resolveConfigObjectFields } from "../../components/config-form.node.collection.ts";
 import { renderNode } from "../../components/config-form.ts";
-import { renderHubTabs } from "../../components/hub-tabs.ts";
+import { HubTabs } from "../../components/solid/hub-tabs.tsx";
 import { Icon } from "../../components/solid/icon.tsx";
 import {
   SettingsEmpty,
@@ -341,29 +341,19 @@ export function renderPluginSettingsInventory(props: InventoryProps): JSX.Elemen
         subtitle={t("pluginsPage.settingsDescription")}
       />
       <div class="plugins-settings-content">
-        <LitContent
-          render={() =>
-            renderHubTabs({
-              id: "plugin-settings",
-              active: props.tab,
-              tabs: [
-                {
-                  value: "installed",
-                  label: t("pluginsPage.settingsInstalled"),
-                },
-                {
-                  value: "advanced",
-                  label: t("pluginsPage.advanced"),
-                },
-              ],
-              ariaLabel: t("pluginsPage.settingsTabs"),
-              panelId: "plugin-settings-panel",
-              variant: "sub",
-              className: "plugins-settings-tabs",
-              carapace: true,
-              onSelect: props.onTabChange,
-            })
-          }
+        <HubTabs
+          id="plugin-settings"
+          active={props.tab}
+          tabs={[
+            { value: "installed", label: t("pluginsPage.settingsInstalled") },
+            { value: "advanced", label: t("pluginsPage.advanced") },
+          ]}
+          ariaLabel={t("pluginsPage.settingsTabs")}
+          panelId="plugin-settings-panel"
+          variant="sub"
+          className="plugins-settings-tabs"
+          carapace
+          onSelect={props.onTabChange}
         />
         <wa-tab-panel
           id="plugin-settings-panel"
