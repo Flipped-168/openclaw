@@ -495,6 +495,15 @@ describe("sessions.patchMany orchestration", () => {
           { sessionId: `session-throw-${index}`, updatedAt: 1 },
         );
       }
+      const preparePlacementCheck = sessionPatchPreflight.prepareSessionWorkerPlacementPatchCheck;
+      using _ = vi
+        .spyOn(sessionPatchPreflight, "prepareSessionWorkerPlacementPatchCheck")
+        .mockImplementation(async (params) => {
+          if (params.entry?.sessionId === "session-throw-1") {
+            throw new Error("private placement detail");
+          }
+          return preparePlacementCheck(params);
+        });
       const respond = vi.fn();
       await sessionMutationHandlers["sessions.patchMany"]!({
         params: {
@@ -502,16 +511,7 @@ describe("sessions.patchMany orchestration", () => {
           patch: { category: "Batch" },
         },
         respond,
-        context: context({
-          workerSessionPlacementService: {
-            getMany: (sessionIds: string[]) => {
-              if (sessionIds.includes("session-throw-1")) {
-                throw new Error("private placement detail");
-              }
-              return new Map();
-            },
-          },
-        }),
+        context: context(),
       } as never);
 
       expect(respond).toHaveBeenCalledWith(
