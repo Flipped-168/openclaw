@@ -1,4 +1,5 @@
 import { formatErrorMessage } from "../infra/errors.js";
+import { runOutsideAsyncWorkScope } from "../shared/async-work-scope.js";
 import { emitSessionsChanged } from "./server-methods/session-change-event.js";
 import type { WorkerPlacementRunnerAvailabilityReader } from "./worker-environments/placement-projector.js";
 import type { WorkerSessionPlacementChangeSnapshot } from "./worker-environments/placement-record.js";
@@ -105,76 +106,80 @@ export function subscribeGatewayWorkerPlacementMetadataChanges(params: {
     if (pending) {
       return;
     }
-    // Claim closure precedes session-row publication; read its snapshot in this batch.
-    pending = Promise.resolve().then(async () => {
-      try {
-        while (profiles.size || nodes.size || closedSessions.size) {
-          const batch = [...profiles];
-          const changedNodes = new Set(nodes);
-          const closed = new Set(closedSessions);
-          profiles.clear();
-          nodes.clear();
-          closedSessions.clear();
-          try {
-            const placements = new Map(
-              (batch.length ? await params.placements.readChangeSnapshot(batch) : []).map(
-                (placement) => [placement.sessionId, placement],
-              ),
-            );
-            if (changedNodes.size || closed.size) {
-              const identities = changedNodes.size
-                ? await params.placements.readChangeSnapshot()
-                : [];
-              const projection = await params.placements.readProjection(
-                [
-                  ...closed,
-                  ...identities.filter((row) => row.state === "active").map((row) => row.sessionId),
-                ],
-                { current: true },
+    // Claim closure ends caller work; this Gateway batch reads the committed snapshot.
+    pending = runOutsideAsyncWorkScope(() =>
+      Promise.resolve().then(async () => {
+        try {
+          while (profiles.size || nodes.size || closedSessions.size) {
+            const batch = [...profiles];
+            const changedNodes = new Set(nodes);
+            const closed = new Set(closedSessions);
+            profiles.clear();
+            nodes.clear();
+            closedSessions.clear();
+            try {
+              const placements = new Map(
+                (batch.length ? await params.placements.readChangeSnapshot(batch) : []).map(
+                  (placement) => [placement.sessionId, placement],
+                ),
               );
-              for (const placement of projection.placements.values()) {
-                const runner = params.runnerAvailability.read(
-                  placement,
-                  projection.environments.get(placement.environmentId ?? "") ?? null,
+              if (changedNodes.size || closed.size) {
+                const identities = changedNodes.size
+                  ? await params.placements.readChangeSnapshot()
+                  : [];
+                const projection = await params.placements.readProjection(
+                  [
+                    ...closed,
+                    ...identities
+                      .filter((row) => row.state === "active")
+                      .map((row) => row.sessionId),
+                  ],
+                  { current: true },
                 );
-                if (
-                  closed.has(placement.sessionId) ||
-                  (runner?.deviceId && changedNodes.has(runner.deviceId))
-                ) {
-                  placements.set(placement.sessionId, placement);
+                for (const placement of projection.placements.values()) {
+                  const runner = params.runnerAvailability.read(
+                    placement,
+                    projection.environments.get(placement.environmentId ?? "") ?? null,
+                  );
+                  if (
+                    closed.has(placement.sessionId) ||
+                    (runner?.deviceId && changedNodes.has(runner.deviceId))
+                  ) {
+                    placements.set(placement.sessionId, placement);
+                  }
                 }
               }
-            }
-            const context = params.getSessionChangeContext?.();
-            if (stopped || !context) {
-              return;
-            }
-            for (const placement of placements.values()) {
-              emitSessionsChanged(
-                context,
-                {
-                  reason: "placement",
-                  sessionKey: placement.sessionKey,
-                  sessionId: placement.sessionId,
-                  agentId: placement.agentId,
-                },
-                { accessChanged: false },
-              );
-            }
-          } catch (error) {
-            try {
-              params.warn(
-                `Worker placement metadata change reporting failed: ${formatErrorMessage(error)}`,
-              );
-            } catch {
-              // Best-effort reporting must not leak a rejected background operation.
+              const context = params.getSessionChangeContext?.();
+              if (stopped || !context) {
+                return;
+              }
+              for (const placement of placements.values()) {
+                emitSessionsChanged(
+                  context,
+                  {
+                    reason: "placement",
+                    sessionKey: placement.sessionKey,
+                    sessionId: placement.sessionId,
+                    agentId: placement.agentId,
+                  },
+                  { accessChanged: false },
+                );
+              }
+            } catch (error) {
+              try {
+                params.warn(
+                  `Worker placement metadata change reporting failed: ${formatErrorMessage(error)}`,
+                );
+              } catch {
+                // Best-effort reporting must not leak a rejected background operation.
+              }
             }
           }
+        } finally {
+          pending = undefined;
         }
-      } finally {
-        pending = undefined;
-      }
-    });
+      }),
+    );
   };
   const unsubscribe = params.environments.subscribeMachineShapeChanged((profileId) => {
     profiles.add(profileId);

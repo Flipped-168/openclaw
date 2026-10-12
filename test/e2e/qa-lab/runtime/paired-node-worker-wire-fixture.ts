@@ -79,7 +79,11 @@ export function createWireWorkspaceSettlementWaiter() {
         }
       }
     },
-    async wait(client: GatewayClient, key: string, signal: AbortSignal) {
+    async wait(
+      client: { request<T>(method: string, params: unknown): Promise<T> },
+      key: string,
+      signal: AbortSignal,
+    ) {
       const changed = createDeferred();
       waiting.set(key, changed);
       try {

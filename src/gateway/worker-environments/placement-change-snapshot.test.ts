@@ -3,6 +3,7 @@ import { expect, it, vi } from "vitest";
 import { withinTest } from "../../../test/helpers/promise.js";
 import { requireNodeSqlite } from "../../infra/node-sqlite.js";
 import { sessionChanges } from "../../sessions/session-row-changes.js";
+import { AsyncWorkScope } from "../../shared/async-work-scope.js";
 import { createDeferredCore } from "../../shared/deferred.js";
 import {
   withDisposableOpenClawStateReads,
@@ -91,8 +92,7 @@ it("coalesces machine metadata bursts off thread and selects only correlated pro
     const environments = await createWorkerEnvironmentStore({ database });
     const expected = ["active", "pending", "terminal"];
     expect(
-      store
-        .list()
+      (await store.listAsync())
         .filter(
           (row) =>
             readWorkerPlacementIdentity(
@@ -189,6 +189,7 @@ it.for(["worker-turn", "remote-exec"] as const)(
       });
       const readProjection = store.readProjection.bind(store);
       const reads = vi.spyOn(store, "readProjection");
+      const turnWork = new AsyncWorkScope();
       const calls = observeMainThreadSql();
       const claim = (suffix: string) =>
         store.claimTurn({
@@ -214,7 +215,11 @@ it.for(["worker-turn", "remote-exec"] as const)(
         await store.markWorkspaceResultPending(first);
         await store.acceptWorkspaceResult(first);
         expect(broadcastToConnIds).not.toHaveBeenCalled();
-        await store.completeWorkspaceResultAndReleaseTurn(first);
+        reads.mockImplementationOnce((...args) => {
+          turnWork.beginClose();
+          return readProjection(...args);
+        });
+        await turnWork.run(() => store.completeWorkspaceResultAndReleaseTurn(first));
         await withinTest(published.promise, signal);
         await flushPendingSessionsChangedEvents(context);
         expect(broadcastToConnIds).toHaveBeenCalledWith(
@@ -265,6 +270,7 @@ it.for(["worker-turn", "remote-exec"] as const)(
       } finally {
         resumeRead.resolve();
         await changes.stop();
+        await turnWork.drain();
         await flushPendingSessionsChangedEvents(context);
         vi.restoreAllMocks();
       }
@@ -332,7 +338,9 @@ it.each(["cached", "fresh"] as const)(
       } finally {
         vi.restoreAllMocks();
       }
-      store.retireSessionPlacement({
+      const mutationStore =
+        mode === "fresh" ? createWorkerSessionPlacementStore({ database }) : store;
+      await mutationStore.retireSessionPlacementAsync({
         sessionId: "a",
         expectedState: "failed",
         expectedGeneration: failed.generation,
@@ -383,7 +391,7 @@ it("reports committed placement changes inside an inspection snapshot", async ()
       await withOpenClawStateDatabaseReadSnapshot(async () => {
         await expect(
           publishChanges(async () => {
-            store.retireSessionPlacement({
+            await store.retireSessionPlacementAsync({
               sessionId: "a",
               expectedState: "failed",
               expectedGeneration: failed.generation,
@@ -399,7 +407,7 @@ it("reports committed placement changes inside an inspection snapshot", async ()
           expect.any(Object),
         );
       });
-      expect(store.list()).toEqual([]);
+      expect(await store.listAsync()).toEqual([]);
       expect(warn).not.toHaveBeenCalled();
     } finally {
       await flushPendingSessionsChangedEvents(context);
