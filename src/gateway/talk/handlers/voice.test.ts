@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createDeferred } from "../../../../test/helpers/promise.js";
+import { setRuntimeConfigSnapshot } from "../../../config/runtime-snapshot.js";
 import {
   claimAgentRunDelegatedAuthority,
   clearAgentRunContext,
@@ -189,6 +190,8 @@ describe("Talk voice RPC ownership", () => {
   beforeEach(async () => {
     state = await createOpenClawTestState({ label: "talk-voice-rpc", scenario: "minimal" });
     changeRequested = createDeferred();
+    const cfg = {};
+    setRuntimeConfigSnapshot(cfg);
     broadcast.mockClear();
     broadcast.mockImplementation((event, payload) => {
       if (
@@ -203,11 +206,12 @@ describe("Talk voice RPC ownership", () => {
     });
     dispatchCurrent = true;
     context = createDirectChatContext({
+      getRuntimeConfig: () => cfg,
       broadcastToConnIds: broadcast,
       validateAgentRuntimeApprovalAuthority: createAgentRuntimeApprovalAuthorityValidator(),
     });
     // Calls retain the supplied alias; the backing runtime uses its canonical key.
-    sessionTarget = await prepareTalkSessionTarget({}, "main");
+    sessionTarget = await prepareTalkSessionTarget(cfg, "main");
     browser = client("voice-browser");
     originalId = await createOrResumeClientVoiceSession({
       agentId: sessionTarget.agentId,

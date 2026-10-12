@@ -11,6 +11,10 @@ import {
 } from "../../../../test/helpers/sqlite-statement-execution-counter.js";
 import { useAutoCleanupTempDirTracker } from "../../../../test/helpers/temp-dir.js";
 import {
+  clearRuntimeConfigSnapshot,
+  setRuntimeConfigSnapshot,
+} from "../../../config/runtime-snapshot.js";
+import {
   loadSessionEntry,
   replaceSessionEntrySync,
 } from "../../../config/sessions/session-accessor.js";
@@ -37,6 +41,7 @@ import {
   openOpenClawAgentDatabase,
 } from "../../../state/openclaw-agent-db.js";
 import { resolveOpenClawAgentSqlitePath } from "../../../state/openclaw-agent-db.paths.js";
+import { prepareUserProfileCatalog } from "../../../state/user-profile-list.js";
 import { prepareClientVoiceSessionClose } from "../../../talk/client-voice-session-lifecycle.js";
 import { readVoiceSessionRecordInTransaction } from "../../../talk/client-voice-session-store.js";
 import * as voiceWriters from "../../../talk/client-voice-session-write.js";
@@ -97,6 +102,7 @@ function configureDelegatedBrowserProvider(
   createBrowserSession: (request: BrowserRequest) => Promise<typeof browserSession>,
 ) {
   const fixture = createDelegatedBrowserProviderFixture(createBrowserSession, tempDir);
+  setRuntimeConfigSnapshot(fixture.context.getRuntimeConfig());
   voiceMocks.resolveConfiguredRealtimeVoiceProviderAsync.mockReturnValue({
     provider: fixture.provider,
     providerConfig: {},
@@ -105,6 +111,8 @@ function configureDelegatedBrowserProvider(
   return fixture;
 }
 async function invokeCreate(options: GatewayRequestHandlerOptions) {
+  setRuntimeConfigSnapshot(options.context.getRuntimeConfig());
+  using _ = { [Symbol.dispose]: (await prepareUserProfileCatalog()).release };
   const admission = await resolveSessionMutationAuthorizationAsync({
     method: "talk.client.create",
     requestParams: options.params,
@@ -146,6 +154,7 @@ describe("voice creation authority", () => {
       clientVoiceSessionTesting.reset();
       try {
         await cleanupSessionStateForTest({ stateDir: tempDir });
+        clearRuntimeConfigSnapshot();
       } finally {
         envSnapshot.restore();
         remove();
@@ -194,6 +203,7 @@ describe("voice creation authority", () => {
     ownedVoiceSessionKey = sessionKey;
     tempDir = tempDirs.make("openclaw-voice-authority-");
     setTestEnvValue("OPENCLAW_STATE_DIR", tempDir);
+    setRuntimeConfigSnapshot({});
     const seedEntry = { sessionId, updatedAt: Date.now() };
     await applySessionEntryOperation(
       { agentId: "main", sessionKey },
@@ -264,6 +274,7 @@ describe("voice creation authority", () => {
         ...rolePolicyConfig(),
         agents: { entries: { main: {}, source: {} } },
       };
+      setRuntimeConfigSnapshot(config);
       const client = roleClient("write", "cross-store-voice");
       const authorities: Array<{ release?: () => void }> = [];
       const prepare = async (scope: typeof local, method = "sessions.patch") => {
@@ -539,6 +550,7 @@ describe("voice creation authority", () => {
           : {}),
       };
       fixture.context.getRuntimeConfig = () => config;
+      setRuntimeConfigSnapshot(config);
       const key = kind === "incognito" ? "agent:main:dashboard:incognito-voice-source" : sessionKey;
       ownedVoiceSessionKey = key;
       const scope = { agentId: "main", sessionKey: key, storePath: config.session?.store };
@@ -795,14 +807,10 @@ describe("voice creation authority", () => {
         renameSync(sourcePath, displacedPath);
         copyFileSync(displacedPath, sourcePath);
         replacementBytes = readFileSync(sourcePath);
-        const copied = new DatabaseSync(sourcePath, { readOnly: true });
-        try {
-          expect(readVoiceSessionRecordInTransaction({ db: copied }, voiceSessionId)?.status).toBe(
-            "open",
-          );
-        } finally {
-          copied.close();
-        }
+        using copied = new DatabaseSync(sourcePath, { readOnly: true });
+        expect(readVoiceSessionRecordInTransaction({ db: copied }, voiceSessionId)?.status).toBe(
+          "open",
+        );
       };
       const createVoice = voiceSessions.createOrResumeClientVoiceSession;
       const intercepted = vi
@@ -932,19 +940,15 @@ describe("voice creation authority", () => {
         .spyOn(voiceSessions, "createOrResumeClientVoiceSession")
         .mockImplementation(async (...args) => {
           const result = await createVoice(...args);
-          const peer = new DatabaseSync(resolveOpenClawAgentSqlitePath({ agentId: "main" }));
-          try {
-            peer
-              .prepare(
-                change === "identity"
-                  ? "UPDATE session_nodes SET current_session_id = 'foreign-successor', entry_json = json_set(entry_json, '$.sessionId', 'foreign-successor') WHERE session_key = ?"
-                  : "UPDATE session_nodes SET entry_json = json_set(entry_json, '$.label', 'foreign-label') WHERE session_key = ?",
-              )
-              .run(sessionKey);
-            changed = true;
-          } finally {
-            peer.close();
-          }
+          using peer = new DatabaseSync(resolveOpenClawAgentSqlitePath({ agentId: "main" }));
+          peer
+            .prepare(
+              change === "identity"
+                ? "UPDATE session_nodes SET current_session_id = 'foreign-successor', entry_json = json_set(entry_json, '$.sessionId', 'foreign-successor') WHERE session_key = ?"
+                : "UPDATE session_nodes SET entry_json = json_set(entry_json, '$.label', 'foreign-label') WHERE session_key = ?",
+            )
+            .run(sessionKey);
+          changed = true;
           return result;
         });
       const reads = observeSqliteReadSql(StatementSync.prototype);

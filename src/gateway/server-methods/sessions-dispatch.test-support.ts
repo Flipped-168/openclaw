@@ -1,12 +1,16 @@
 import { expectDefined } from "@openclaw/normalization-core";
-import { beforeEach, vi } from "vitest";
+import { afterEach, beforeEach, vi } from "vitest";
 import {
   GATEWAY_CLIENT_IDS,
   GATEWAY_CLIENT_MODES,
 } from "../../../packages/gateway-protocol/src/client-info.js";
 import type { SessionsReclaimParams } from "../../../packages/gateway-protocol/src/schema/session-placement.js";
 import { managedWorktrees } from "../../agents/worktrees/service.js";
-import * as sessionEntryReadFacts from "../../config/sessions/session-entry-read-facts.js";
+import { getRuntimeConfig } from "../../config/io.js";
+import {
+  clearRuntimeConfigSnapshot,
+  setRuntimeConfigSnapshot,
+} from "../../config/runtime-snapshot.js";
 import type { SessionEntry } from "../../config/sessions/types.js";
 import { NODE_WORKER_SUPERVISOR_PROTOCOL_FEATURE } from "../../infra/node-runner-inventory.js";
 import type { NodeWorkerSupervisorNodeProof } from "../node-registry-private.js";
@@ -23,43 +27,17 @@ const dispatchTestMocks = vi.hoisted(() => ({
   resolveTarget: vi.fn(),
 }));
 
+afterEach(() => clearRuntimeConfigSnapshot());
+
 export function getDispatchTestMocks() {
   return dispatchTestMocks;
 }
 
-const readRetained = sessionEntryReadFacts.readRetainedSessionEntryFacts;
-
 beforeEach(() => {
-  vi.spyOn(sessionEntryReadFacts, "readRetainedSessionEntryFacts").mockImplementation(
-    (database, request, owner) => {
-      if (database.path !== "/tmp/openclaw-agent.sqlite") {
-        return readRetained(database, request, owner);
-      }
-      // Synthetic dispatch targets share the current metadata used by worker reads.
-      const target: ReturnType<typeof makeSessionTarget> = dispatchTestMocks.resolveTarget({
-        key: request.sessionKeys?.[0],
-        agentId: database.agentId,
-      });
-      return {
-        kind: "session-exact-entries",
-        entries: (request.sessionKeys ?? []).flatMap((sessionKey) => {
-          const entry = target.store[sessionKey];
-          return entry ? [{ sessionKey, entry: { updatedAt: 1, ...entry } }] : [];
-        }),
-        lifecycleTimestamps: {},
-        source: { ...database, databaseIdentity: "dispatch-fixture" },
-        databaseIdentity: {
-          identity: "dispatch-fixture",
-          incarnation: "dispatch-fixture",
-          filename: database.path,
-        },
-      };
-    },
-  );
   const readFixtureEntry: typeof sessionStore.loadGatewaySessionEntryReadOnlyAsync = async (
     key,
     opts,
-    cfg,
+    cfg = getRuntimeConfig(),
   ) => {
     const target = await dispatchTestMocks.resolveTarget({
       cfg,
@@ -221,7 +199,7 @@ export function makeDispatchTestContext(
       return { available: true, node };
     });
   }
-  return {
+  const context = {
     getSessionEventSubscriberConnIds: () => new Set(),
     getRuntimeConfig: () => ({
       cloudWorkers: {
@@ -257,6 +235,8 @@ export function makeDispatchTestContext(
     ...overrides,
     workerEnvironmentService: workerEnvironmentService as never,
   } as unknown as GatewayRequestContext;
+  setRuntimeConfigSnapshot(context.getRuntimeConfig());
+  return context;
 }
 
 export async function invokeSessionDispatch(

@@ -1,6 +1,10 @@
 import path from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
 import { createTempDirTracker } from "../../test/helpers/temp-dir.js";
+import {
+  clearRuntimeConfigSnapshot,
+  setRuntimeConfigSnapshot,
+} from "../config/runtime-snapshot.js";
 import { replaceSessionEntry } from "../config/sessions/session-accessor.js";
 import {
   beginSessionWorkAdmission,
@@ -17,9 +21,12 @@ afterEach(async () => {
   tempDirs.cleanup();
 });
 
+afterEach(clearRuntimeConfigSnapshot);
+
 it.each(["active", "failed"] as const)(
   "a %s reclaim whose canonical cancellation rejects still retires old pending work",
   async (state) => {
+    setRuntimeConfigSnapshot({});
     const root = tempDirs.make(`worker-reclaim-cancel-failure-${state}-`);
     const env = { ...process.env, OPENCLAW_STATE_DIR: root };
     const scope = path.join(root, "sessions.sqlite");

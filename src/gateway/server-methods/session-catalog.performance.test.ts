@@ -68,6 +68,7 @@ it("measures 100 composed catalog lists against real session and plugin stores",
       try {
         counters.begin();
         fixture = await createComposedCatalogFixture(state, counters);
+        // A cold request may report loading before the resident catalog is complete.
         await fixture.requestList();
         const catalogNamespace = await counters.catalogPersisted;
         const first = await fixture.setupList();

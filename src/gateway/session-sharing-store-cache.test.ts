@@ -1,11 +1,23 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { setRuntimeConfigSnapshot } from "../config/runtime-snapshot.js";
 import * as sessionAccessor from "../config/sessions/session-accessor.js";
+import {
+  addSessionMember,
+  removeSessionMember,
+} from "../config/sessions/session-sharing-store.native.js";
+import * as targetsDiscovery from "../config/sessions/targets-discovery.native.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { closeOpenClawAgentDatabasesForTest } from "../state/openclaw-agent-db.js";
 import { withOpenClawTestState } from "../test-utils/openclaw-test-state.js";
+import {
+  initializeSessionReadContext,
+  requestContext,
+} from "./server-methods/sessions-read-cache.test-support.js";
 import type { GatewayClient } from "./server-methods/types.js";
+import { getSessionRowProjection } from "./session-row-projection-access.js";
 import { resolveSessionMutationAuthorizationAsync } from "./session-sharing-authorization-async.js";
 import { resolveSessionSharingTargetAsync } from "./session-sharing.js";
+import { canReceivePreparedSessionEvent } from "./session-sharing.test-utils.js";
 import { resolveGatewaySessionStoreTargetWithStoreAsync } from "./session-utils-store-lookup.js";
 
 afterEach(() => {
@@ -41,6 +53,7 @@ describe("session event authorization store work", () => {
   it("does not capture a replacement for an already prepared mutation target", async () => {
     await withOpenClawTestState({ scenario: "minimal" }, async () => {
       const cfg: OpenClawConfig = {};
+      setRuntimeConfigSnapshot(cfg);
       const scope = { agentId: "main", sessionKey: "agent:main:prepared-target" };
       const entry = {
         sessionId: "prepared-session",
@@ -83,6 +96,80 @@ describe("session event authorization store work", () => {
       expect(() => original.authorization?.assertCurrent()).toThrow("session changed");
     });
   });
+
+  it.each([1, 32])(
+    "bounds metadata work for %i event targets while refreshing membership",
+    async (targetCount) => {
+      await withOpenClawTestState({ scenario: "minimal" }, async () => {
+        setRuntimeConfigSnapshot({});
+        const keys = Array.from(
+          { length: 64 },
+          (_, index) => `agent:main:event-${targetCount}-${index}`,
+        );
+        const sessionKeys = keys.slice(0, targetCount);
+        for (const sessionKey of keys) {
+          await sessionAccessor.upsertSessionEntryCore(
+            { agentId: "main", sessionKey },
+            {
+              sessionId: sessionKey,
+              updatedAt: 1,
+              visibility: "suggest",
+              createdActor: { type: "human", source: "profile", id: "owner" },
+            },
+          );
+        }
+        for (const sessionKey of sessionKeys) {
+          addSessionMember(
+            { agentId: "main", sessionKey },
+            { identityId: "member", addedBy: "owner" },
+          );
+        }
+        sessionAccessor.listSessionEntriesCore({
+          agentId: "main",
+          clone: false,
+          projection: "list",
+        });
+        const materializedKeys: string[] = [];
+        const listEntries = sessionAccessor.listSessionEntriesCore;
+        vi.spyOn(sessionAccessor, "listSessionEntriesCore").mockImplementation((scope) => {
+          const entries = listEntries(scope);
+          materializedKeys.push(...entries.map(({ sessionKey }) => sessionKey));
+          return entries;
+        });
+        const receive = (user: string, event = "session.suggestion") =>
+          canReceivePreparedSessionEvent({
+            cfg: {},
+            client: identifiedClient(user),
+            sessionKeys,
+            event,
+            payload: { suggestion: { author: { id: "author" } } },
+          });
+        expect(await receive("member", "session.message")).toBe(true);
+        materializedKeys.length = 0;
+        expect(await receive("member", "session.message")).toBe(true);
+        expect(materializedKeys).toEqual([]);
+
+        const checkRecipient = async (user: string, allowed: boolean) => {
+          materializedKeys.length = 0;
+          expect(await receive(user)).toBe(allowed);
+          // Sparse events must not enumerate unrelated rows; dense checks share one store view.
+          expect(materializedKeys.length).toBeLessThanOrEqual(targetCount === 1 ? 0 : keys.length);
+        };
+        await checkRecipient("member", true);
+        await checkRecipient("owner", true);
+        await checkRecipient("viewer", false);
+        await checkRecipient("author", true);
+        const revokedKey = sessionKeys.at(-1)!;
+        removeSessionMember({ agentId: "main", sessionKey: revokedKey }, "member");
+        await checkRecipient("member", false);
+        addSessionMember(
+          { agentId: "main", sessionKey: revokedKey },
+          { identityId: "member", addedBy: "owner" },
+        );
+        await checkRecipient("member", true);
+      });
+    },
+  );
 });
 
 describe("session mutation authorization store caches", () => {
@@ -90,6 +177,7 @@ describe("session mutation authorization store caches", () => {
     "bounds single-target metadata work and refreshes every %s guard",
     async (method) => {
       await withOpenClawTestState({ scenario: "minimal" }, async () => {
+        setRuntimeConfigSnapshot({});
         const sessionKey = "agent:main:scalar-authorization";
         const entry = { sessionId: "scalar-authorization", updatedAt: 1 };
         await sessionAccessor.upsertSessionEntryCore({ agentId: "main", sessionKey }, entry);
@@ -156,6 +244,7 @@ describe("session mutation authorization store caches", () => {
         talk: { agentId: "ops" },
       };
       await state.writeConfig(cfg);
+      setRuntimeConfigSnapshot(cfg);
       for (const agentId of ["ops", "research"]) {
         await sessionAccessor.upsertSessionEntryCore(
           { agentId, sessionKey: "global" },
@@ -204,6 +293,7 @@ describe("session mutation authorization store caches", () => {
           talk: { agentId: "ops" },
         };
         await state.writeConfig(cfg);
+        setRuntimeConfigSnapshot(cfg);
         for (const agentId of ["ops", "research"]) {
           await sessionAccessor.upsertSessionEntryCore(
             { agentId, sessionKey: "global" },
@@ -252,6 +342,7 @@ describe("session mutation authorization store caches", () => {
 
   it("fails a patchMany request when a nested target is incognito", async () => {
     await withOpenClawTestState({ scenario: "minimal" }, async () => {
+      setRuntimeConfigSnapshot({});
       const sessionKey = "agent:main:dashboard:incognito-patch-many";
       await sessionAccessor.upsertSessionEntryCore(
         { agentId: "main", sessionKey },
@@ -272,6 +363,7 @@ describe("session mutation authorization store caches", () => {
 
   it("authorizes every patchMany target before dispatch", async () => {
     await withOpenClawTestState({ scenario: "minimal" }, async () => {
+      setRuntimeConfigSnapshot({});
       const sharedKey = "agent:main:batch-shared";
       const draftKey = "agent:main:batch-private";
       await sessionAccessor.upsertSessionEntryCore(
@@ -308,6 +400,7 @@ describe("session mutation authorization store caches", () => {
 
   it("reuses metadata for padded patchMany targets and fences replacements", async () => {
     await withOpenClawTestState({ scenario: "minimal" }, async () => {
+      setRuntimeConfigSnapshot({});
       const sessionKey = "agent:main:padded-batch-target";
       const prompt = "authorization does not need this prompt snapshot".repeat(512);
       await sessionAccessor.upsertSessionEntryCore(
@@ -351,6 +444,7 @@ describe("session mutation authorization store caches", () => {
 
   it("bounds malformed patchMany target discovery before schema validation", async () => {
     await withOpenClawTestState({ scenario: "minimal" }, async () => {
+      setRuntimeConfigSnapshot({});
       const hiddenKey = "agent:main:dashboard:incognito-over-limit";
       await sessionAccessor.upsertSessionEntryCore(
         { agentId: "main", sessionKey: hiddenKey },
@@ -370,6 +464,55 @@ describe("session mutation authorization store caches", () => {
 
       expect(result.error).toBeNull();
       expect(result.authorization).toBeDefined();
+    });
+  });
+
+  it("uses resident metadata when one request resolves multiple targets", async () => {
+    await withOpenClawTestState({ scenario: "minimal" }, async () => {
+      const cfg = {};
+      setRuntimeConfigSnapshot(cfg);
+      for (const [sessionKey, sessionId] of [
+        ["agent:main:cache-one", "session-cache-one"],
+        ["agent:main:cache-two", "session-cache-two"],
+      ] as const) {
+        await sessionAccessor.upsertSessionEntryCore(
+          { agentId: "main", sessionKey },
+          { sessionId, updatedAt: 1, visibility: "shared", category: "Cache Test" },
+        );
+      }
+
+      const context = requestContext(cfg);
+      await initializeSessionReadContext(context);
+      await getSessionRowProjection(context)!.prepareMembership();
+
+      const materializations = new Map<string, number>();
+      const originalListSessionEntries = sessionAccessor.listSessionEntriesCore;
+      vi.spyOn(sessionAccessor, "listSessionEntriesCore").mockImplementation((scope) => {
+        const entries = originalListSessionEntries(scope);
+        if (scope?.clone === false) {
+          const storePath = scope.storePath ?? "default";
+          materializations.set(storePath, (materializations.get(storePath) ?? 0) + 1);
+        }
+        return entries;
+      });
+      const discoverySpy = vi.spyOn(
+        targetsDiscovery,
+        "resolveExistingAgentSessionStoreTargetsSync",
+      );
+
+      expect(
+        (
+          await resolveSessionMutationAuthorizationAsync({
+            client: identifiedClient("viewer@example.com"),
+            method: "sessions.groups.delete",
+            requestParams: { name: "Cache Test" },
+            context,
+          })
+        ).error,
+      ).toBeNull();
+
+      expect([...materializations.values()]).toEqual([]);
+      expect(discoverySpy.mock.calls.filter((call) => call[1] === "main")).toHaveLength(0);
     });
   });
 });

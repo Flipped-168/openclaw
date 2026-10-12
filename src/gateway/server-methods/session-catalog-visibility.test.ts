@@ -1,6 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ErrorCodes } from "../../../packages/gateway-protocol/src/index.js";
 import { GATEWAY_OWNER_PROFILE_ID } from "../../../packages/gateway-protocol/src/schema/users.js";
+import {
+  clearRuntimeConfigSnapshot,
+  setRuntimeConfigSnapshot,
+} from "../../config/runtime-snapshot.js";
 import type { SessionEntry } from "../../config/sessions.js";
 import { createEmptyPluginRegistry } from "../../plugins/registry-empty.js";
 import { markPluginRegistryActive } from "../../plugins/registry-lifecycle.js";
@@ -57,6 +61,7 @@ afterEach(() => {
     projection.dispose();
   }
   projections.clear();
+  clearRuntimeConfigSnapshot();
 });
 
 function client(profileId: string, scopes = ["operator.read", "operator.write"]): TestClient {
@@ -111,6 +116,7 @@ async function call(
   contextOverrides: Record<string, unknown> = {},
 ) {
   const respond = vi.fn();
+  setRuntimeConfigSnapshot(config);
   const projection = createSessionRowProjectionFixture({
     cfg: config,
     store: Object.fromEntries(
