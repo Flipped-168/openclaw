@@ -39,13 +39,14 @@ const policyKey = "agent:main:authority-policy";
 
 it("prepares embedded tool authority without caller-thread SQL and refuses a closing owner", async () => {
   await withOpenClawTestState({ scenario: "minimal" }, async (state) => {
-    setRuntimeConfigSnapshot({});
+    const config = {};
+    setRuntimeConfigSnapshot(config);
     await upsertSessionEntryCore(
       { agentId: "main", sessionKey: policyKey },
       { sessionId: "policy", updatedAt: 1, sandboxMode: "off" },
     );
     const admission = prepareAgentRunAdmission({
-      cfg: {},
+      cfg: config,
       operationalRunInstance: createOperationalRunInstanceRef("worker-authority"),
       facts: {
         agentId: "main",
@@ -60,7 +61,7 @@ it("prepares embedded tool authority without caller-thread SQL and refuses a clo
         sessionKey: executionKey,
         runId: "worker-authority",
         agentId: "main",
-        config: {},
+        config,
         sessionFile: "/tmp/authority-worker.jsonl",
         workspaceDir: state.workspaceDir,
         provider: "openai",
@@ -99,6 +100,9 @@ it.each(["main", "policy", "borrowed"] as const)(
   "retains the %s-agent source while rereading changed sandbox policy before steering",
   async (policyAgent) => {
     await withOpenClawTestState({ scenario: "minimal" }, async (state) => {
+      const policyAgentId = policyAgent === "borrowed" ? "main" : policyAgent;
+      const classificationKey =
+        policyAgent === "borrowed" ? executionKey : `agent:${policyAgent}:authority-policy`;
       const config = {
         agents: {
           defaults: { sandbox: { mode: "all" as const } },
@@ -107,9 +111,6 @@ it.each(["main", "policy", "borrowed"] as const)(
         tools: { sandbox: { tools: { deny: ["exec"] } } },
       };
       setRuntimeConfigSnapshot(config);
-      const policyAgentId = policyAgent === "borrowed" ? "main" : policyAgent;
-      const classificationKey =
-        policyAgent === "borrowed" ? executionKey : `agent:${policyAgent}:authority-policy`;
       await upsertSessionEntryCore(
         { agentId: policyAgentId, sessionKey: classificationKey },
         { sessionId: "policy", updatedAt: 1, sandboxMode: "off" },

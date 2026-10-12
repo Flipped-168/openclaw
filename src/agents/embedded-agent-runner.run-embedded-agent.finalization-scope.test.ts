@@ -4,7 +4,10 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { makeTextToolResult } from "../../test/helpers/text-tool-result.js";
-import { setRuntimeConfigSnapshot } from "../config/runtime-snapshot.js";
+import {
+  clearRuntimeConfigSnapshot,
+  setRuntimeConfigSnapshot,
+} from "../config/runtime-snapshot.js";
 import { useSessionStoreTempDirs } from "../test-utils/session-state-cleanup.js";
 import type {
   EmbeddedRunAttemptParams,
@@ -63,7 +66,10 @@ beforeAll(async () => {
   } = await import("../plugin-sdk/session-transcript-runtime.js"));
 });
 
-afterEach(() => runAttempt.mockReset());
+afterEach(() => {
+  runAttempt.mockReset();
+  clearRuntimeConfigSnapshot();
+});
 
 describe("nested settled-turn finalization ownership", () => {
   it.each(

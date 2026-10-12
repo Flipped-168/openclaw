@@ -97,6 +97,7 @@ async function withProjectionScenario(
       messages: { visibleReplies: "message_tool" },
       session: { store: storePath },
     };
+    setRuntimeConfigSnapshot(cfg);
     const sessionKey = options.sessionKey ?? resolveMainSessionKey(cfg);
     const sessionId = "publication-boundary-session";
     await seedSessionStore(storePath, sessionKey, {

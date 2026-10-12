@@ -4,6 +4,10 @@ import path from "node:path";
 import { afterAll, afterEach, beforeAll, expect, it } from "vitest";
 import { setRuntimeConfigSnapshot } from "../../config/runtime-snapshot.js";
 import {
+  clearRuntimeConfigSnapshot,
+  setRuntimeConfigSnapshot,
+} from "../../config/runtime-snapshot.js";
+import {
   loadSessionEntry,
   persistSessionTranscriptTurn,
   replaceSessionEntry,
@@ -30,6 +34,7 @@ afterEach(() => {
   for (const operation of operations.splice(0)) {
     operation.complete();
   }
+  clearRuntimeConfigSnapshot();
 });
 beforeAll(() => {
   // openclaw-temp-dir: allow suite database root drains before removal

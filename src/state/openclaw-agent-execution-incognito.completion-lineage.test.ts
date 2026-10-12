@@ -25,6 +25,7 @@ let env: NodeJS.ProcessEnv;
 let actor: IncognitoAgentDatabaseExecution;
 
 beforeAll(async () => {
+  setRuntimeConfigSnapshot({});
   env = { OPENCLAW_STATE_DIR: tempDirs.make("incognito-completion-lineage-") };
   setRuntimeConfigSnapshot({});
   const opened = await captureOpenClawAgentDatabaseExecution({

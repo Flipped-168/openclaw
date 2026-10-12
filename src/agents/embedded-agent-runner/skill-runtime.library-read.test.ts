@@ -4,6 +4,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { useAutoCleanupTempDirTracker } from "../../../test/helpers/temp-dir.js";
 import { setRuntimeConfigSnapshot } from "../../config/runtime-snapshot.js";
 import {
+  clearRuntimeConfigSnapshot,
+  setRuntimeConfigSnapshot,
+} from "../../config/runtime-snapshot.js";
+import {
   upsertSessionEntryCore,
   loadSessionEntry,
 } from "../../config/sessions/session-accessor.js";
@@ -56,6 +60,7 @@ const temps = useAutoCleanupTempDirTracker((cleanup) =>
     closeOpenClawAgentDatabasesForTest();
     await closeOpenClawStateDatabaseAsync();
     closeOpenClawStateDatabaseForTest();
+    clearRuntimeConfigSnapshot();
     vi.unstubAllEnvs();
     expect(
       hasOpenClawAgentDatabaseAsyncResources(),

@@ -112,6 +112,7 @@ afterEach(async () => {
   await Promise.all([historyLane, targetDiscoveryLane].map((lane) => rotateDatabaseWorkers(lane)));
   clearRuntimeConfigSnapshot();
   vi.restoreAllMocks();
+  clearRuntimeConfigSnapshot();
   expect(observed.nativeWorker).not.toHaveBeenCalled();
 });
 

@@ -5,7 +5,10 @@ import {
   createAdmittedRunOperatorAuthority,
   type AdmittedRunOperatorAuthority,
 } from "../../agents/admitted-run-context.js";
-import { setRuntimeConfigSnapshot } from "../../config/runtime-snapshot.js";
+import {
+  clearRuntimeConfigSnapshot,
+  setRuntimeConfigSnapshot,
+} from "../../config/runtime-snapshot.js";
 import { createChatSendLateFollowupDisposition } from "../../gateway/server-methods/chat-send-late-followup.js";
 import { createChatSendLateReplyFinalizer } from "../../gateway/server-methods/chat-send-source-finalization.js";
 import { createGatewayRequestContext } from "../../gateway/server-request-context.js";
@@ -108,7 +111,6 @@ function createStalledRun(
     messageProvider: "telegram",
     senderId: "traveler",
   });
-  setRuntimeConfigSnapshot(followupRun.run.config);
   followupRun.originatingChannel = options.originatingChannel ?? "telegram";
   followupRun.originatingTo = options.originatingChannel ? undefined : "12345";
   followupRun.operatorAuthority = options.operatorAuthority;
@@ -116,6 +118,7 @@ function createStalledRun(
   followupRun.run.skillLibraryAuthoring = options.skillLibraryAuthoring;
   followupRun.images = [{ type: "image", data: "aW1n", mimeType: "image/png" }];
   followupRun.transcriptPrompt = "what is good at the hotel restaurant?";
+  setRuntimeConfigSnapshot(followupRun.run.config);
   const transcriptTarget = createSqliteTranscriptTarget({
     dir: followupRun.run.workspaceDir,
     sessionId: "stalled-session",
@@ -219,6 +222,7 @@ describe("runReplyAgent stalled turn continuation", () => {
     clearFollowupQueue(queueKey);
     clearFollowupDrainCallback(queueKey);
     replyRunTesting.resetReplyRunRegistry();
+    clearRuntimeConfigSnapshot();
   });
 
   it.each(["followup", "collect"] as const)(

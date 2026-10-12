@@ -1,10 +1,7 @@
 import assert from "node:assert/strict";
 import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  clearRuntimeConfigSnapshot,
-  setRuntimeConfigSnapshot,
-} from "../../config/runtime-snapshot.js";
+import { captureRuntimeConfigAsyncReader } from "../../config/io.js";
 import {
   deleteSessionEntryLifecycle,
   loadTranscriptEvents,
@@ -12,7 +9,6 @@ import {
 } from "../../config/sessions/session-accessor.js";
 import * as entryReader from "../../config/sessions/session-entry-read-runtime.js";
 import * as transcript from "../../config/sessions/transcript.js";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { rotateAgentEventLifecycleGeneration } from "../../infra/agent-events.js";
 import * as sessionDelivery from "../../infra/session-delivery-queue-storage.js";
 import * as admission from "../../infra/sqlite-worker-operation-admission.js";
@@ -39,7 +35,6 @@ import {
 } from "./media-generate-background.js";
 
 afterEach(() => {
-  clearRuntimeConfigSnapshot();
   vi.useRealTimers();
   vi.restoreAllMocks();
   resetGeneratedMediaTaskActivityForTests();
@@ -60,11 +55,10 @@ describe("undelivered generated media", () => {
         const sessionKey = "agent:main:media-retention";
         const sessionId = "original-media-requester";
         const storePath = state.statePath("agents", "main", "sessions", "sessions.json");
-        const cfg: OpenClawConfig = {
+        await state.writeConfig({
           agents: { ownership: "explicit", entries: { main: { workspace: state.workspaceDir } } },
-        };
-        await state.writeConfig(cfg);
-        setRuntimeConfigSnapshot(cfg);
+        });
+        await captureRuntimeConfigAsyncReader()();
         const scope = { agentId: "main", sessionKey, storePath };
         await replaceSessionEntry(scope, {
           sessionId,
@@ -201,9 +195,8 @@ describe("undelivered generated media", () => {
 describe("media admission after requester lookup", () => {
   it("detaches through the durable transcript while keeping each requesting peer's ownership", async () => {
     await withOpenClawTestState({ prefix: "media-shared-main-" }, async (state) => {
-      const cfg: OpenClawConfig = { agents: { ownership: "explicit", entries: { main: {} } } };
-      await state.writeConfig(cfg);
-      setRuntimeConfigSnapshot(cfg);
+      await state.writeConfig({ agents: { ownership: "explicit", entries: { main: {} } } });
+      await captureRuntimeConfigAsyncReader()();
       const requesterRunSessionKey = "agent:main:main";
       const firstKey = "agent:main:discord:default:direct:peer-a";
       const secondKey = "agent:main:discord:default:direct:peer-b";
@@ -292,9 +285,8 @@ describe("media admission after requester lookup", () => {
 
   it("keeps a missing requester inline while retaining native operation tracking", async () => {
     await withOpenClawTestState({ prefix: "media-missing-requester-" }, async (state) => {
-      const cfg: OpenClawConfig = { agents: { ownership: "explicit", entries: { main: {} } } };
-      await state.writeConfig(cfg);
-      setRuntimeConfigSnapshot(cfg);
+      await state.writeConfig({ agents: { ownership: "explicit", entries: { main: {} } } });
+      await captureRuntimeConfigAsyncReader()();
       const sessionKey = "agent:main:missing-requester";
       const schedule = vi.fn();
       const run = vi.fn(async (handle) => {
@@ -342,9 +334,8 @@ describe("media admission after requester lookup", () => {
     async (revocation) => {
       await withOpenClawTestState({ prefix: "media-admission-authority-" }, async (state) => {
         const sessionKey = "agent:main:media-admission";
-        const cfg: OpenClawConfig = { agents: { ownership: "explicit", entries: { main: {} } } };
-        await state.writeConfig(cfg);
-        setRuntimeConfigSnapshot(cfg);
+        await state.writeConfig({ agents: { ownership: "explicit", entries: { main: {} } } });
+        await captureRuntimeConfigAsyncReader()();
         const storePath = state.statePath("agents", "main", "sessions", "sessions.json");
         await replaceSessionEntry(
           { agentId: "main", storePath, sessionKey },

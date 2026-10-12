@@ -91,7 +91,7 @@ export type SessionEntryPlaceholder = Readonly<{ sessionId: string }>;
 
 export type SessionTranscriptInitializationPublication = {
   kind: "session-transcript-initialized";
-  transcriptPublication?: readonly import("./session-transcript-authority.js").SessionTranscriptAuthorityReceipt[];
+  transcriptPublication?: readonly import("./session-transcript-authority.types.js").SessionTranscriptAuthorityReceipt[];
   sessionKey: string;
   placeholder?: SessionEntryPlaceholder;
 };
@@ -145,7 +145,7 @@ export type SessionEntryProjectionFacts = {
 
 export type SessionEntryReplacementPublication = {
   kind: "session-entry-replacements";
-  transcriptPublication?: readonly import("./session-transcript-authority.js").SessionTranscriptAuthorityReceipt[];
+  transcriptPublication?: readonly import("./session-transcript-authority.types.js").SessionTranscriptAuthorityReceipt[];
   pendingArchiveRecovery: boolean;
   previous: Map<string, Pick<SessionEntry, "sessionId" | "lifecycleRevision">>;
   current: Map<string, SessionEntry>;
