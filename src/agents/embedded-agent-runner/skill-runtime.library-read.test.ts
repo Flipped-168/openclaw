@@ -2,7 +2,6 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { useAutoCleanupTempDirTracker } from "../../../test/helpers/temp-dir.js";
-import { setRuntimeConfigSnapshot } from "../../config/runtime-snapshot.js";
 import {
   clearRuntimeConfigSnapshot,
   setRuntimeConfigSnapshot,

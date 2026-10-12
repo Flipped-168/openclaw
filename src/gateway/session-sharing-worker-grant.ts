@@ -17,8 +17,8 @@ import {
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { runSqliteReadOperationSync } from "../infra/sqlite-schema-facts.js";
 import { readDatabasePathIdentitySync } from "../infra/sqlite-worker-identity.js";
+import { isIncognitoSessionKey } from "../routing/session-key.js";
 import { captureOpenClawAgentReadOnlyAdmission } from "../state/openclaw-agent-db-readonly-open.js";
-import { retainCachedOpenClawAgentDatabaseReadOnly } from "../state/openclaw-agent-db-readonly-scope.js";
 import { retainOpenClawAgentDatabaseReadOnly } from "../state/openclaw-agent-db-readonly.js";
 import { prepareOpenClawAgentDatabaseRegistrySnapshotRead } from "../state/openclaw-agent-db-registry-listing.js";
 import { matchesAgentDatabaseReadCandidatePath } from "../state/openclaw-agent-db-resources.js";
@@ -169,6 +169,40 @@ export async function prepareSessionSharingWorkerGrant(params: {
         });
         continue;
       }
+      if (!params.transactionFacts && !isIncognitoSessionKey(expected.sessionKey)) {
+        const readPrepared = () => {
+          const current = params.request.preparedTargetRead?.(
+            expected,
+            params.request.context.getRuntimeConfig(),
+          );
+          if (!current) {
+            throw changed(expected.sessionKey);
+          }
+          return current;
+        };
+        const assertSource = () => {
+          readPrepared();
+        };
+        assertSource();
+        sourceChecks.push(assertSource);
+        reads.push((profiles) => {
+          const current = readPrepared();
+          params.consume(
+            expected,
+            params.request.context.getRuntimeConfig(),
+            {
+              target: current.target,
+              storageTarget: current.storageTarget,
+              members: [],
+              isMember: (id) => current.members.includes(id),
+              assertCurrent: assertSource,
+            },
+            profiles,
+          );
+        });
+        continue;
+      }
+      // Native transaction facts and incognito retain their existing source contract.
       const route = expected.resolved ?? expected.absentTarget;
       const provided = params.transactionSource;
       if (
@@ -218,10 +252,7 @@ export async function prepareSessionSharingWorkerGrant(params: {
         {},
         createSessionStoreRegistryMutationFilter({ captured, preparedSources: [] }),
       );
-      const retained =
-        params.transactionFacts || typeof source.databaseIdentity === "symbol"
-          ? retainOpenClawAgentDatabaseReadOnly(source)
-          : retainCachedOpenClawAgentDatabaseReadOnly(source);
+      const retained = retainOpenClawAgentDatabaseReadOnly(source);
       if (!retained.found) {
         throw changed(expected.sessionKey);
       }

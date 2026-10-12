@@ -1,4 +1,5 @@
 import { ErrorCodes, errorShape } from "../../packages/gateway-protocol/src/index.js";
+import { releaseSessionSourceAuthorities } from "../config/sessions/session-source-authority.js";
 import { extractErrorCode, readErrorCause } from "../infra/errors.js";
 import { isIncognitoSessionKey } from "../routing/session-key.js";
 import { resolveRequestedSessionAgentId } from "./session-request-agent.js";
@@ -220,13 +221,31 @@ export async function resolveSessionMutationAuthorizationAsync(
       };
     };
     result.authorization.release = releaseHold();
-    result.authorization.retain = () => {
+    const retain = () => {
       if (!active) {
         throw new Error("Session authorization has been released");
       }
       references += 1;
       return releaseHold();
     };
+    result.authorization.retain = retain;
+    const prepareWorkerGrant = result.authorization.prepareWorkerGrant;
+    if (prepareWorkerGrant) {
+      result.authorization.prepareWorkerGrant = async (source) => {
+        const releaseAuthorization = retain();
+        try {
+          const grant = await prepareWorkerGrant(source);
+          return {
+            ...grant,
+            release: () =>
+              releaseSessionSourceAuthorities([{ release: releaseAuthorization }, grant]),
+          };
+        } catch (error) {
+          await releaseSessionSourceAuthorities([{ release: releaseAuthorization }], [error]);
+          throw error;
+        }
+      };
+    }
     return result;
   } catch (error) {
     release();

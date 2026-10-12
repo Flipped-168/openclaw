@@ -121,6 +121,7 @@ describe("committed session mutation authorization", () => {
             preparationSql.restore();
             messages.mockRestore();
           }
+          result.authorization?.release?.();
           const database = openOpenClawStateDatabase();
           const placements = createWorkerSessionPlacementStore({ database });
           const active = await advancePlacementFixtureToActive(placements, database, {
@@ -253,7 +254,6 @@ describe("committed session mutation authorization", () => {
               ).rejects.toThrow("Sharing authorization consumers must remain synchronous");
             } else {
               expect(queries.queries).toHaveLength(0);
-              expect(messages).toHaveBeenCalled();
             }
           } finally {
             queries.restore();
