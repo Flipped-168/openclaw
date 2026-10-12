@@ -90,17 +90,14 @@ async function withDemandFixture(
     const placements = new Map<string, WorkerSessionPlacementRecord>();
     const environments = new Map<string, Environment>();
     const placementReader = {
-      prepareRuntimeRefresh: async (sessionId: string) => {
-        const placement = placements.get(sessionId);
+      prepareSessionPlacement: async (sessionId: string) => {
         let released = false;
         return {
-          placement,
-          move: undefined,
-          pendingResult: undefined,
-          assertCurrent: () => {
-            if (released || placements.get(sessionId) !== placement) {
-              throw new Error("Worker placement observation is no longer current");
+          current: () => {
+            if (released) {
+              throw new Error("Worker placement reader was released");
             }
+            return placements.get(sessionId);
           },
           release: () => {
             released = true;

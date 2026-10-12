@@ -324,6 +324,7 @@ it.each(["child", "ancestor"])(
     const badDispatch = vi.fn(async () => {});
     const healthyDispatch = vi.fn(async () => {});
     const survivorDispatch = vi.fn(async () => {});
+    const capacityOwner = "read-failure-capacity";
     for (const [runId, start] of [
       ["bad", badDispatch],
       ["healthy", healthyDispatch],
@@ -333,7 +334,8 @@ it.each(["child", "ancestor"])(
         groupId: "read-failure",
         runId,
         maxConcurrent: 1,
-        activeRunIds: [],
+        // Keep these reservations queued while Stop prepares its session snapshot.
+        activeRunIds: [capacityOwner],
         start,
         onStartFailure: () => true,
       });
@@ -366,17 +368,19 @@ it.each(["child", "ancestor"])(
         reason: "killed",
       });
       expect(subagentRuns.get("healthy")?.endedReason).toBe("subagent-killed");
+      expect(releaseSwarmRun(capacityOwner)).toBe(true);
+      await vi.waitFor(() => expect(survivorDispatch).toHaveBeenCalledOnce());
       expect(healthyDispatch).not.toHaveBeenCalled();
       expect(
         badDispatch,
         "retained durable intent must withdraw its exact never-started reservation",
       ).not.toHaveBeenCalled();
-      await vi.waitFor(() => expect(survivorDispatch).toHaveBeenCalledOnce());
     } finally {
       unsubscribe();
       if (original) {
         writeFileSync(database.path, original);
       }
+      releaseSwarmRun(capacityOwner);
       releaseSwarmRun("bad");
       releaseSwarmRun("survivor");
     }

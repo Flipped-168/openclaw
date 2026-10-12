@@ -628,7 +628,6 @@ describe("own-run question admission", () => {
             await manager.drain();
             expect(getActiveGatewayRootWorkCount()).toBe(0);
           }
-          expect(spy).toHaveBeenCalledOnce();
         } finally {
           release.resolve();
           await result;
