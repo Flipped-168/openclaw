@@ -5,6 +5,7 @@ import { observeSqliteReadSql } from "../../test/helpers/sqlite-statement-execut
 import { useAutoCleanupTempDirTracker } from "../../test/helpers/temp-dir.js";
 import * as kyselySync from "../infra/kysely-sync.js";
 import * as nodeSqlite from "../infra/node-sqlite.js";
+import { admitSqliteSchema } from "../infra/sqlite-schema-facts.js";
 import {
   clearOpenClawAgentIntegrityVerification,
   clearOpenClawDatabaseQuarantine,
@@ -69,8 +70,11 @@ function failReceiptWrite(
   }
 }
 
-it("loads quarantine once and publishes record and clear without another read", () => {
+it("loads quarantine once while open and publishes record and clear without another read", () => {
   const fixture = createFixture();
+  using retained = nodeSqlite.openNodeSqliteDatabase(fixture.storePath, { readOnly: true });
+  admitSqliteSchema(retained);
+  fixture.record();
   const open = nodeSqlite.openNodeSqliteDatabase;
   const timeouts: unknown[] = [];
   const statements: string[] = [];
@@ -156,10 +160,12 @@ it("keeps quarantine decisions scoped to their recorded pathname", () => {
   });
 });
 
-it("validates a replaced quarantine store once without repeating its installation DDL", () => {
+it("validates a replaced quarantine store once while open without repeating installation DDL", () => {
   const fixture = createFixture();
   fs.renameSync(fixture.storePath, `${fixture.storePath}.original`);
   fs.copyFileSync(`${fixture.storePath}.original`, fixture.storePath);
+  using retained = nodeSqlite.openNodeSqliteDatabase(fixture.storePath, { readOnly: true });
+  admitSqliteSchema(retained);
   const open = nodeSqlite.openNodeSqliteDatabase;
   const statements: string[] = [];
   vi.spyOn(nodeSqlite, "openNodeSqliteDatabase").mockImplementation((...args) => {

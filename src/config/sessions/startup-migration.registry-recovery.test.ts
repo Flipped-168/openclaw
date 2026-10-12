@@ -13,6 +13,7 @@ import { readAgentDatabaseAdmissionRefusal } from "../../state/agent-database-ad
 import { reconstructAgentDeletionJournal } from "../../state/agent-deletion-journal-recovery.js";
 import { publishAgentDeletionJournalStatus } from "../../state/agent-deletion-journal-status.js";
 import { completeAgentDeletionJournalInDatabase } from "../../state/agent-deletion-journal.js";
+import { disposeOpenClawAgentDatabaseByPath } from "../../state/openclaw-agent-db-disposal.js";
 import { assertNoOpenClawAgentDatabaseLeasesReadOnly } from "../../state/openclaw-agent-db-lease.js";
 import { withOpenClawAgentDatabaseReadOnly } from "../../state/openclaw-agent-db-readonly.js";
 import { invalidateRegisteredAgentDatabasesMemo } from "../../state/openclaw-agent-db-registry-listing.js";
@@ -448,7 +449,7 @@ it("re-registers durable lineage children before configured-only runtime reads",
     }).path;
     await closeOpenClawAgentDatabasesAsync(stateDir);
     closeOpenClawAgentDatabasesForTest();
-    unregisterOpenClawAgentDatabase({ agentId: "codex", env, path: childDatabasePath });
+    await disposeOpenClawAgentDatabaseByPath(childDatabasePath, { env });
 
     expect(fs.existsSync(childDatabasePath)).toBe(true);
     expect(
