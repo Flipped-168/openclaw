@@ -129,6 +129,9 @@ it.skipIf(process.platform === "win32")(
     const record = (boundary: string, detail: unknown) => {
       const entry = { ms: Date.now() - startedAt, boundary, detail };
       console.info("required-native-boundary", JSON.stringify(entry));
+      process.stdout.write(
+        `required-native-boundary ${JSON.stringify({ ms: entry.ms, boundary })}\n`,
+      );
     };
     let onNativeRequest: ((marker: string) => void) | undefined;
     let nativeServer: ReturnType<typeof createServer> | undefined;
@@ -414,7 +417,6 @@ it.skipIf(process.platform === "win32")(
               record("chat-send-rejected", {
                 marker,
                 error: String(error),
-                commands: node.frames.slice(-8).map((frame) => frame.command),
                 gatewayLog: gateway.logs().slice(-12_000),
               });
               throw error;
