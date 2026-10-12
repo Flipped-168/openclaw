@@ -123,6 +123,7 @@ export async function finalizeAgentRunMedia(
           ...scope,
           readSource: source,
           workspace: authority.workspace,
+          prepareRead: predicate.prepareRead,
           assertCurrent: () => {
             assertCurrent();
             assertExistingDatabaseIdentity(source.path, databaseIdentity, source.databaseBirthtime);

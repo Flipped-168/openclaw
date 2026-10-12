@@ -341,6 +341,7 @@ export function retainPreparedSessionEntryPredicate(params: {
   let active = true;
   const canRefresh = () => active && predicate.state !== "changed";
   return {
+    prepareRead: retained.prepareRead,
     isCurrent: () =>
       canRefresh() && predicate.state === "current" && !retained.hasPendingPublication(),
     readRetainedEntry: () => predicate.entry,
