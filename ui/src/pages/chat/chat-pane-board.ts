@@ -32,7 +32,7 @@ import {
   resolveUiConversationIdentity,
 } from "../../lib/sessions/session-key.ts";
 import { showToast } from "../../lib/toast.ts";
-import { ensureBoardViewElement, renderBoardSessionSurface } from "./board-session-surface.ts";
+import { ensureBoardViewElement, renderBoardSessionSurface } from "./board-session-surface.tsx";
 import { ChatPaneHistory } from "./chat-pane-history.ts";
 import type { ResolvedBoardView } from "./chat-pane-shared.ts";
 import type { ChatPageHost } from "./chat-state-host.ts";
@@ -162,13 +162,13 @@ export abstract class ChatPaneBoard extends ChatPaneHistory {
       }
       // The session capability publishes the acknowledged metadata. Never turn
       // its value into a personal override or rearrange any active viewer.
-      showToast({ message: t("chat.sidePanel.defaultSaved"), anchor: this });
+      showToast({ message: t("chat.sidePanel.defaultSaved"), anchor: this.element });
     } catch (error) {
       if (isCurrent()) {
         this.publishHeaderError(error, scope.headerOutcomeOwner);
         showToast({
           message: t("chat.sidePanel.defaultSaveError", { error: formatUiError(error) }),
-          anchor: this,
+          anchor: this.element,
         });
       }
     } finally {

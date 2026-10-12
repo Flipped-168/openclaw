@@ -3,8 +3,8 @@ import type { ToolsEffectiveEntry, ToolsEffectiveResult } from "../../../api/typ
 import { pathForRoute } from "../../../app-route-paths.ts";
 import type { ApplicationNavigationOptions } from "../../../app/context.ts";
 import { icons } from "../../../components/icons.ts";
-import "@awesome.me/webawesome/dist/components/switch/switch.js";
 import { t } from "../../../i18n/index.ts";
+import "@awesome.me/webawesome/dist/components/switch/switch.js";
 import { registerMcpEnglish } from "../../../i18n/locales/en-mcp.ts";
 import type { McpServerSummary } from "../../../lib/config/mcp-servers.ts";
 import { formatUiExternalText } from "../../../lib/format-error.ts";
@@ -18,9 +18,10 @@ import {
   resolveToolOverrideState,
   resolveWebSearchToolOverrideState,
 } from "../../../lib/sessions/tool-overrides.ts";
+import { uploadsEnabled } from "../../../lib/uploads.ts";
 import "../../../components/tooltip.ts";
 import "../../../components/web-awesome.ts";
-import { uploadsEnabled } from "../../../lib/uploads.ts";
+import type { solidContent } from "../../../lit/solid-content.tsx";
 import type { ComposerLibraryProps } from "../composer-library-session.ts";
 import type { ChatAttachmentControlsProps } from "./chat-attachment-controls.types.ts";
 import {
@@ -87,7 +88,7 @@ export type ChatComposerCapabilityMenuProps = {
   skillsLoading: boolean;
   skillsError: boolean;
   library?: ComposerLibraryProps;
-  libraryDialog?: TemplateResult | typeof nothing;
+  libraryDialog?: TemplateResult | typeof nothing | ReturnType<typeof solidContent>;
   mcpServers: readonly McpServerSummary[];
   toolsEffectiveResult: ToolsEffectiveResult | null;
   toolsEffectiveLoading: boolean;
@@ -97,7 +98,7 @@ export type ChatComposerCapabilityMenuProps = {
   mutationBlockedReason: string | null;
   canAdmin: boolean;
   adminBlockedReason: string | null;
-  addServerDialog?: TemplateResult | typeof nothing;
+  addServerDialog?: TemplateResult | typeof nothing | ReturnType<typeof solidContent>;
   onLoadSkills: () => void;
   onPatchToolOverrides: (next: SessionToolOverrides | null) => void;
   onNavigate: (routeId: MenuRoute, options?: ApplicationNavigationOptions) => void;

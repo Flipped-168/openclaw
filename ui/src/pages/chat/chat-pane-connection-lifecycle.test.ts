@@ -13,10 +13,10 @@ import type { ChatHistoryResult } from "./chat-history-snapshot.ts";
 import { chatHistoryRequests } from "./chat-history-state.ts";
 import { applyChatAgentsList, loadChatHistory } from "./chat-history.ts";
 import { makeRequestMock } from "./chat-host.test-support.ts";
-import { ChatPaneBase } from "./chat-pane-base.ts";
 import {
   createSessionCapabilityFixture,
   createTestChatPane,
+  connectPaneTestView,
   type TestChatPane,
 } from "./chat-pane.test-support.ts";
 import type { ChatPageHost } from "./chat-state-host.ts";
@@ -93,20 +93,20 @@ describe("chat pane connection lifecycle", () => {
       render: () => unknown;
       readonly conversationPresented: boolean;
     };
-    lifecycle.render = () => null;
+    lifecycle.render = () => ({ layout: null });
     const shell = document.createElement("openclaw-app-shell");
     const presentations: Array<{ paneCount: number; conversationPresented: boolean }> = [];
     shell.addEventListener("openclaw-chat-pane-lifecycle-changed", () => {
       presentations.push({
-        paneCount: shell.querySelectorAll("openclaw-chat-pane").length,
+        paneCount: shell.querySelectorAll("openclaw-chat-runtime-test").length,
         conversationPresented: lifecycle.conversationPresented,
       });
     });
-    shell.append(pane);
-    ChatPaneBase.prototype.connectedCallback.call(lifecycle);
+    shell.append(pane.element);
+    connectPaneTestView(lifecycle);
     await lifecycle.updateComplete;
     pane.remove();
-    ChatPaneBase.prototype.disconnectedCallback.call(lifecycle);
+    lifecycle.disconnectedCallback();
 
     expect(presentations).toEqual([
       { paneCount: 1, conversationPresented: false },
@@ -123,16 +123,13 @@ describe("chat pane connection lifecycle", () => {
       sessions: {} as SessionCapability,
     });
     const lifecycle = pane as TestChatPane & {
-      performUpdate: () => void;
-      hasUpdated: boolean;
-      render: () => unknown;
+      render: () => { layout: null };
       requestUpdate: () => void;
     };
-    lifecycle.render = () => null;
-    ChatPaneBase.prototype.connectedCallback.call(lifecycle);
-    await vi.waitFor(() => expect(lifecycle.hasUpdated).toBe(true), { interval: 1, timeout: 50 });
+    lifecycle.render = () => ({ layout: null });
+    connectPaneTestView(lifecycle);
     await lifecycle.updateComplete;
-    const performUpdate = vi.spyOn(lifecycle, "performUpdate");
+    const performUpdate = vi.spyOn(lifecycle, "render");
     const cancelAnimationFrame = vi.spyOn(globalThis, "cancelAnimationFrame");
 
     state.chatStreamRenderFrame = 7;
@@ -156,19 +153,21 @@ describe("chat pane connection lifecycle", () => {
     lifecycle.requestUpdate();
     await Promise.resolve();
     Object.defineProperty(lifecycle, "isConnected", { configurable: true, value: false });
-    ChatPaneBase.prototype.disconnectedCallback.call(lifecycle);
+    lifecycle.disconnectedCallback();
     expect(removeVisibilityListener).toHaveBeenCalledWith("visibilitychange", expect.any(Function));
 
     Object.defineProperty(lifecycle, "isConnected", { configurable: true, value: true });
-    ChatPaneBase.prototype.connectedCallback.call(lifecycle);
-    await Promise.resolve();
+    connectPaneTestView(lifecycle);
+    await lifecycle.updateComplete;
+    // A disposed Solid root remounts once while hidden; measure the reveal independently.
+    const remountedReads = performUpdate.mock.calls.length;
     visibilityState = "visible";
     document.dispatchEvent(new Event("visibilitychange"));
     await lifecycle.updateComplete;
-    expect(performUpdate).toHaveBeenCalledTimes(2);
+    expect(performUpdate).toHaveBeenCalledTimes(remountedReads + 1);
 
     Object.defineProperty(lifecycle, "isConnected", { configurable: true, value: false });
-    ChatPaneBase.prototype.disconnectedCallback.call(lifecycle);
+    lifecycle.disconnectedCallback();
     addVisibilityListener.mockClear();
     lifecycle.requestUpdate();
     await lifecycle.updateComplete;

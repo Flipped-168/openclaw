@@ -2,7 +2,7 @@
 
 import { html, nothing, render } from "lit";
 import { AsyncDirective, directive } from "lit/async-directive.js";
-import { Show, createMemo, createSignal, onCleanup } from "solid-js";
+import { Show, createMemo, createSignal, onCleanup, onSettled } from "solid-js";
 import { describe, expect, it, vi } from "vitest";
 import { mountSolid } from "../test-helpers/mount-solid.ts";
 import { flush } from "../test-helpers/solid-settle.ts";
@@ -190,6 +190,35 @@ describe("Lit and Solid content boundaries", () => {
     flush();
     expect(view.container.querySelector("section > div")?.textContent).toBe("Updated");
     expect(view.container.querySelector("article")).toBeNull();
+  });
+
+  it("mounts and retires a delegated Solid default from a settled plugin callback", () => {
+    const disposed = vi.fn();
+    function DefaultView() {
+      onCleanup(disposed);
+      return <button>Default composer</button>;
+    }
+    function DelegatedView() {
+      return <LitContent value={html`${solidContent(DefaultView, {})}`} />;
+    }
+    function PluginSlot() {
+      let slot!: HTMLDivElement;
+      onSettled(() => {
+        render(solidContent(DelegatedView, {}), slot);
+        return () => render(nothing, slot);
+      });
+      return (
+        <div
+          ref={(element) => {
+            slot = element;
+          }}
+        />
+      );
+    }
+    const view = mountSolid(() => <PluginSlot />);
+    expect(view.getByRole("button", { name: "Default composer" })).toBeTruthy();
+    view.unmount();
+    expect(disposed).toHaveBeenCalledOnce();
   });
 
   it("updates a stable Solid component through Lit without resetting focus or local state", () => {

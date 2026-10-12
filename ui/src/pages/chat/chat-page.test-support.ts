@@ -1,4 +1,5 @@
 import { createRouter } from "@openclaw/uirouter";
+import { flush } from "solid-js";
 import { onTestFinished, vi } from "vitest";
 import type { GatewayBrowserClient, GatewayHelloOk } from "../../api/gateway.ts";
 import { createChatSubmissions } from "../../app/chat-submissions.ts";
@@ -9,7 +10,7 @@ import {
   createTestSessionCapability,
 } from "../../lib/sessions/session-capability.test-support.ts";
 import { createTestGatewayClient } from "../../test-helpers/gateway-client.ts";
-import type { ChatPage } from "./chat-page.ts";
+import { chatPageState, type ChatPage } from "./chat-page.ts";
 import type { ChatSplitLayout } from "./split-layout-types.ts";
 import { insertPane } from "./split-layout.ts";
 
@@ -148,7 +149,7 @@ export function createSplitLayout(sessionKey: string): ChatSplitLayout {
 }
 
 export function setLayout(page: ChatPage, layout: ChatSplitLayout | undefined) {
-  (page as unknown as { layout: ChatSplitLayout | undefined }).layout = layout;
+  (chatPageState(page) as unknown as { layout: ChatSplitLayout | undefined }).layout = layout;
 }
 
 export function stubMatchMedia(matches: boolean) {
@@ -188,4 +189,14 @@ export function createChatPageStateContext() {
     chatSubmissions: createChatSubmissions(),
     sessions: {},
   } as unknown as ApplicationContext;
+}
+
+/** Settles the bridge and the page-owned Solid projection without a browser timer. */
+export async function settleChatPage(page: ChatPage): Promise<void> {
+  const state = chatPageState(page);
+  await page.updateComplete;
+  await state.updateComplete;
+  flush();
+  await Promise.resolve();
+  flush();
 }

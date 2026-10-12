@@ -1,4 +1,5 @@
 import { html, LitElement } from "lit";
+import { createEffect, createSignal, onCleanup } from "solid-js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type {
   ControlUiHost,
@@ -12,7 +13,11 @@ import {
   PRESENTATION_CHANGED_EVENT,
   type PresentationBinding,
 } from "../lit/presentation-binding.ts";
+import { solidContent } from "../lit/solid-content.tsx";
 import { createApplicationContextProvider } from "../test-helpers/application-context.ts";
+import { mountSolid } from "../test-helpers/mount-solid.ts";
+import { flush } from "../test-helpers/solid-settle.ts";
+import { renderPluginTemplate } from "./control-ui-view.runtime.ts";
 import { renderPluginSurface } from "./control-ui-view.ts";
 import "./control-ui-view.solid.tsx";
 import "./control-ui-contributions.solid.tsx";
@@ -137,6 +142,42 @@ afterEach(() => {
 });
 
 describe("native UI built-in delegation", () => {
+  it("updates and disposes a native default from a plugin effect without nested flushes", () => {
+    const warning = vi.spyOn(console, "warn");
+    const disposed = vi.fn();
+    const [label, setLabel] = createSignal("First");
+    function DefaultView(props: { label: string }) {
+      const button = document.createElement("button");
+      createEffect(
+        () => props.label,
+        (value) => {
+          button.textContent = value;
+        },
+      );
+      onCleanup(disposed);
+      return button;
+    }
+    const view = mountSolid(() => {
+      const target = document.createElement("div");
+      createEffect(label, (value) =>
+        renderPluginTemplate(solidContent(DefaultView, { label: value }), target),
+      );
+      onCleanup(() => renderPluginTemplate(undefined, target));
+      return target;
+    });
+    const button = view.getByRole("button", { name: "First" });
+    setLabel("Second");
+    flush();
+    expect(view.getByRole("button", { name: "Second" })).toBe(button);
+    expect(
+      warning.mock.calls.flat().some((value) => String(value).includes("FLUSH_IN_EFFECT_CALLBACK")),
+    ).toBe(false);
+    view.unmount();
+    expect(button.isConnected).toBe(false);
+    expect(disposed).toHaveBeenCalledOnce();
+    warning.mockRestore();
+  });
+
   it("keeps host controls beside a replacement and removes them when the built-in returns", async () => {
     const replacement: ControlUiReplacement<"composer"> = {
       id: "composer",

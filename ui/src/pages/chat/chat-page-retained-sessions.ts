@@ -314,7 +314,7 @@ export class ChatPageRetainedSessions {
         this.previewFrame = undefined;
         if (
           this.preview === preview &&
-          (window.location.href !== preview.href || !preview.commit())
+          (!this.host.isConnected || window.location.href !== preview.href || !preview.commit())
         ) {
           this.cancelPreview();
         }

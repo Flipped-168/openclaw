@@ -1,9 +1,9 @@
-import { html, noChange, nothing, render, type AttributePart } from "lit";
+import { html, noChange, nothing, type AttributePart } from "lit";
 import { AsyncDirective } from "lit/async-directive.js";
 import { Directive, directive } from "lit/directive.js";
 import { guard } from "lit/directives/guard.js";
 import { until } from "lit/directives/until.js";
-import { createEffect, createRoot, createSignal, flush, onCleanup } from "solid-js";
+import { createEffect, createRoot, createSignal, onCleanup, runWithOwner } from "solid-js";
 import {
   isThemeAvatarHatId,
   type ThemeBranding,
@@ -18,6 +18,7 @@ import {
   type IdentityAvatarInput,
   type ResolvedIdentityAvatar,
 } from "../lib/identity-avatar.ts";
+import { flushLegacyContent, mountLitContent } from "../lit/solid-content.tsx";
 import { resolveAvatarHat } from "./agent-avatar-hat.ts";
 import "../styles/identity-avatar.css";
 import { icons } from "./icons.ts";
@@ -33,10 +34,11 @@ import { AVATAR_HAT_SPRITES } from "./theme-flair-sprites.ts";
 // The existing artwork helpers own the children of these named leaf containers.
 export function avatarArtwork(read: () => unknown) {
   let target: HTMLElement;
+  let mount: ReturnType<typeof mountLitContent> | undefined;
   createEffect(read, (template) => {
-    render(template, target);
+    mount = mountLitContent(template, target);
   });
-  onCleanup(() => render(nothing, target));
+  onCleanup(() => mount?.dispose());
   return (element: HTMLElement) => {
     target = element;
   };
@@ -107,18 +109,20 @@ class IdentityAvatarImageDirective extends AsyncDirective {
       } else {
         this.mount();
       }
-      flush();
+      flushLegacyContent();
     }
     return noChange;
   }
 
   private mount() {
-    createRoot((dispose) => {
-      this.dispose = dispose;
-      const [input, publish] = createSignal(this.input);
-      this.publish = publish;
-      bindIdentityAvatarImage(input)(this.image);
-    });
+    runWithOwner(null, () =>
+      createRoot((dispose) => {
+        this.dispose = dispose;
+        const [input, publish] = createSignal(this.input);
+        this.publish = publish;
+        bindIdentityAvatarImage(input)(this.image);
+      }),
+    );
   }
 
   override disconnected() {
@@ -140,7 +144,7 @@ class IdentityAvatarImageDirective extends AsyncDirective {
       };
     }
     this.mount();
-    flush();
+    flushLegacyContent();
   }
 }
 

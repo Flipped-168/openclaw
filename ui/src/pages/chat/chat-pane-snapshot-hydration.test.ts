@@ -34,7 +34,7 @@ import { clearStoredChatSnapshots } from "./session-snapshot-invalidation.ts";
 import { resolveChatSnapshotKey } from "./session-snapshot-key.ts";
 import { SessionSnapshotStore } from "./session-snapshot-store.ts";
 import { buildInitialChatSubmission } from "./user-message-content.ts";
-import "./chat-pane.ts";
+import "./chat-pane.tsx";
 
 const transcriptOnlyHello = gatewayHelloForMethods(["chat.history"]);
 

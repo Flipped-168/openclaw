@@ -1,4 +1,4 @@
-import { render } from "lit";
+import { createComponent, createSignal, flush } from "solid-js";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
 import type { SkillsLibraryListResult } from "../../../../packages/gateway-protocol/src/index.ts";
 import { createDeferred as deferred } from "../../../../test/helpers/promise.js";
@@ -9,11 +9,13 @@ import {
   createGatewayHarness,
   createTestSessionCapability,
 } from "../../lib/sessions/session-capability.test-support.ts";
+import { LitContent } from "../../lit/solid-content.tsx";
 import {
   gatewayHelloForMethods,
   sessionMutationGatewayHello,
 } from "../../test-helpers/gateway-methods.ts";
-import { ChatComposerCapabilityHost } from "./chat-composer-capability-host.ts";
+import { mountSolid } from "../../test-helpers/mount-solid.ts";
+import { ChatComposerCapabilityHost } from "./chat-composer-capability-host.tsx";
 import type { ChatPageHost } from "./chat-state-host.ts";
 
 function createContext(configSnapshot: ConfigSnapshot | null): ApplicationContext {
@@ -120,8 +122,10 @@ function createAddServerHarness(
   });
   const settled = deferred();
   let submitted = false;
+  const [revision, setRevision] = createSignal(0);
+  let paint = () => {};
   const host = new ChatComposerCapabilityHost(() => {
-    render(host.renderAddServerDialog(context, state, session), container);
+    paint();
     if (
       submitted &&
       !container.querySelector<HTMLButtonElement>('button[type="submit"]')?.disabled
@@ -129,6 +133,20 @@ function createAddServerHarness(
       settled.resolve();
     }
   });
+  mountSolid(
+    () =>
+      createComponent(LitContent, {
+        get value() {
+          revision();
+          return host.renderAddServerDialog(context, state, session);
+        },
+      }),
+    { container },
+  );
+  paint = () => {
+    setRevision((value) => value + 1);
+    flush();
+  };
   host.props(context, state, session, "main").onAddServer?.();
   return {
     container,
@@ -143,9 +161,11 @@ function createAddServerHarness(
         target: "docs-mcp",
       },
     ) {
+      const form = container.querySelector("form");
       container
         .querySelector<HTMLInputElement>(`input.settings-segmented__input[value="${scope}"]`)!
         .click();
+      expect(container.querySelector("form")).toBe(form);
       container.querySelector<HTMLInputElement>('[name="mcp-name"]')!.value = "docs";
       container.querySelector<HTMLSelectElement>('[name="mcp-transport"]')!.value =
         server.transport;
@@ -288,7 +308,13 @@ describe("ChatComposerCapabilityHost", () => {
     const state = createState();
     host.props(context, state, undefined, "main").onAddServer?.();
     const container = document.createElement("div");
-    render(host.renderAddServerDialog(context, state, undefined), container);
+    mountSolid(
+      () =>
+        createComponent(LitContent, {
+          value: host.renderAddServerDialog(context, state, undefined),
+        }),
+      { container },
+    );
     await Promise.resolve();
 
     const scope = container.querySelector<HTMLInputElement>(

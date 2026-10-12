@@ -1,19 +1,25 @@
-import { html, nothing, type TemplateResult } from "lit";
+import type { JSX } from "@solidjs/web";
+import { Show } from "solid-js";
 import type {
   SessionPlacementDiskSpace,
   SessionPlacementWorkerRuntimeInstall,
 } from "../../../../packages/gateway-protocol/src/schema/session-placement.ts";
 import type { ApplicationPlacementStartupStatus } from "../../app/session-placement-startup.ts";
-import { renderCopyButton } from "../../components/copy-button.ts";
 import { formatWebUiIconErrorText } from "../../components/error-presentation.ts";
-import { icons } from "../../components/icons.ts";
-import { t } from "../../i18n/index.ts";
+import { CopyButton } from "../../components/solid/copy-button.tsx";
+import { Icon } from "../../components/solid/icon.tsx";
 import { registerNewSessionSetupEnglish } from "../../i18n/locales/en-new-session-setup.ts";
 import { formatBytes } from "../../lib/agents/display.ts";
 import { findChatSubmissionMessage } from "../../lib/chat/history-message-identity.ts";
 import { clampText } from "../../lib/format.ts";
+import { t } from "../../lib/reactive/i18n.ts";
+import { LitContent } from "../../lit/solid-content.tsx";
+import {
+  ChatProviderReviewNotice,
+  type ChatProviderReviewController,
+} from "./chat-provider-review-controller.tsx";
 import type { SubagentRoster, SubagentRowContext } from "./chat-spawned-subagent.ts";
-import "./components/chat-child-attention.tsx";
+import { ChatChildAttention } from "./components/chat-child-attention.tsx";
 import { renderWorkspaceConflictNotice } from "./components/chat-workspace-conflict.ts";
 import type { ChatRunError } from "./run-lifecycle.ts";
 import type { ProviderPolicyNotice } from "./tool-stream-contract.ts";
@@ -41,7 +47,8 @@ type ChatComposerNoticesProps = ChatPlacementStartupNoticeProps &
     connected?: boolean;
     messages: readonly unknown[];
     providerPolicyNotice?: ProviderPolicyNotice | null;
-    providerReviewNotice?: TemplateResult | typeof nothing;
+    providerReview?: ChatProviderReviewController;
+    providerReviewRevision?: object;
     runError?: ChatRunError | null;
     onRefresh?: () => void;
     onDismissWorkspaceConflict?: () => void;
@@ -53,28 +60,28 @@ function renderStatusNotice(
   tone: "info" | "warn" | "danger",
   title: string,
   body: string,
-  tooltip: string | typeof nothing = nothing,
+  tooltip?: string,
 ) {
-  return html`
+  return (
     <div
-      class="chat-composer-neighbor-card chat-composer-neighbor-card--${tone} ${className}"
-      role=${tone === "danger" ? "alert" : "status"}
-      title=${tooltip}
+      class={`chat-composer-neighbor-card chat-composer-neighbor-card--${tone} ${className}`}
+      role={tone === "danger" ? "alert" : "status"}
+      title={tooltip}
     >
-      <span class="chat-composer-neighbor-card__icon" aria-hidden="true"
-        >${tone === "info" ? icons.info : icons.alertTriangle}</span
-      >
+      <span class="chat-composer-neighbor-card__icon" aria-hidden="true">
+        <Icon name={tone === "info" ? "info" : "alertTriangle"} />
+      </span>
       <div class="chat-composer-neighbor-card__copy">
-        <strong>${title}</strong>
-        <span>${body}</span>
+        <strong>{title}</strong>
+        <span>{body}</span>
       </div>
     </div>
-  `;
+  );
 }
 
 function renderDiskSpaceNotice(diskSpace: SessionPlacementDiskSpace | undefined) {
   if (!diskSpace || diskSpace.status === "ok") {
-    return nothing;
+    return undefined;
   }
   const usedPercent =
     diskSpace.totalBytes > 0
@@ -96,7 +103,7 @@ function renderWorkerRuntimeInstallNotice(
   install: SessionPlacementWorkerRuntimeInstall | undefined,
 ) {
   if (!install) {
-    return nothing;
+    return undefined;
   }
   const progress = {
     transferred: formatBytes(install.transferredBytes),
@@ -121,7 +128,7 @@ function renderWorkerRuntimeInstallNotice(
 
 function renderErrorNotice(
   error: string,
-  action: TemplateResult | typeof nothing = nothing,
+  action?: JSX.Element,
   displayError = formatWebUiIconErrorText(error),
   tone: "danger" | "warn" = "danger",
   summary?: string,
@@ -133,101 +140,139 @@ function renderErrorNotice(
   // Local action errors already contain recovery instructions; keep those visible.
   const title = summary ?? clampText(lines[0] ?? "");
   const hasDetails = lines.some((line) => line !== "" && line !== title);
-  return html`
+  return (
     <div
-      class="chat-composer-neighbor-card chat-composer-neighbor-card--${tone} chat-error"
-      role=${tone === "warn" ? "status" : "alert"}
+      class={`chat-composer-neighbor-card chat-composer-neighbor-card--${tone} chat-error`}
+      role={tone === "warn" ? "status" : "alert"}
     >
-      <span class="chat-composer-neighbor-card__icon" aria-hidden="true"
-        >${icons.alertTriangle}</span
+      <span class="chat-composer-neighbor-card__icon" aria-hidden="true">
+        <Icon name="alertTriangle" />
+      </span>
+      <Show
+        when={hasDetails}
+        fallback={
+          <span class="chat-error__content">
+            <strong>{title}</strong>
+            <CopyButton text={error} idleLabel={t("chat.copyError")} />
+          </span>
+        }
       >
-      ${
-        hasDetails
-          ? html`<details class="chat-error__content">
-              <summary class="chat-error__summary">
-                <strong>${title}</strong>
-                <span>${t("chat.details")}</span>
-                <span class="chat-error__chevron" aria-hidden="true">${icons.chevronDown}</span>
-                ${renderCopyButton(error, t("chat.copyError"))}
-              </summary>
-              <pre class="chat-error__diagnostic" tabindex="0" aria-label=${t("chat.errorDetails")}>
-${displayError}</pre>
-            </details>`
-          : html`<span class="chat-error__content"
-              ><strong>${title}</strong>${renderCopyButton(error, t("chat.copyError"))}</span
-            >`
-      }
-      ${action}
+        <details class="chat-error__content">
+          <summary class="chat-error__summary">
+            <strong>{title}</strong>
+            <span>{t("chat.details")}</span>
+            <span class="chat-error__chevron" aria-hidden="true">
+              <Icon name="chevronDown" />
+            </span>
+            <CopyButton text={error} idleLabel={t("chat.copyError")} />
+          </summary>
+          <pre class="chat-error__diagnostic" tabindex={0} aria-label={t("chat.errorDetails")}>
+            {displayError}
+          </pre>
+        </details>
+      </Show>
+      {action}
     </div>
-  `;
+  );
 }
 
 export function renderChatTopbarNotices(props: ChatViewNoticesProps) {
-  const dismiss = props.onDismissError
-    ? html`
-        <openclaw-tooltip .content=${t("chat.actions.dismissError")}>
-          <button
-            class="chat-error__dismiss"
-            type="button"
-            @click=${props.onDismissError}
-            aria-label=${t("chat.actions.dismissError")}
-          >
-            ${icons.x}
-          </button>
-        </openclaw-tooltip>
-      `
-    : nothing;
-  return html`
+  const dismiss = (
+    <Show when={props.onDismissError}>
+      <openclaw-tooltip prop:content={t("chat.actions.dismissError")}>
+        <button
+          class="chat-error__dismiss"
+          type="button"
+          onClick={() => props.onDismissError?.()}
+          aria-label={t("chat.actions.dismissError")}
+        >
+          <Icon name="x" />
+        </button>
+      </openclaw-tooltip>
+    </Show>
+  );
+  return (
     <div class="chat-topbar-notices">
-      ${renderDiskSpaceNotice(props.diskSpace)}
-      ${renderWorkerRuntimeInstallNotice(props.workerRuntimeInstall)}
-      ${props.error ? renderErrorNotice(props.error, dismiss) : nothing}
+      {renderDiskSpaceNotice(props.diskSpace)}
+      {renderWorkerRuntimeInstallNotice(props.workerRuntimeInstall)}
+      <Show when={props.error}>{(error) => <>{renderErrorNotice(error(), dismiss)}</>}</Show>
     </div>
-  `;
+  );
 }
 
 export function renderChatComposerNotices(props: ChatComposerNoticesProps) {
-  const contention = props.runError?.kind === "state_contention";
-  const refresh = props.onRefresh
-    ? html`<button
+  const contention = () => props.runError?.kind === "state_contention";
+  const refresh = (
+    <Show when={props.onRefresh}>
+      <button
         class="btn btn--sm chat-error__refresh"
         type="button"
-        ?disabled=${!props.connected}
-        @click=${props.onRefresh}
+        disabled={!props.connected}
+        onClick={() => props.onRefresh?.()}
       >
-        ${t(contention ? "chat.checkStatus" : "common.refresh")}
-      </button>`
-    : nothing;
-  return html`
-    ${
-      // Seeded rows can name children the gateway no longer links; wait for its child read.
-      props.subagentParentKey && props.subagentSessionsRead
-        ? html`<openclaw-chat-child-attention
-            .sessionKey=${props.subagentParentKey}
-            .sessions=${props.subagentSessions ?? []}
-            .onOpenSubagent=${props.onOpenSubagent}
-            .onOpenSession=${props.onSessionSelect}
-          ></openclaw-chat-child-attention>`
-        : nothing
-    }
-    ${props.providerReviewNotice ?? nothing}
-    ${renderProviderPolicyNotice(props.providerPolicyNotice)}
-    ${props.runError ? renderErrorNotice(props.runError.summary, refresh, undefined, contention ? "warn" : "danger", props.runError.kind === "stop" ? undefined : t(contention ? "chat.errorBusySummary" : props.runError.kind === "auth_refresh" ? "chat.errorSignInSummary" : "chat.errorReplySummary")) : nothing}
-    ${renderWorkspaceConflictNotice({
-      conflict: props.workspaceConflict ?? undefined,
-      onDismiss: props.onDismissWorkspaceConflict,
-    })}
-    ${renderPlacementStartupError(
-      props.placementStartup,
-      props.messages,
-      props.onRetrySessionPlacementStartup,
-    )}
-  `;
+        {t(contention() ? "chat.checkStatus" : "common.refresh")}
+      </button>
+    </Show>
+  );
+  return (
+    <>
+      {/* Seeded rows can name children the gateway no longer links; wait for its child read. */}
+      <Show when={props.subagentParentKey && props.subagentSessionsRead}>
+        <ChatChildAttention
+          sessionKey={props.subagentParentKey ?? ""}
+          sessions={props.subagentSessions ?? []}
+          onOpenSubagent={props.onOpenSubagent}
+          onOpenSession={props.onSessionSelect}
+        />
+      </Show>
+      <Show when={props.providerReview}>
+        {(controller) => (
+          <ChatProviderReviewNotice
+            controller={controller()}
+            revision={props.providerReviewRevision}
+          />
+        )}
+      </Show>
+      {renderProviderPolicyNotice(props.providerPolicyNotice)}
+      <Show when={props.runError}>
+        {(error) => (
+          <>
+            {renderErrorNotice(
+              error().summary,
+              refresh,
+              undefined,
+              contention() ? "warn" : "danger",
+              error().kind === "stop"
+                ? undefined
+                : t(
+                    contention()
+                      ? "chat.errorBusySummary"
+                      : error().kind === "auth_refresh"
+                        ? "chat.errorSignInSummary"
+                        : "chat.errorReplySummary",
+                  ),
+            )}
+          </>
+        )}
+      </Show>
+      <LitContent
+        value={renderWorkspaceConflictNotice({
+          conflict: props.workspaceConflict ?? undefined,
+          onDismiss: props.onDismissWorkspaceConflict,
+        })}
+      />
+      {renderPlacementStartupError(
+        props.placementStartup,
+        props.messages,
+        props.onRetrySessionPlacementStartup,
+      )}
+    </>
+  );
 }
 
 function renderProviderPolicyNotice(notice: ProviderPolicyNotice | null | undefined) {
   if (!notice) {
-    return nothing;
+    return undefined;
   }
   const blocked = notice.state === "blocked" || notice.state === "unavailable";
   const model = notice.fallbackModel ?? notice.model;
@@ -250,7 +295,7 @@ function renderPlacementStartupError(
   onRetry?: () => void,
 ) {
   if (status?.phase !== "failed") {
-    return nothing;
+    return undefined;
   }
   const checking = status.action === "check-delivery";
   const statusError = status.error ?? t("newSession.createFailed");
@@ -267,19 +312,19 @@ function renderPlacementStartupError(
   // banner action reachable when transcript deduplication hides the row.
   const hasInlineTurn =
     status.initialTurn && !findChatSubmissionMessage(messages, status.initialTurn.sendRunId, true);
-  const action = status.discardAndReload
-    ? html`<button
-        class="btn btn--sm danger chat-error__discard"
-        type="button"
-        @click=${status.discardAndReload}
-      >
-        ${t("newSession.discardUnsavedAndReload")}
-      </button>`
-    : status.retryable && onRetry && !hasInlineTurn
-      ? html`<button class="btn btn--sm" type="button" @click=${onRetry}>
-          ${t(checking ? "chat.queue.checkDelivery" : "common.retry")}
-        </button>`
-      : nothing;
+  const action = status.discardAndReload ? (
+    <button
+      class="btn btn--sm danger chat-error__discard"
+      type="button"
+      onClick={status.discardAndReload}
+    >
+      {t("newSession.discardUnsavedAndReload")}
+    </button>
+  ) : status.retryable && onRetry && !hasInlineTurn ? (
+    <button class="btn btn--sm" type="button" onClick={onRetry}>
+      {t(checking ? "chat.queue.checkDelivery" : "common.retry")}
+    </button>
+  ) : undefined;
   return renderErrorNotice(
     error,
     action,

@@ -18,7 +18,7 @@ import type { SessionCapability } from "../../lib/sessions/index.ts";
 import { createMockBoardProvider } from "../../test-helpers/board-provider.ts";
 import { sessionMutationGatewayHello } from "../../test-helpers/gateway-methods.ts";
 import { createStorageMock } from "../../test-helpers/storage.ts";
-import "./chat-pane.ts";
+import "./chat-pane.tsx";
 import type { ResolvedBoardView } from "./chat-pane-shared.ts";
 import { createInitialChatRealtimeState } from "./chat-realtime.ts";
 import type { ChatPageHost } from "./chat-state-host.ts";

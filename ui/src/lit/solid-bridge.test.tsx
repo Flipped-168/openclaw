@@ -276,6 +276,41 @@ it("runs nested bridge effects after the parent render scope", () => {
   expect(view.container.querySelector("output")?.textContent).toBe("ready");
 });
 
+it("starts connection-gated Solid effects when a detached parent is attached without remounting", () => {
+  const setup = vi.fn();
+  const ConnectedBridge = defineSolidBridge<{ label: string }>(
+    "openclaw-solid-connected-effect-test",
+    (props, host) => {
+      setup();
+      const [label, setLabel] = createSignal("waiting");
+      createEffect(
+        () => [props.label],
+        ([value]) => {
+          if (host.isConnected) {
+            setLabel(value);
+          }
+        },
+      );
+      return <output>{label()}</output>;
+    },
+    { properties: { label: { default: "connected" } } },
+  );
+  const container = document.createElement("div");
+  const view = mountSolid(() => <ConnectedBridge />, { container });
+  expect(container.textContent).toBe("waiting");
+  document.body.append(container);
+  flush();
+  expect(container.textContent).toBe("connected");
+  const output = container.querySelector("output");
+  const other = document.createElement("section");
+  document.body.append(other);
+  other.append(container);
+  flush();
+  expect(container.querySelector("output")).toBe(output);
+  expect(setup).toHaveBeenCalledTimes(1);
+  view.unmount();
+});
+
 it("uses a single Solid-owned host and preserves reactive props, children, events, and disposal", async () => {
   const [label, setLabel] = createSignal("solid");
   const action = vi.fn();

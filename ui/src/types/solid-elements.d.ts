@@ -59,8 +59,8 @@ declare module "@solidjs/web" {
         "prop:splitRatio": number;
         "prop:minRatio": number;
         "prop:maxRatio": number;
-        "prop:measureRatio": () => number;
-        "prop:measureSize": () => number;
+        "prop:measureRatio"?: () => number;
+        "prop:measureSize"?: () => number;
         onResize: (event: CustomEvent<{ splitRatio: number }>) => void;
         "onResize-end": () => void;
       };

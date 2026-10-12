@@ -1,13 +1,13 @@
 import { asNullableRecord as asRecord } from "@openclaw/normalization-core/record-coerce";
-import { html, nothing } from "lit";
+import { createMemo, Show } from "solid-js";
 import type { GatewayBrowserClient } from "../../api/gateway.ts";
 import type { ConfigSnapshot, GatewaySessionRow, ToolsEffectiveResult } from "../../api/types.ts";
 import type { ApplicationContext } from "../../app/context.ts";
 import { readGatewayOperatorAccess } from "../../app/operator-access.ts";
-import { renderMcpServerForm, type McpServerForm } from "../../components/mcp-server-form.ts";
+import type { McpServerForm } from "../../components/mcp-server-form.ts";
+import { McpServersForm } from "../../components/mcp-servers-form.tsx";
+import { SettingsSegmented } from "../../components/solid/settings-ui.tsx";
 import "../../components/modal-dialog.ts";
-import { renderSettingsSegmented } from "../../components/settings-ui.ts";
-import { t } from "../../i18n/index.ts";
 import { registerMcpEnglish } from "../../i18n/locales/en-mcp.ts";
 import {
   buildToolsEffectiveRequestKey,
@@ -22,6 +22,7 @@ import {
 } from "../../lib/config/mcp-servers.ts";
 import { formatUiError, formatUiExternalText } from "../../lib/format-error.ts";
 import { canCallGatewayMethod, isGatewayMethodAdvertised } from "../../lib/gateway-methods.ts";
+import { t } from "../../lib/reactive/i18n.ts";
 import { readSessionMethodAccess } from "../../lib/session-method-access.ts";
 import {
   scopedAgentListParamsForSession,
@@ -30,6 +31,7 @@ import {
 import type { SessionToolOverrides } from "../../lib/sessions/patch.ts";
 import { areUiSessionKeysEquivalent } from "../../lib/sessions/session-key.ts";
 import { nextBooleanToolOverrides } from "../../lib/sessions/tool-overrides.ts";
+import { LitContent, solidContent } from "../../lit/solid-content.tsx";
 import { renderLibraryPinRead } from "../skills/library-detail.ts";
 import { refreshCurrentChatSessionList } from "./chat-session.ts";
 import { patchChatSessionSettings } from "./chat-settings-patches.ts";
@@ -373,73 +375,54 @@ export class ChatComposerCapabilityHost {
     state: ChatPageHost,
     session: GatewaySessionRow | undefined,
   ) {
-    if (!this.addDialogOpen) {
-      return nothing;
-    }
-    const scopeBlockedReason = this.addServerBlockedReason(context, state, session, "everywhere");
-    const submitBlockedReason = this.addServerBlockedReason(context, state, session, this.addScope);
-    const title = t("chat.composer.menu.addMcpServerTitle");
-    const description = t("chat.composer.menu.addMcpServerDescription");
-    const scopeHint = t(
-      this.addScope === "session"
-        ? "chat.composer.menu.scopeSessionHint"
-        : "chat.composer.menu.scopeEverywhereHint",
-    );
-    return html`
-      <openclaw-modal-dialog
-        label=${title}
-        description=${description}
-        @modal-cancel=${(event: Event) => {
-          if (this.addBusy) {
-            event.preventDefault();
-            return;
-          }
-          this.closeAddDialog();
-        }}
-      >
-        <div class="exec-approval-card mcp-server-dialog">
-          <div class="exec-approval-header">
-            <div>
-              <div class="exec-approval-title">${title}</div>
-              <div class="exec-approval-sub">${description}</div>
-            </div>
-          </div>
-          <div class="mcp-server-dialog__scope">
-            <span>${t("chat.composer.menu.scopeLabel")}</span>
-            ${renderSettingsSegmented({
-              value: this.addScope,
-              options: [
-                { value: "session", label: t("chat.composer.menu.scopeSession") },
-                { value: "everywhere", label: t("chat.composer.menu.scopeEverywhere") },
-              ],
-              ariaLabel: t("chat.composer.menu.scopeLabel"),
-              disabled: this.addBusy || scopeBlockedReason !== null,
-              onChange: (scope) => {
-                this.addScope = scope;
-                this.addError = null;
-                this.notify();
-              },
-            })}
-            <span class="mcp-server-dialog__scope-hint">${scopeHint}</span>
-          </div>
-          ${renderMcpServerForm({
-            busy: this.addBusy,
-            disabled: submitBlockedReason !== null,
-            blockedReason: submitBlockedReason,
-            autofocus: true,
-            onSubmit: (form) => void this.submitAddServer(context, state, session, form),
-            onCancel: () => this.closeAddDialog(),
-          })}
-          ${
-            this.addError
-              ? html`<div class="mcp-server-message mcp-server-message--error" role="alert">
-                  ${this.addError}
-                </div>`
-              : nothing
-          }
-        </div>
-      </openclaw-modal-dialog>
-    `;
+    return solidContent(ChatComposerCapabilityDialogs, {
+      read: () => this.dialogView(context, state, session),
+      revision: {},
+    });
+  }
+
+  dialogView(
+    context: ApplicationContext,
+    state: ChatPageHost,
+    session: GatewaySessionRow | undefined,
+  ) {
+    return {
+      open: this.addDialogOpen,
+      busy: this.addBusy,
+      scope: this.addScope,
+      error: this.addError,
+      scopeBlockedReason: this.addServerBlockedReason(context, state, session, "everywhere"),
+      submitBlockedReason: this.addServerBlockedReason(context, state, session, this.addScope),
+      onCancel: (event?: Event) => {
+        if (this.addBusy) {
+          event?.preventDefault();
+          return;
+        }
+        this.closeAddDialog();
+      },
+      onScope: (scope: ComposerMcpServerScope) => {
+        this.addScope = scope;
+        this.addError = null;
+        this.notify();
+      },
+      onSubmit: (form: McpServerForm) => {
+        void this.submitAddServer(context, state, session, form);
+      },
+      libraryContent: this.library.read
+        ? renderLibraryPinRead({
+            read: this.library.read,
+            file: this.library.selectedFile,
+            onFile: (file) => {
+              this.library.selectedFile = file;
+              this.notify();
+            },
+            onClose: () => {
+              this.library.closeRead();
+              this.notify();
+            },
+          })
+        : null,
+    };
   }
 
   props(
@@ -488,7 +471,7 @@ export class ChatComposerCapabilityHost {
     const gatewayAvailable = state.connected && Boolean(state.client);
     const effectiveToolsAvailable =
       isGatewayMethodAdvertised(context.gateway.snapshot, "tools.effective") === true;
-    // Start before projecting loading state; a notification during Lit render
+    // Start before projecting loading state; a notification during render
     // cannot schedule the second render that the old menu callback relied on.
     if (effectiveToolsAvailable && toolAccessOpen) {
       this.loadEffectiveTools(context, state, agentId);
@@ -568,20 +551,6 @@ export class ChatComposerCapabilityHost {
           }
         },
       },
-      libraryDialog: this.library.read
-        ? renderLibraryPinRead({
-            read: this.library.read,
-            file: this.library.selectedFile,
-            onFile: (file) => {
-              this.library.selectedFile = file;
-              this.notify();
-            },
-            onClose: () => {
-              this.library.closeRead();
-              this.notify();
-            },
-          })
-        : nothing,
       onLoadSkills: () => {
         if (!current()) {
           return;
@@ -619,4 +588,70 @@ export class ChatComposerCapabilityHost {
         : {}),
     };
   }
+}
+
+function ChatComposerCapabilityDialogs(props: {
+  read: () => ReturnType<ChatComposerCapabilityHost["dialogView"]>;
+  revision: object;
+}) {
+  const view = createMemo(() => {
+    void props.revision;
+    return props.read();
+  });
+  return (
+    <>
+      <Show when={view().open}>
+        <openclaw-modal-dialog
+          label={t("chat.composer.menu.addMcpServerTitle")}
+          description={t("chat.composer.menu.addMcpServerDescription")}
+          onModal-cancel={(event) => view().onCancel(event)}
+        >
+          <div class="exec-approval-card mcp-server-dialog">
+            <div class="exec-approval-header">
+              <div>
+                <div class="exec-approval-title">{t("chat.composer.menu.addMcpServerTitle")}</div>
+                <div class="exec-approval-sub">
+                  {t("chat.composer.menu.addMcpServerDescription")}
+                </div>
+              </div>
+            </div>
+            <div class="mcp-server-dialog__scope">
+              <span>{t("chat.composer.menu.scopeLabel")}</span>
+              <SettingsSegmented<ComposerMcpServerScope>
+                value={view().scope}
+                options={[
+                  { value: "session", label: t("chat.composer.menu.scopeSession") },
+                  { value: "everywhere", label: t("chat.composer.menu.scopeEverywhere") },
+                ]}
+                ariaLabel={t("chat.composer.menu.scopeLabel")}
+                disabled={view().busy || view().scopeBlockedReason !== null}
+                onChange={(scope) => view().onScope(scope)}
+              />
+              <span class="mcp-server-dialog__scope-hint">
+                {t(
+                  view().scope === "session"
+                    ? "chat.composer.menu.scopeSessionHint"
+                    : "chat.composer.menu.scopeEverywhereHint",
+                )}
+              </span>
+            </div>
+            <McpServersForm
+              busy={view().busy}
+              disabled={view().submitBlockedReason !== null}
+              blockedReason={view().submitBlockedReason}
+              autofocus
+              onSubmit={(form) => view().onSubmit(form)}
+              onCancel={() => view().onCancel()}
+            />
+            {view().error ? (
+              <div class="mcp-server-message mcp-server-message--error" role="alert">
+                {view().error}
+              </div>
+            ) : null}
+          </div>
+        </openclaw-modal-dialog>
+      </Show>
+      <LitContent value={view().libraryContent} />
+    </>
+  );
 }

@@ -32,7 +32,7 @@ import * as snapshotDatabase from "./session-snapshot-database.ts";
 import { resolveChatSnapshotKey } from "./session-snapshot-key.ts";
 import { markPrewarmedChatSnapshotReady, prewarmChatSnapshot } from "./session-snapshot-prewarm.ts";
 import { SessionSnapshotStore } from "./session-snapshot-store.ts";
-import "./chat-pane.ts";
+import "./chat-pane.tsx";
 
 const sessionKey = "agent:main:warm-startup";
 const stored: ChatSessionSnapshot = {

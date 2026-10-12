@@ -29,7 +29,7 @@ import {
 import { clearStoredChatSnapshots } from "./session-snapshot-invalidation.ts";
 import { resolveChatSnapshotKey } from "./session-snapshot-key.ts";
 import { SessionSnapshotStore } from "./session-snapshot-store.ts";
-import "./chat-pane.ts";
+import "./chat-pane.tsx";
 
 describe("chat pane warm reload", () => {
   afterEach(resetTranscriptTestDom);

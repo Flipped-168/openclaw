@@ -1,10 +1,11 @@
-import { render as renderSolid, type JSX } from "@solidjs/web";
+import { insert, render as renderSolid, type JSX } from "@solidjs/web";
 import { nothing, render as renderLit } from "lit";
 import { AsyncDirective, directive } from "lit/async-directive.js";
 import type { Part } from "lit/directive.js";
 import {
   createComponent,
   createContext,
+  createRoot,
   createEffect,
   createSignal,
   flush,
@@ -32,6 +33,14 @@ type LitContentMount = {
 };
 
 const litContentMounts = new WeakMap<HTMLElement | DocumentFragment, LitContentMount>();
+let renderingSolidLegacyContent = false;
+
+/** A top-level Lit caller settles now; nested Solid work settles with its owner. */
+export function flushLegacyContent(): void {
+  if (!getOwner() && !renderingSolidLegacyContent) {
+    flush();
+  }
+}
 
 /** One retained Lit range owns each legacy content container. */
 export function mountLitContent(
@@ -47,10 +56,18 @@ export function mountLitContent(
   const end = document.createComment("lit-content");
   container.append(end);
   const renderOptions = { ...options, renderBefore: end };
-  // Legacy directives own their signal writes, independently of the calling Solid effect.
-  const commit = (next: unknown) =>
-    runWithOwner(null, () => renderLit(next, container, renderOptions));
-  const part = commit(value);
+  // Legacy directives own their writes. Carry the synchronous handoff across the
+  // detached owner so nested Solid content does not start a reentrant flush.
+  const commit = <T,>(run: () => T): T => {
+    const previous = renderingSolidLegacyContent;
+    renderingSolidLegacyContent = true;
+    try {
+      return runWithOwner(null, run);
+    } finally {
+      renderingSolidLegacyContent = previous;
+    }
+  };
+  const part = commit(() => renderLit(value, container, renderOptions));
   let ownedNodes: Node[] = [];
   const readOwnedNodes = (): Node[] => {
     const start = part.startNode;
@@ -67,7 +84,7 @@ export function mountLitContent(
   let disposed = false;
   const mount: LitContentMount = {
     update(next) {
-      commit(next);
+      commit(() => renderLit(next, container, renderOptions));
       ownedNodes = readOwnedNodes();
     },
     nodes() {
@@ -78,14 +95,14 @@ export function mountLitContent(
       nodes.push(end);
       return nodes;
     },
-    setConnected: (connected) => runWithOwner(null, () => part.setConnected(connected)),
+    setConnected: (connected) => commit(() => part.setConnected(connected)),
     dispose() {
       if (disposed) {
         return;
       }
       disposed = true;
       const nodes = readOwnedNodes();
-      runWithOwner(null, () => part.setConnected(false));
+      commit(() => part.setConnected(false));
       // Solid can remove the markers first. Retire remaining template roots
       // directly instead of rendering into an already-detached ChildPart.
       for (const node of nodes) {
@@ -163,9 +180,7 @@ class SolidContent extends AsyncDirective {
     }
     if (this.dispose) {
       this.updateProps?.(props);
-      if (!getOwner()) {
-        flush();
-      }
+      flushLegacyContent();
     } else {
       this.mount();
     }
@@ -178,23 +193,32 @@ class SolidContent extends AsyncDirective {
     if (!component || !element) {
       return;
     }
-    // This directive owns the root, independently of a surrounding Solid effect.
+    // The directive owns this root even when a plugin delegates from a Solid effect.
+    const withinOwner = Boolean(getOwner()) || renderingSolidLegacyContent;
+    const view = () => {
+      const [props, setProps] = createSignal(this.props, { ownedWrite: true });
+      this.updateProps = (next) => setProps(() => next);
+      const liveProps = new Proxy<Record<string, unknown>>(
+        {},
+        {
+          get: (_target, key: string) => props()[key],
+          has: (_target, key: string) => key in props(),
+          ownKeys: () => Reflect.ownKeys(props()),
+          getOwnPropertyDescriptor: () => ({ enumerable: true, configurable: true }),
+        },
+      );
+      return createComponent(component, liveProps);
+    };
     this.dispose = runWithOwner(null, () =>
-      renderSolid(() => {
-        // A legacy host can publish props during its parent's Solid commit.
-        const [props, setProps] = createSignal(this.props, { ownedWrite: true });
-        this.updateProps = (next) => setProps(() => next);
-        const liveProps = new Proxy<Record<string, unknown>>(
-          {},
-          {
-            get: (_target, key: string) => props()[key],
-            has: (_target, key: string) => key in props(),
-            ownKeys: () => Reflect.ownKeys(props()),
-            getOwnPropertyDescriptor: () => ({ enumerable: true, configurable: true }),
-          },
-        );
-        return createComponent(component, liveProps);
-      }, element),
+      withinOwner
+        ? createRoot((dispose) => {
+            insert(element, view());
+            return () => {
+              dispose();
+              element.replaceChildren();
+            };
+          })
+        : renderSolid(view, element),
     );
   }
 

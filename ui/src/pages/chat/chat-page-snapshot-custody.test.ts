@@ -11,7 +11,7 @@ import { SESSION_FACE_PREFERENCE_PARAM } from "../../lib/sessions/route-navigati
 import { createTestGatewayClient } from "../../test-helpers/gateway-client.ts";
 import { createStorageMock } from "../../test-helpers/storage.ts";
 import { chatHistoryRequests } from "./chat-history-state.ts";
-import { stubMatchMedia } from "./chat-page.test-support.ts";
+import { settleChatPage, stubMatchMedia } from "./chat-page.test-support.ts";
 import { ChatPage } from "./chat-page.ts";
 import { createMountedPanes } from "./chat-pane-mounted.test-support.ts";
 import { nativeHistoryMessage, type TestChatPane } from "./chat-pane.test-support.ts";
@@ -154,7 +154,7 @@ it.each([false, true])(
     let pane: TestChatPane | undefined;
     try {
       document.body.append(page);
-      await page.updateComplete;
+      await settleChatPage(page);
       pane = expectDefined(page.querySelector<TestChatPane>("openclaw-chat-pane"), "rendered pane");
       expect(pane.state).toBeDefined();
       expect(chatHistoryRequests(pane.state).initialSnapshotHydration).toBeDefined();

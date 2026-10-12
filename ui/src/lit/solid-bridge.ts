@@ -163,6 +163,9 @@ export function defineSolidBridge<Props extends object, Methods extends object =
     connectedCallback() {
       spec.connected?.(this.#host);
       if (this.#solidOwned) {
+        // Detached Solid parents can finish their first render before adoption.
+        // Recheck effects that require the host to be connected, without remounting.
+        this.#notify?.();
         return;
       }
       for (const [key, value] of this.#upgraded) {

@@ -167,7 +167,7 @@ suite.define(() => {
           };
         });
         await page.goto(`${suite.server.baseUrl}settings`);
-        await page.evaluate('import("/src/pages/chat/chat-outbox-recovery.ts")');
+        await page.evaluate('import("/src/pages/chat/chat-outbox-recovery.tsx")');
         await page.evaluate(() => {
           const component = Object.assign(document.createElement("openclaw-chat-outbox-recovery"), {
             host: {
@@ -362,7 +362,7 @@ suite.define(() => {
       await suite.withPage({ locale: "en-US", serviceWorkers: "block" }, async ({ page }) => {
         await installMockGateway(page);
         await page.goto(`${suite.server.baseUrl}settings`);
-        await page.evaluate('import("/src/pages/chat/chat-outbox-recovery.ts")');
+        await page.evaluate('import("/src/pages/chat/chat-outbox-recovery.tsx")');
         const legacyKey = `openclaw.control.chatComposer.v2:${encodeURIComponent("ws://recovery-fence.test")}`;
         const legacyValue = JSON.stringify({
           version: 2,

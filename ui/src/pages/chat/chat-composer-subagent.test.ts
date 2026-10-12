@@ -8,10 +8,10 @@ import { buildCatalogSessionKey } from "../../lib/sessions/catalog-key.ts";
 import { sessionMutationGatewayHello } from "../../test-helpers/gateway-methods.ts";
 import { createComposerContainer, resetComposerFixture } from "./chat-composer.test-support.ts";
 import { createRefreshChatPane } from "./chat-pane-history.test-support.ts";
-import { ChatPane } from "./chat-pane-render.ts";
-import { createGatewayBrowserClientFixture } from "./chat-pane.test-support.ts";
+import { ChatPaneRuntime } from "./chat-pane-render.ts";
+import { createGatewayBrowserClientFixture, createPaneTestHost } from "./chat-pane.test-support.ts";
 import { refreshChatMetadata, retireChatMetadataRequests } from "./chat-state-refresh.ts";
-import { renderChat, type ChatProps } from "./chat-view.ts";
+import { renderChat, type ChatProps } from "./chat-view.tsx";
 import { renderChatComposer } from "./components/chat-composer.ts";
 import {
   installTranscriptDomMocks,
@@ -57,7 +57,7 @@ function createRecoveringComposer(draft: string) {
   };
 }
 
-class SuggestionRecoveryPane extends ChatPane {
+class SuggestionRecoveryPane extends ChatPaneRuntime {
   chatProps: ChatProps | undefined;
 
   initialize({ state, context }: ReturnType<typeof createRefreshChatPane>) {
@@ -79,7 +79,6 @@ class SuggestionRecoveryPane extends ChatPane {
     return html``;
   }
 }
-customElements.define("openclaw-suggestion-recovery-test", SuggestionRecoveryPane);
 
 it.each([
   { draft: "Keep this draft", control: false },
@@ -184,7 +183,7 @@ it.each(["Keep this suggestion", "/stop"])(
     const fixture = createRecoveringComposer(draft);
     const { state, context, container } = fixture;
     state.sessionKey = "agent:main:suggestion-recovery";
-    const pane = new SuggestionRecoveryPane();
+    const pane = createPaneTestHost("openclaw-suggestion-recovery-test", SuggestionRecoveryPane);
     pane.initialize(fixture);
     const methods = context.gateway.snapshot.hello?.features?.methods;
     assert(methods);
