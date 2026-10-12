@@ -258,6 +258,9 @@ it("keeps MCP file and upload authority on the original actor when a same-ID act
         reading,
         "MCP read skipped its file boundary",
       );
+      expect(sql.queries).toEqual([]);
+      // Closing the actor also retires its private SQLite snapshot storage.
+      sql.restore();
       closing = actor.close();
     } finally {
       release.resolve();
@@ -265,8 +268,6 @@ it("keeps MCP file and upload authority on the original actor when a same-ID act
     }
     await rejected;
     await closing;
-    expect(sql.queries).toEqual([]);
-    sql.restore();
     actor = await openIncognitoTestActor(env, authority);
     await actor.sessions.create(authority, { sessionKey: key, entry });
     sql = observeHostDataSql();

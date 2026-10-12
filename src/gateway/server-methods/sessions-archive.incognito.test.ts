@@ -1,4 +1,5 @@
 import "../../test-utils/prepare-compiled-subprocesses.js";
+import "../../claws/tool-policy-runtime.js";
 import assert from "node:assert/strict";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { awaitGateBeforeSettlement, createDeferred } from "../../../test/helpers/promise.js";
@@ -11,6 +12,7 @@ import { patchSessionEntryCore } from "../../config/sessions/session-accessor.js
 import { withIncognitoSessionActor } from "../../config/sessions/session-incognito-binding.js";
 import type { SessionEntry } from "../../config/sessions/types.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import { readAgentDeletionJournalStatusInWorker } from "../../state/agent-deletion-journal.read.js";
 import type { IncognitoAgentDatabaseExecution } from "../../state/openclaw-agent-execution-incognito.js";
 import { openIncognitoTestActor } from "../../state/openclaw-agent-execution-incognito.test-support.js";
 import { createDirectChatContext } from "../server-chat.agent-events.test-helpers.js";
@@ -30,6 +32,8 @@ let env: NodeJS.ProcessEnv;
 beforeAll(async () => {
   env = { OPENCLAW_STATE_DIR: dirs.make("archive-incognito-") };
   actor = await openIncognitoTestActor(env, authority);
+  // The Gateway admits shared lifecycle state before serving an actor's human turn.
+  await readAgentDeletionJournalStatusInWorker("main");
 });
 afterAll(async () => {
   await actor?.close();
