@@ -87,7 +87,12 @@ describe("committed session mutation authorization", () => {
         try {
           grant = await authorization.prepareWorkerGrant!();
           expect(preparationSql.queries).toEqual([]);
-          expect(messages).not.toHaveBeenCalled();
+          // Display backfill runs independently of the admission's worker reads.
+          expect(
+            messages.mock.calls.filter(
+              ([message]) => message.input?.kind !== "session-row-backfill",
+            ),
+          ).toEqual([]);
         } finally {
           preparationSql.restore();
           messages.mockRestore();

@@ -7,6 +7,8 @@ import { emitAgentEvent, getAgentEventLifecycleGeneration } from "../../infra/ag
 import { clearAgentRunContext, registerAgentRunContext } from "../../infra/agent-run-registry.js";
 import { AsyncWorkScope } from "../../shared/async-work-scope.js";
 import { drainGlobalSingletonLifecycleState } from "../../shared/global-singleton.js";
+import { openOpenClawStateDatabase } from "../../state/openclaw-state-db.js";
+import { prepareUserProfileCatalog } from "../../state/user-profile-list.js";
 import { withOpenClawTestState } from "../../test-utils/openclaw-test-state.js";
 import { registerQueuedChatTurn, type QueuedChatTurnMap } from "../chat-queued-turns.js";
 import { agentHandlers } from "../server-methods/agent.js";
@@ -262,6 +264,8 @@ describe("agent.wait gateway dedupe observations", () => {
 
   it("keeps visible queued waits available after the terminal observation expires", async () => {
     await withOpenClawTestState({ scenario: "minimal" }, async () => {
+      openOpenClawStateDatabase();
+      using _ = { [Symbol.dispose]: (await prepareUserProfileCatalog()).release };
       const cfg = rolePolicyConfig();
       setRuntimeConfigSnapshot(cfg);
       const owner = roleClient("none", "queued-owner");
@@ -340,6 +344,8 @@ describe("agent.wait gateway dedupe observations", () => {
     "keeps a pending wait bound to its original registration after %s",
     async (transition) => {
       await withOpenClawTestState({ scenario: "minimal" }, async () => {
+        openOpenClawStateDatabase();
+        using _ = { [Symbol.dispose]: (await prepareUserProfileCatalog()).release };
         const cfg = rolePolicyConfig();
         setRuntimeConfigSnapshot(cfg);
         const owner = roleClient("none", "timeout-owner");

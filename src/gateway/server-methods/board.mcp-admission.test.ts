@@ -19,6 +19,8 @@ import {
   openOpenClawAgentDatabase,
 } from "../../state/openclaw-agent-db.js";
 import { runOpenClawAgentWorkerWrite } from "../../state/openclaw-agent-write-admission.js";
+import { openOpenClawStateDatabase } from "../../state/openclaw-state-db.js";
+import { prepareUserProfileCatalog } from "../../state/user-profile-list.js";
 import { withOpenClawTestState } from "../../test-utils/openclaw-test-state.js";
 import { boardStore } from "../board-store.js";
 import {
@@ -62,6 +64,8 @@ describe("MCP App source authority at board write admission", () => {
           "operator.approvals",
         ];
         setRuntimeConfigSnapshot(cfg, cfg);
+        openOpenClawStateDatabase();
+        using _ = { [Symbol.dispose]: (await prepareUserProfileCatalog()).release };
         const client = {
           ...roleClient("view", "mcp-admission-owner"),
           connId: "mcp-admission-owner",

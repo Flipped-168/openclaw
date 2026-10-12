@@ -129,7 +129,6 @@ export async function createFixture(
     connections.clients.add(client);
     return { client, socket, access };
   };
-  const reader = addReader("guest-publication-reader");
   const load = vi.fn<Load>(async () => snapshot);
   const subscriptions = createControlUiSessionPullRequestSubscriptions({
     scheduler,
@@ -154,6 +153,7 @@ export async function createFixture(
   context.getRuntimeConfig = getRuntimeConfig;
   context.controlUiSessionPullRequests = subscriptions;
   await initializeSessionReadContext(context);
+  const reader = addReader("guest-publication-reader");
   const projection = getSessionRowProjection(context);
   if (!projection) {
     throw new Error("Missing fixture session projection");
