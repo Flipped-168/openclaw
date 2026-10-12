@@ -667,7 +667,7 @@ describe("personal navigation rail", () => {
     await bootstrap.run({}, async () => {});
     expect(read).not.toHaveBeenCalled();
 
-    parent.append(sidebar);
+    parent.append(sidebar.hostElement);
     await settleLitElement(sidebar);
     expect(read).toHaveBeenCalledExactlyOnceWith({ key });
     expect(sidebar.querySelector('.sidebar-rail a[aria-label="Current title"]')).not.toBeNull();
