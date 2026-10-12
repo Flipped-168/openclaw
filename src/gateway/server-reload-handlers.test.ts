@@ -2129,7 +2129,8 @@ describe("gateway hot reload model state", () => {
           )
           .catch((error: unknown) => error);
         expect(await readIntervals()).toEqual([7_200_000, 3_600_000]);
-        expect(result).toBe("applied-restart-required");
+        expect(result).toBe("applied");
+        expect(requestRecoveryRestart).not.toHaveBeenCalled();
         expect(markRuntimeCommitted).toHaveBeenCalledOnce();
         expect(getActiveSecretsRuntimeSnapshot()?.config).toEqual(nextConfig);
         publicationFailure.remove();
@@ -2155,6 +2156,7 @@ describe("gateway hot reload model state", () => {
         }
         await clock.advanceBy(30_000);
         expect(await readIntervals()).toEqual([7_200_000, 7_200_000]);
+        expect(requestRecoveryRestart).not.toHaveBeenCalled();
       } finally {
         try {
           publicationFailure.dispose();
@@ -2166,6 +2168,28 @@ describe("gateway hot reload model state", () => {
       }
     },
   );
+
+  it("requests restart when heartbeat monitor reconciliation cannot schedule recovery", async () => {
+    const requestRecoveryRestart = vi.fn(() => ({ status: "emitted" as const }));
+    const handlers = createReloadHandlersForTest(
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      requestRecoveryRestart,
+    );
+    handlers.reconcileSystemJobs.mockRejectedValueOnce(new Error("cron retry scheduling failed"));
+    try {
+      await expect(
+        handlers.applyHotReload(buildGatewayReloadPlan(["agents.defaults.heartbeat.every"]), {
+          agents: { defaults: { heartbeat: { every: "2h" } } },
+        }),
+      ).resolves.toBe("applied-restart-required");
+      expect(requestRecoveryRestart).toHaveBeenCalledOnce();
+    } finally {
+      handlers.stopRestartRetries();
+    }
+  });
 
   it("rejects an ownerless heartbeat update failure before runtime commit", async () => {
     const publish = vi.fn(async (commit: () => Promise<void>) => await commit());
