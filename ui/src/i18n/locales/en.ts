@@ -3841,7 +3841,6 @@ export const en: TranslationMap & {
         clear: "Clear session overrides",
       },
       contextUsage: {
-        label: "Context",
         title: "Context usage details",
         open: "Open context usage details",
         summary: "Session context usage: {used} of {limit} ({pct}%)",
