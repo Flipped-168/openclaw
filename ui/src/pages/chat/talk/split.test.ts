@@ -20,7 +20,7 @@ const processors: AudioProcessor[] = [];
 const tracks: Array<{ stop: ReturnType<typeof vi.fn> }> = [];
 const audios: FakeAudio[] = [];
 const states: ChatRealtimeState[] = [];
-let audioCreated = createDeferred();
+let speechStarted = createDeferred();
 
 class FakeAudioContext {
   readonly sampleRate = 8000;
@@ -50,19 +50,20 @@ class FakeAudioContext {
 class FakeAudio {
   onended: (() => void) | null = null;
   onerror: (() => void) | null = null;
-  play = vi.fn(async () => undefined);
+  play = vi.fn(async () => {
+    if (this.src.startsWith("blob:")) speechStarted.resolve();
+  });
   pause = vi.fn();
   removeAttribute = vi.fn();
   load = vi.fn();
   constructor(readonly src: string) {
     audios.push(this);
-    audioCreated.resolve();
   }
 }
 
 beforeEach(() => {
   vi.useFakeTimers();
-  audioCreated = createDeferred();
+  speechStarted = createDeferred();
   processors.length = tracks.length = audios.length = 0;
   vi.stubGlobal("localStorage", createStorageMock());
   vi.stubGlobal("AudioContext", FakeAudioContext);
@@ -134,6 +135,7 @@ function harness(provider?: string) {
       return { audioBase64: "UklGRg==", mimeType: "audio/wav" };
     }
     if (method === "talk.session.appendAudio" || method === "chat.abort") return { ok: true };
+    if (method === "agent.wait") return { status: "ok" };
     throw new Error(`Unexpected request: ${method}`);
   });
   const state = {
@@ -217,7 +219,7 @@ it.each(["openai", undefined])(
       },
     });
     await h.speech.promise;
-    await audioCreated.promise;
+    await speechStarted.promise;
     expect(h.request).toHaveBeenCalledWith(provider ? "talk.speak" : "tts.speak", {
       text: "The local model answered.",
     });
@@ -243,6 +245,7 @@ it("stopping during the model response aborts the owned run and ignores late out
   h.utterance();
   await sent.promise;
   const runId = h.getRunId();
+  h.emit("chat", { runId, state: "final" });
   await h.state.toggleRealtimeTalk();
   h.emit("chat", {
     runId,
@@ -251,8 +254,59 @@ it("stopping during the model response aborts the owned run and ignores late out
   });
   await Promise.resolve();
   expect(h.request).toHaveBeenCalledWith("chat.abort", { sessionKey: "agent:local:main", runId });
-  expect(audios).toHaveLength(0);
+  expect(h.request.mock.calls.some(([method]) => method === "tts.speak")).toBe(false);
   expect(tracks).toHaveLength(1);
+});
+
+it("keeps listening for the model answer after an empty final", async () => {
+  const h = harness();
+  const sent = createDeferred();
+  const impl = h.request.getMockImplementation()!;
+  h.request.mockImplementation(async (method, params) => {
+    const result = await impl(method, params);
+    if (method === "chat.send") sent.resolve();
+    return result;
+  });
+  await h.state.toggleRealtimeTalk();
+  h.utterance();
+  await sent.promise;
+  const runId = h.getRunId();
+  h.emit("chat", { runId, state: "final" });
+  await vi.advanceTimersByTimeAsync(0);
+  expect(h.state.realtimeTalkStatus).toBe("thinking");
+  expect(tracks).toHaveLength(1);
+  expect(h.request).toHaveBeenCalledWith("agent.wait", { runId, timeoutMs: 120_000 });
+  h.emit("chat", {
+    runId,
+    state: "final",
+    message: { role: "assistant", content: [{ type: "text", text: "The delayed answer." }] },
+  });
+  await h.speech.promise;
+  await speechStarted.promise;
+  expect(h.request).toHaveBeenCalledWith("tts.speak", { text: "The delayed answer." });
+  expect(h.request.mock.calls.filter(([method]) => method === "chat.send")).toHaveLength(1);
+});
+
+it("speaks a final that arrives before an already-completed admission ACK", async () => {
+  const h = harness();
+  const sent = createDeferred();
+  const impl = h.request.getMockImplementation()!;
+  h.request.mockImplementation(async (method, params) => {
+    const result = await impl(method, params);
+    if (method !== "chat.send") return result;
+    h.emit("chat", {
+      runId: h.getRunId(),
+      state: "final",
+      message: { role: "assistant", content: [{ type: "text", text: "Already answered." }] },
+    });
+    sent.resolve();
+    return { ...result, status: "ok" };
+  });
+  await h.state.toggleRealtimeTalk();
+  h.utterance();
+  await sent.promise;
+  await vi.advanceTimersByTimeAsync(0);
+  expect(h.request).toHaveBeenCalledWith("tts.speak", { text: "Already answered." });
 });
 
 it("waits for buffered local STT to finish instead of dropping a slow final transcript", async () => {
@@ -327,6 +381,6 @@ it("surfaces a rejected chat admission instead of waiting forever for a model re
     "The voice reply was interrupted. Start Talk again to retry.",
   );
   expect(h.request.mock.calls.some(([method]) => method === "chat.send")).toBe(true);
-  expect(audios).toHaveLength(0);
+  expect(h.request.mock.calls.some(([method]) => method === "tts.speak")).toBe(false);
   expect(tracks).toHaveLength(1);
 });

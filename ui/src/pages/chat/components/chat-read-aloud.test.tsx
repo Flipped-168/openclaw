@@ -22,7 +22,7 @@ const createUrl = vi.fn<(blob: Blob | MediaSource) => string>(() => "blob:synthe
 
 beforeEach(() => {
   audio.length = 0;
-  play.mockClear();
+  play.mockReset().mockResolvedValue(undefined);
   pause.mockClear();
   revoke.mockClear();
   createUrl.mockClear();
@@ -59,22 +59,34 @@ function mount(request: ReturnType<typeof vi.fn>, configured = true) {
   });
 }
 
-it("reads an assistant reply with the configured Gateway audio and releases playback on stop", async () => {
-  const request = vi.fn(async () => ({
-    audioBase64: "UklGRg==",
-    mimeType: "audio/wav",
-    provider: "openai",
-  }));
+it("unlocks and reuses the same audio element before awaiting Gateway speech", async () => {
+  const pending = createDeferred();
+  const request = vi.fn(() => pending.promise);
+  let userActivation = true;
+  const permitted = new WeakSet<HTMLAudioElement>();
+  play.mockImplementation(function (this: HTMLAudioElement) {
+    if (userActivation) {
+      permitted.add(this);
+    }
+    return permitted.has(this)
+      ? Promise.resolve()
+      : Promise.reject(new DOMException("User activation required", "NotAllowedError"));
+  });
   const view = mount(request);
   const button = view.getByRole<HTMLButtonElement>("button", { name: "Read aloud" });
   button.click();
-  await waitForSolid(() => expect(play).toHaveBeenCalledOnce());
+  userActivation = false;
+  expect(play).toHaveBeenCalledOnce();
+  expect(audio).toHaveLength(1);
+  expect(audio[0]?.src).toMatch(/^data:audio\/wav/);
+  pending.resolve({ audioBase64: "UklGRg==", mimeType: "audio/wav", provider: "openai" });
+  await waitForSolid(() => expect(play).toHaveBeenCalledTimes(2));
   expect(request).toHaveBeenCalledWith("tts.speak", { text: "Local voice is working." });
   expect(createUrl.mock.calls[0]?.[0]).toMatchObject({ type: "audio/wav", size: 4 });
   expect(audio[0]?.src).toBe("blob:synthetic-speech");
   view.getByRole<HTMLButtonElement>("button", { name: "Stop reading" }).click();
   flush();
-  expect(pause).toHaveBeenCalledOnce();
+  expect(pause).toHaveBeenCalledTimes(2);
   expect(revoke).toHaveBeenCalledWith("blob:synthetic-speech");
   expect(view.getByRole("button", { name: "Read aloud" })).toBe(button);
 });
@@ -95,7 +107,7 @@ it("does not play a synthesis result after the message is unmounted", async () =
   await pending.promise;
   await Promise.resolve();
   expect(createUrl).not.toHaveBeenCalled();
-  expect(play).not.toHaveBeenCalled();
+  expect(play).toHaveBeenCalledOnce();
 });
 
 it("shows a Gateway synthesis failure instead of starting another speech provider", async () => {
@@ -108,5 +120,5 @@ it("shows a Gateway synthesis failure instead of starting another speech provide
     expect(view.getByRole("status").textContent).toContain("Local speech endpoint unavailable"),
   );
   expect(request).toHaveBeenCalledOnce();
-  expect(play).not.toHaveBeenCalled();
+  expect(play).toHaveBeenCalledOnce();
 });

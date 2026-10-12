@@ -3,6 +3,7 @@ import type { GatewayBrowserClient } from "../../api/gateway.ts";
 import { loadSettings, patchSettings, type UiSettings } from "../../app/settings.ts";
 import { t } from "../../i18n/index.ts";
 import { formatUiError, formatUiExternalText } from "../../lib/format-error.ts";
+import { GatewaySpeechPlayback } from "../../lib/speech-playback.ts";
 import {
   createRealtimeTalkConversationState,
   continueRealtimeTalkConversation,
@@ -262,7 +263,9 @@ export function attachChatRealtimeActions(
     state.requestUpdate();
     let split: SplitTalkOptions | undefined;
     if (!voiceChange) {
+      const playback = new GatewaySpeechPlayback();
       try {
+        playback.prepare();
         const result = await client.request<TalkConfigResult>("talk.config", {});
         if (
           state.realtimeTalkVoiceController !== voiceController ||
@@ -286,6 +289,7 @@ export function attachChatRealtimeActions(
             silenceTimeoutMs: talk.silenceTimeoutMs ?? 900,
             speechMethod: talk.provider || talk.resolved?.provider ? "talk.speak" : "tts.speak",
             sendMessage,
+            playback,
           };
         }
       } catch (error) {
@@ -296,6 +300,8 @@ export function attachChatRealtimeActions(
           state.requestUpdate();
         }
         return undefined;
+      } finally {
+        if (!split) playback.stop();
       }
     }
     const forCurrentSession =

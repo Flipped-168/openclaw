@@ -392,6 +392,7 @@ export class RealtimeTalkSession {
     try {
       return this.retireTransport();
     } finally {
+      this.localOptions.split?.playback.stop();
       this.callbacks.onStatus?.("idle");
     }
   }

@@ -6,6 +6,24 @@ import { base64ToBytes } from "./bytes-base64.ts";
 export class GatewaySpeechPlayback {
   private generation = 0;
   private finish: (() => void) | undefined;
+  private audio: HTMLAudioElement | undefined;
+  private ready: Promise<void> | undefined;
+
+  prepare(): HTMLAudioElement {
+    if (this.audio) {
+      return this.audio;
+    }
+    // Safari grants playback to an element during a gesture, before synthesis awaits.
+    const audio = new Audio(
+      "data:audio/wav;base64,UklGRiYAAABXQVZFZm10IBAAAAABAAEAIlYAAESsAAACABAAZGF0YQIAAAAAAA==",
+    );
+    this.audio = audio;
+    this.ready = audio.play().then(
+      () => audio.pause(),
+      () => undefined,
+    );
+    return audio;
+  }
 
   stop(): void {
     this.generation += 1;
@@ -19,15 +37,18 @@ export class GatewaySpeechPlayback {
     isCurrent: () => boolean = () => true,
   ): Promise<void> {
     this.stop();
+    const audio = this.prepare();
     const generation = this.generation;
     const result = await client.request<TtsSpeakResult>(method, { text });
+    await this.ready;
     if (generation !== this.generation || !isCurrent()) {
       return;
     }
     const url = URL.createObjectURL(
       new Blob([base64ToBytes(result.audioBase64)], { type: result.mimeType }),
     );
-    const audio = new Audio(url);
+    audio.src = url;
+    audio.load();
     await new Promise<void>((resolve, reject) => {
       const finish = (error?: Error) => {
         if (this.finish !== cancel) {
