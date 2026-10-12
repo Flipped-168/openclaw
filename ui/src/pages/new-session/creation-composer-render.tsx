@@ -1,4 +1,3 @@
-import { html } from "lit";
 import { createMemo, Show } from "solid-js";
 import type { ImageLightboxItem } from "../../components/image-lightbox.types.ts";
 import type { HumanMention } from "../../lib/chat/chat-types.ts";
@@ -114,5 +113,5 @@ export function renderCreationComposer(
   composer: CreationComposer | undefined,
   onOpenImage: (item: ImageLightboxItem) => void,
 ) {
-  return html`${solidContent(CreationComposerView, { composer, onOpenImage, renderRevision: {} })}`;
+  return solidContent(CreationComposerView, { composer, onOpenImage, renderRevision: {} });
 }

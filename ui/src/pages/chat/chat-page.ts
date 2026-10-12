@@ -1,29 +1,19 @@
 import { createComponent, createEffect, createMemo, onCleanup, untrack } from "solid-js";
-import type { ApplicationContext } from "../../app/context.ts";
 import { useApplication } from "../../lib/reactive/context.ts";
 import { projectSource } from "../../lib/reactive/projection.ts";
-import { defineSolidBridge, type SolidBridgeElement } from "../../lit/solid-bridge.ts";
-import type { ControllerHost } from "../../lit/subscriptions-controller.ts";
+import { defineSolidBridge } from "../../lit/solid-bridge.ts";
 import { ChatPageBody } from "./chat-page-pane-render.tsx";
-import { ChatPageState } from "./chat-page-state.ts";
-import type { SessionChatRouteData } from "./route-loader.ts";
+import {
+  ChatPageState,
+  type ChatPageHost,
+  type ChatPageMethods,
+  type ChatPageProps,
+} from "./chat-page-state.ts";
 import "../../styles/chat.ts";
 import "../../styles/chat/composer.css";
 
-export { ChatPageState } from "./chat-page-state.ts";
+export { ChatPageState, type ChatPageHost } from "./chat-page-state.ts";
 
-type ChatPageProps = {
-  data: SessionChatRouteData;
-  navDrawerOpen: boolean;
-  presented: boolean;
-  context?: ApplicationContext;
-};
-type ChatPageMethods = {
-  requestUpdate(): void;
-  addController: ControllerHost["addController"];
-  removeController: ControllerHost["removeController"];
-};
-export type ChatPageHost = SolidBridgeElement<ChatPageProps, ChatPageMethods>;
 export type ChatPage = ChatPageHost & {
   readonly sessionSplitAvailable: boolean;
 };

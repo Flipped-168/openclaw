@@ -6,7 +6,7 @@ import { expectDefined } from "@openclaw/normalization-core";
 import type { RouteLocation } from "@openclaw/uirouter";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-// Keep this complete mock in the dedicated unit-mock-registry project.
+// mock-isolation: Observe page bindings without registering the real pane tag and starting its domain owners.
 vi.mock("./chat-pane.tsx", async () => {
   const { mockChatPagePane } = await import("./chat-page-pane.test-support.ts");
   return { ChatPaneView: mockChatPagePane };

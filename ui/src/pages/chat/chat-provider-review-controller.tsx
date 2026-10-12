@@ -1,10 +1,10 @@
-import type { ReactiveController, ReactiveControllerHost } from "lit";
 import { createMemo, Show } from "solid-js";
 import { Icon } from "../../components/solid/icon.tsx";
 import { formatUiError } from "../../lib/format-error.ts";
 import { t } from "../../lib/reactive/i18n.ts";
 import { resolveUiSelectedSessionAgentId } from "../../lib/sessions/session-key.ts";
 import { generateUUID } from "../../lib/uuid.ts";
+import type { SolidControllerHost } from "../../lit/solid-controller-host.ts";
 import {
   chatProviderReviewRow,
   holdProviderReviewQueuedInputs,
@@ -13,7 +13,7 @@ import {
 import { isTerminalFailureChatSendAck, normalizeChatSendAck } from "./chat-send-ack.ts";
 import type { ChatHost } from "./chat-send-contract.ts";
 
-export class ChatProviderReviewController implements ReactiveController {
+export class ChatProviderReviewController {
   private canWrite = false;
 
   private binding: {
@@ -36,8 +36,9 @@ export class ChatProviderReviewController implements ReactiveController {
   } | null = null;
 
   constructor(
-    private readonly host: ReactiveControllerHost,
+    host: Pick<SolidControllerHost, "addController">,
     private readonly readState: () => ChatHost | undefined,
+    private readonly notify: () => void,
   ) {
     host.addController(this);
   }
@@ -141,7 +142,7 @@ export class ChatProviderReviewController implements ReactiveController {
   ) {
     if (this.isCurrent(binding)) {
       binding[flag] = false;
-      this.host.requestUpdate();
+      this.notify();
     }
   }
 
@@ -150,7 +151,7 @@ export class ChatProviderReviewController implements ReactiveController {
       return;
     }
     binding.loading = true;
-    this.host.requestUpdate();
+    this.notify();
     try {
       await import("../../components/modal-dialog.ts");
       if (this.isCurrent(binding)) {
@@ -180,13 +181,13 @@ export class ChatProviderReviewController implements ReactiveController {
     }
     if (!holdProviderReviewQueuedInputs(binding.state, binding.sessionKey, binding.agentId)) {
       binding.error = t("chat.providerReview.queueHoldFailed");
-      this.host.requestUpdate();
+      this.notify();
       return;
     }
     binding.pending = true;
     binding.attemptedRunId = binding.idempotencyKey;
     binding.error = null;
-    this.host.requestUpdate();
+    this.notify();
     try {
       const result = await binding.client!.request("sessions.providerReview.continue", {
         sessionKey: binding.sessionKey,
@@ -222,7 +223,7 @@ export class ChatProviderReviewController implements ReactiveController {
     }
     binding.refreshing = true;
     binding.error = null;
-    this.host.requestUpdate();
+    this.notify();
     try {
       const outcome = await binding.state.sessions.reconcileMutation(binding.agentId);
       if (this.isCurrent(binding) && outcome.status === "failed") {

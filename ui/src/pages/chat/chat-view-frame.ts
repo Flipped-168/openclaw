@@ -1,3 +1,11 @@
+import type {
+  SessionPlacementDiskSpace,
+  SessionPlacementWorkerRuntimeInstall,
+  SessionSharingRole,
+  SessionSuggestion,
+  SessionSuggestionResolution,
+} from "../../../../packages/gateway-protocol/src/index.js";
+import type { ExecApprovalDecision, ExecApprovalRequest } from "../../app/exec-approval.ts";
 import type { ImageLightboxItem } from "../../components/image-lightbox.types.ts";
 import type {
   ChatAttachment,
@@ -8,12 +16,16 @@ import { t } from "../../lib/reactive/i18n.ts";
 import { areUiSessionKeysEquivalent } from "../../lib/sessions/session-key.ts";
 import { showToast } from "../../lib/toast.ts";
 import { uploadsEnabled, uploadsDisabledMessage } from "../../lib/uploads.ts";
+import type { PresentationValue } from "../../lit/presentation-binding.ts";
 import { releaseChatAttachmentPayloads } from "./attachment-payload-store.ts";
 import { getChatHistoryLoadState } from "./chat-history-state.ts";
 import { buildPendingInputQueueItems, getChatPendingInputs } from "./chat-pending-inputs.ts";
+import type { ChatProviderReviewController } from "./chat-provider-review-controller.tsx";
+import type { ChatRunStartupStatus } from "./chat-run-startup.ts";
 import { chatStartupStatusLabel } from "./chat-run-startup.ts";
+import type { ChatState } from "./chat-state-contract.ts";
 import { projectSubagentStatus } from "./chat-subagent-wait.ts";
-import type { ChatProps } from "./chat-view.tsx";
+import type { ChatPlacementStartupNoticeProps } from "./chat-view-notices.tsx";
 import { createAsyncQuestionPresentation } from "./components/chat-async-question.ts";
 import {
   createChatAttachmentDropHandlers,
@@ -21,10 +33,95 @@ import {
 } from "./components/chat-attachments.ts";
 import { resolveChatCommentAnchor } from "./components/chat-comment-anchor.ts";
 import { getChatComposerState, isChatRunWorking } from "./components/chat-composer-state.ts";
+import type { ChatComposerProps } from "./components/chat-composer-types.ts";
+import type { ChatDetailsProps } from "./components/chat-details-types.ts";
 import { createChatSelectionAttachment } from "./components/chat-selection-attachment.ts";
 import { showChatAnnotationEditor } from "./components/chat-selection-popup.ts";
+import type { renderChatSwarmProgress } from "./components/chat-swarm-progress.ts";
+import type { ChatTaskSuggestionTrayProps } from "./components/chat-task-suggestions.ts";
 import { getTranscriptState, type ChatThreadProps } from "./components/chat-thread-interactions.ts";
+import type { ChatTranscriptController } from "./components/chat-transcript-controller.ts";
 import { selectChatInputDisplay } from "./history-merge.ts";
+import type { ProviderPolicyNotice } from "./tool-stream-contract.ts";
+import type { WorkspaceResultConflict } from "./workspace-conflict.ts";
+export type ChatProps = Omit<
+  ChatThreadProps,
+  | "pendingInputs"
+  | "runActive"
+  | "runWorking"
+  | "startupLabel"
+  | "questionPrompts"
+  | "agents"
+  | "queuedMessageAction"
+  | "onRetryQueuedMessage"
+  | "onDiscardQueuedMessage"
+  | "onFocusComposer"
+  | "commentAttachments"
+  | "commentsDisabled"
+  | "onAddToChat"
+  | "onCompanionSelection"
+  | "onOpenSession"
+  | "onSend"
+> &
+  Omit<ChatComposerProps, "notices" | "footerContent" | "disabled" | "onOpenImage"> &
+  ChatDetailsProps &
+  ChatTaskSuggestionTrayProps &
+  ChatPlacementStartupNoticeProps & {
+    onCompanionStageAttachment?: (attachment: ChatAttachment, sourceSessionKey: string) => boolean;
+    transcript: ChatTranscriptController;
+    asyncQuestionStorage?:
+      | import("../../lib/chat/composer-draft-store.runtime.ts").DurableComposerDraftScope
+      | null;
+    onAsyncQuestionSubmit?: (
+      message: string,
+      itemId?: string,
+      sourceMessageId?: string,
+    ) => Promise<boolean>;
+    presented?: PresentationValue;
+    historyState?: ChatState;
+    startupStatus?: ChatRunStartupStatus | null;
+    providerPolicyNotice?: ProviderPolicyNotice | null;
+    providerReview?: ChatProviderReviewController;
+    providerReviewRevision?: object;
+    error: string | null;
+    diskSpace?: SessionPlacementDiskSpace;
+    workerRuntimeInstall?: SessionPlacementWorkerRuntimeInstall;
+    inlineApproval?: ExecApprovalRequest | null;
+    approvalBusy?: boolean;
+    approvalCanGrant: boolean;
+    approvalErrors?: ReadonlyMap<string, string>;
+    onApprovalDecision?: (
+      approvalId: string,
+      decision: ExecApprovalDecision,
+    ) => void | Promise<void>;
+    workspaceConflict?: WorkspaceResultConflict;
+    onDismissWorkspaceConflict?: () => void;
+    swarm?: Parameters<typeof renderChatSwarmProgress>[0];
+    chatMessageMaxWidth?: string | null;
+    showNewMessages?: boolean;
+    onScrollToBottom?: (options?: { smooth?: boolean }) => void;
+    onRefresh: () => void;
+    onDismissError?: () => void;
+    agentsList: {
+      agents: Array<{
+        id: string;
+        name?: string;
+        identity?: { name?: string; avatarUrl?: string };
+      }>;
+      defaultId?: string;
+    } | null;
+    sessionSuggestions?: readonly SessionSuggestion[];
+    sessionSuggestionRole?: SessionSharingRole;
+    sessionSuggestionBusyIds?: ReadonlySet<string>;
+    sessionSuggestionsArchived?: boolean;
+    canResolveSessionSuggestions?: boolean;
+    onResolveSessionSuggestion?: (
+      suggestion: SessionSuggestion,
+      resolution: SessionSuggestionResolution,
+    ) => void;
+    detailsEnabled?: boolean;
+  };
+
 // The view frame refreshes on each pane render and the chat-item cache keys the queue by
 // identity; reuse the appended copy until the outbox publishes a new array.
 const placementQueues = new WeakMap<

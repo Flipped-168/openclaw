@@ -54,6 +54,7 @@ class GeometryPane extends ChatPaneRuntime {
         </div>
       `,
       dialog: undefined,
+      capabilityDialogs: undefined,
     };
   }
 }
@@ -113,7 +114,7 @@ it("commits each settled pane width with its new transcript rect in exactly one 
   console.info(`Settled width render counts: ${counts.join(", ")}`);
 });
 
-it.each(["pending", "hostUpdated"] as const)(
+it.each(["pending", "committed"] as const)(
   "commits a non-sync measurement before paint with a %s pane update",
   async (phase) => {
     const { host, session } = await mountPane();
@@ -123,21 +124,20 @@ it.each(["pending", "hostUpdated"] as const)(
     const paint = vi.fn();
     const frame = requestAnimationFrame(paint);
     const measure = () => virtualizer.resizeItem(0, 180);
-    const controller = {
-      hostUpdated() {
-        host.removeController(controller);
+    if (phase === "committed") {
+      const commit = host.commitRender.bind(host);
+      vi.spyOn(host, "commitRender").mockImplementationOnce(() => {
+        commit();
         measure();
-      },
-    };
-    if (phase === "hostUpdated") {
-      host.addController(controller);
+      });
     }
     host.requestUpdate();
     if (phase === "pending") {
       measure();
     }
     try {
-      while (host.isUpdatePending) {
+      await host.updateComplete;
+      if (phase === "committed") {
         await host.updateComplete;
       }
       expect(notification).toHaveBeenCalledExactlyOnceWith(virtualizer, false);
@@ -146,7 +146,6 @@ it.each(["pending", "hostUpdated"] as const)(
       expect(paint).not.toHaveBeenCalled();
     } finally {
       cancelAnimationFrame(frame);
-      host.removeController(controller);
     }
   },
 );
@@ -172,9 +171,7 @@ it.each([
       session.syncViewportGeometry();
       const rect = { width: Math.round(width), height: Math.round(height) };
       expect(session["virtualizer"].scrollRect).toEqual(rect);
-      while (host.isUpdatePending) {
-        await host.updateComplete;
-      }
+      await host.updateComplete;
       const requests = vi.spyOn(host, "requestUpdate");
       await settleLayout();
       expect(observed).toEqual([{ width, height }]);

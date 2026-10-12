@@ -6,6 +6,7 @@ import type { GatewaySessionRow, ModelCatalogResult } from "../../api/types.ts";
 import { disposeQuestionPromptState } from "../../app/question-prompt.ts";
 import { buildCatalogSessionKey } from "../../lib/sessions/catalog-key.ts";
 import { sessionMutationGatewayHello } from "../../test-helpers/gateway-methods.ts";
+import { waitForSolid } from "../../test-helpers/solid-settle.ts";
 import { createComposerContainer, resetComposerFixture } from "./chat-composer.test-support.ts";
 import { createRefreshChatPane } from "./chat-pane-history.test-support.ts";
 import { ChatPaneRuntime } from "./chat-pane-render.ts";
@@ -423,6 +424,9 @@ it.each([
     };
     try {
       const initial = draw();
+      await waitForSolid(() =>
+        expect(container.querySelector("[data-chat-model-select]")).not.toBeNull(),
+      );
       expect(state.chatModelCatalogInitialized).toBe(false);
       expect(initial.modelSetupRequired).toBe(false);
       expect(initial.modelRequiredReason).toBeUndefined();

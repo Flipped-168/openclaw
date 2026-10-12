@@ -169,7 +169,7 @@ describe.runIf(browserMode)("chat disclosure activation", () => {
           },
           { showReasoning: false },
         )}
-        ${renderRawOutputToggle("Copyable output")}
+        ${solidContent(ChatToolRawOutput, { text: "Copyable output" })}
       `,
       container,
     );

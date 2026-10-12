@@ -33,6 +33,10 @@ import type { buildLocalUserMessage } from "../chat/user-message-content.ts";
 
 registerNewSessionSetupEnglish();
 
+export function renderNewSessionReconnectStatus() {
+  return html`<div role="status">${t("connection.reconnecting")}</div>`;
+}
+
 export function renderDraftError(
   message: string,
   action?: { label: string; onClick: () => void; disabled?: boolean },

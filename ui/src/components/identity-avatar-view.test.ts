@@ -1,7 +1,7 @@
 /* @vitest-environment jsdom */
 
 import { html, nothing, render } from "lit";
-import { onSettled } from "solid-js";
+import { getOwner, onSettled, runWithOwner } from "solid-js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   resolveThemeBranding,
@@ -56,16 +56,19 @@ afterEach(() => {
 describe("shared identity avatar view", () => {
   it("mounts and reconnects an avatar from a settled Solid host without a nested flush", () => {
     const view = mountSolid(() => {
+      const owner = getOwner();
       const container = document.createElement("div");
-      onSettled(() => {
-        const part = render(
-          renderAgentIdentityAvatar({ id: "settled", avatar: "/favicon.svg", textAvatar: "A" }),
-          container,
-        );
-        part.setConnected(false);
-        part.setConnected(true);
-        return () => render(nothing, container);
-      });
+      onSettled(() =>
+        runWithOwner(owner, () => {
+          const part = render(
+            renderAgentIdentityAvatar({ id: "settled", avatar: "/favicon.svg", textAvatar: "A" }),
+            container,
+          );
+          part.setConnected(false);
+          part.setConnected(true);
+          return () => render(nothing, container);
+        }),
+      );
       return container;
     });
     const image = view.container.querySelector("img")!;

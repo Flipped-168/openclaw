@@ -73,7 +73,8 @@ import { workspaceResultConflictFromPlacement } from "./workspace-conflict.ts";
 const bootLayout = html`<main class="app-shell app-shell--booting" aria-busy="true"></main>`;
 
 export class ChatPaneRuntime extends ChatPaneLayoutRender {
-  readonly providerReview = new ChatProviderReviewController(this, () => this.state);
+  private readonly notify = () => this.requestUpdate();
+  readonly providerReview = new ChatProviderReviewController(this, () => this.state, this.notify);
 
   render() {
     const state = this.state;
@@ -287,7 +288,7 @@ export class ChatPaneRuntime extends ChatPaneLayoutRender {
         this.githubPublication?.detach();
         this.githubPublication = this.context.sessions.githubPublication.attach(
           publicationRow,
-          () => this.requestUpdate(),
+          this.notify,
           GitHubPublicationController,
         );
       }
@@ -353,13 +354,6 @@ export class ChatPaneRuntime extends ChatPaneLayoutRender {
       disabledBanner:
         sessionDisabledBanner ?? placementComposer.disabledBanner ?? modelUnavailableBanner,
     };
-    const progressCardRefresh =
-      canWriteProgressCard &&
-      composerAvailability.canSend &&
-      nativeConversation &&
-      progressPresentation
-        ? this.captureProgressCardRefreshAction()
-        : undefined;
     const selfProfileId = selfUser?.identity?.type === "profile" ? selfUser.identity.id : null;
     const mentionsUnsupported = !nativeConversation || selectedSession?.incognito || !selfProfileId;
     const { gatewayQuestionPrompts, inlineApproval } = this.projectConversationAttention(
@@ -407,7 +401,13 @@ export class ChatPaneRuntime extends ChatPaneLayoutRender {
       progressCardLifetime: progressPresentation?.lifetime,
       gatewayScope: gatewayPresentationScope(this.context.gateway),
       progressCardInitialLoading: this.progressCardInitialLoading,
-      progressCardRefresh,
+      progressCardRefresh:
+        canWriteProgressCard &&
+        composerAvailability.canSend &&
+        nativeConversation &&
+        progressPresentation
+          ? this.captureProgressCardRefreshAction()
+          : undefined,
       collapseTaskProgress: state.settings.chatCollapseTaskProgress === true,
       ...this.captureProgressCardActions(canWriteProgressCard),
       readingHistory: state.chatReadingHistory,

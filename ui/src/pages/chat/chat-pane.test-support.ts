@@ -92,6 +92,7 @@ export function createPaneHeaderWorkspaceFixture(
 
 export interface TestChatPane extends HTMLElement, ReactiveControllerHost {
   readonly element: HTMLElement;
+  render: ChatPaneRuntime["render"];
   catalogMessages: unknown[];
   active: boolean;
   presented: boolean;

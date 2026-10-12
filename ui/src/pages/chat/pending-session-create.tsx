@@ -1,4 +1,3 @@
-import { html, nothing } from "lit";
 import { createEffect, createMemo, createSignal, onCleanup, Show } from "solid-js";
 import { isIncognitoSessionKey } from "../../../../src/shared/incognito-session-key.js";
 import type { ApplicationContext } from "../../app/context.ts";
@@ -10,9 +9,12 @@ import { t } from "../../lib/reactive/i18n.ts";
 import { parseAgentSessionKey } from "../../lib/sessions/session-key.ts";
 import { generateUUID } from "../../lib/uuid.ts";
 import { defineSolidBridge } from "../../lit/solid-bridge.ts";
-import { LitContent } from "../../lit/solid-content.tsx";
+import { emptyLegacyContent, LitContent } from "../../lit/solid-content.tsx";
 import { CreationComposerView } from "../new-session/creation-composer-render.tsx";
-import { renderNewSessionBody } from "../new-session/draft-body.ts";
+import {
+  renderNewSessionBody,
+  renderNewSessionReconnectStatus,
+} from "../new-session/draft-body.ts";
 import { chatStartupStatusLabel } from "./chat-run-startup.ts";
 import { ChatComposer, resetChatComposerState } from "./components/chat-composer.tsx";
 import { renderChatImageLightbox } from "./components/chat-image-lightbox.ts";
@@ -144,7 +146,7 @@ function PendingSessionCreateContent(props: PendingSessionCreateProps) {
         platform: null,
         canReveal: false,
         copiedAction: null,
-        sessionMenuAction: nothing,
+        sessionMenuAction: emptyLegacyContent,
         onBeginRename: noAction,
         onRenameInput: noAction,
         onCommitRename: noAction,
@@ -180,7 +182,7 @@ function PendingSessionCreateContent(props: PendingSessionCreateProps) {
                 label: t(checking ? "chat.queue.deliveryUnconfirmed" : "chat.queue.notSent"),
               }
             : undefined,
-        renderDraft: () => html`<div role="status">${t("connection.reconnecting")}</div>`,
+        renderDraft: renderNewSessionReconnectStatus,
         onOpenImage: openImage,
       }),
       creationComposer: composer?.canDisplay() ? composer : undefined,

@@ -176,7 +176,8 @@ it.each([false, true])(
         "rendered pane",
       );
       pane = connected.mock.contexts.find(
-        (value) => value instanceof ChatPaneRuntime && value.element === paneElement,
+        (value): value is ChatPaneRuntime =>
+          value instanceof ChatPaneRuntime && value.element === paneElement,
       );
       expect(expectDefined(pane, "mounted pane runtime").element).toBe(paneElement);
       expect(chatHistoryRequests(pageState()).initialSnapshotHydration).toBeDefined();

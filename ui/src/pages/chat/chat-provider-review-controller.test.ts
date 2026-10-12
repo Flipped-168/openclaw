@@ -5,6 +5,7 @@ import { createDeferred } from "../../../../test/helpers/promise.js";
 import type { GatewaySessionRow } from "../../api/types.ts";
 import { sessionsResult } from "../../lib/sessions/session-capability.test-support.ts";
 import type { SessionRefreshOutcome } from "../../lib/sessions/session-capability.ts";
+import { ControllerHost } from "../../lit/subscriptions-controller.ts";
 import { createTestGatewayClient } from "../../test-helpers/gateway-client.ts";
 import { mountSolid } from "../../test-helpers/mount-solid.ts";
 import {
@@ -63,15 +64,8 @@ function fixture(review = row.providerReview) {
     setRevision((value) => value + 1);
     flush();
   };
-  const controller = new ChatProviderReviewController(
-    {
-      addController() {},
-      removeController() {},
-      requestUpdate: paint,
-      updateComplete: Promise.resolve(true),
-    },
-    () => state,
-  );
+  const lifecycle = new ControllerHost();
+  const controller = new ChatProviderReviewController(lifecycle, () => state, paint);
   const mounted = mountSolid(
     () => [
       createComponent(ChatProviderReviewNotice, {
@@ -121,6 +115,7 @@ function fixture(review = row.providerReview) {
     outcome,
     request,
     refresh,
+    lifecycle,
   };
 }
 
@@ -143,8 +138,8 @@ async function expectFreshRetry(f: ReturnType<typeof fixture>, first: Record<str
   await f.refresh.mock.results.at(-1)?.value;
 }
 
-it.each(["connection", "session", "review"] as const)(
-  "ignores a late continuation outcome after %s replacement",
+it.each(["connection", "session", "review", "disconnection"] as const)(
+  "ignores a late continuation outcome after %s changes",
   async (replacement) => {
     const f = fixture();
     await f.open();
@@ -168,6 +163,9 @@ it.each(["connection", "session", "review"] as const)(
       ],
       2,
     );
+    if (replacement === "disconnection") {
+      f.lifecycle.disconnect();
+    }
     f.paint();
     f.outcome.reject(new Error("Old connection failed"));
     await f.outcome.promise.catch(() => {});

@@ -6,6 +6,7 @@ import { createRouter } from "@openclaw/uirouter";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createDeferred } from "../../../../test/helpers/promise.js";
 
+// mock-isolation: Retention fixtures own pane bindings and DOM custody; real tag registration would start domain lifecycles.
 vi.mock("./chat-pane.tsx", async () => {
   const { mockChatPagePane } = await import("./chat-page-pane.test-support.ts");
   return { ChatPaneView: mockChatPagePane };

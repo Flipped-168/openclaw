@@ -70,7 +70,6 @@ export function defineSolidBridge<Props extends object, Methods extends object =
     #values = new Map(properties.map(([key, property]) => [key, property.default]));
     #upgraded = new Map<string, unknown>();
     #publish = new Map<string, () => void>();
-    #publishConnection?: () => void;
     #dispose?: () => void;
     #unsubscribe?: () => void;
     #application?: ApplicationContext;
@@ -165,9 +164,6 @@ export function defineSolidBridge<Props extends object, Methods extends object =
     connectedCallback() {
       spec.connected?.(this.#host);
       if (this.#solidOwned) {
-        // Detached Solid parents can finish their first render before adoption.
-        // Recheck effects that require the host to be connected, without remounting.
-        this.#publishConnection?.();
         return;
       }
       for (const [key, value] of this.#upgraded) {
@@ -239,8 +235,6 @@ export function defineSolidBridge<Props extends object, Methods extends object =
       this.#mountedApplication = this.#application;
       const layout = !this.#solidOwned ? shellLayoutOwnerForHost(this) : undefined;
       const view = () => {
-        const [connection, setConnection] = createSignal(0, { ownedWrite: true });
-        this.#publishConnection = () => setConnection((revision) => revision + 1);
         const props = {
           ...defaults,
           get children() {
@@ -256,7 +250,6 @@ export function defineSolidBridge<Props extends object, Methods extends object =
           this.#publish.set(key, () => setValue({ value: this.#values.get(key) }));
           Object.defineProperty(props, key, {
             get: () => {
-              connection();
               value();
               return this.#values.get(key);
             },
@@ -293,7 +286,6 @@ export function defineSolidBridge<Props extends object, Methods extends object =
 
     #disposeRoot() {
       this.#publish.clear();
-      this.#publishConnection = undefined;
       this.#unsubscribe?.();
       this.#unsubscribe = undefined;
       const outlet = this.#start?.parentNode;

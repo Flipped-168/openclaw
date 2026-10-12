@@ -1,5 +1,4 @@
 import type { BoardGetParams } from "@openclaw/gateway-protocol";
-import { html } from "lit";
 import { createEffect, createSignal, Show } from "solid-js";
 import { PanelLoadingSkeleton } from "../../components/solid/panel-loading-skeleton.tsx";
 import type { BoardViewCallbacks } from "../../lib/board/provider.ts";
@@ -81,8 +80,8 @@ export function BoardSessionSurface(props: BoardSessionSurfaceProps & { elementR
 
 /** Retained Lit panes keep one Solid owner while their board props change. */
 export function renderBoardSessionSurface(props: BoardSessionSurfaceProps) {
-  return html`${solidContent(BoardSessionSurface, {
+  return solidContent(BoardSessionSurface, {
     ...props,
     elementReady: Boolean(customElements.get("openclaw-board-view")),
-  })}`;
+  });
 }

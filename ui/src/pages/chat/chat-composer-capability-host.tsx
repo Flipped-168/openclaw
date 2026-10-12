@@ -215,7 +215,6 @@ export class ChatComposerCapabilityHost {
         if (isCurrentPatch()) {
           state.lastError = message;
           state.chatError = message;
-          state.requestUpdate?.();
         }
       }
       return { ok: false, error: message };

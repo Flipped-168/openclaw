@@ -1,4 +1,5 @@
 // Keep the registered pane class on this file's module graph.
+import { html } from "lit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 /* @vitest-environment jsdom */
 /* @vitest-environment-options {"url":"http://chat-pane-connection-lifecycle.test/"} */
@@ -7,6 +8,7 @@ import type { GatewayBrowserClient } from "../../api/gateway.ts";
 import type { ApplicationContext } from "../../app/context.ts";
 import type { SessionCapability } from "../../lib/sessions/index.ts";
 import { sessionsResult } from "../../lib/sessions/session-capability.test-support.ts";
+import { emptyLegacyContent } from "../../lit/solid-content.tsx";
 import { createTestGatewayClient } from "../../test-helpers/gateway-client.ts";
 import { sessionMutationGatewayHello } from "../../test-helpers/gateway-methods.ts";
 import type { ChatHistoryResult } from "./chat-history-snapshot.ts";
@@ -90,10 +92,12 @@ describe("chat pane connection lifecycle", () => {
       sessions: {} as SessionCapability,
     });
     const lifecycle = pane as TestChatPane & {
-      render: () => unknown;
       readonly conversationPresented: boolean;
     };
-    lifecycle.render = () => ({ layout: null });
+    lifecycle.render = () => ({
+      layout: html`${emptyLegacyContent}`,
+      capabilityDialogs: undefined,
+    });
     const shell = document.createElement("openclaw-app-shell");
     const presentations: Array<{ paneCount: number; conversationPresented: boolean }> = [];
     shell.addEventListener("openclaw-chat-pane-lifecycle-changed", () => {
@@ -122,11 +126,11 @@ describe("chat pane connection lifecycle", () => {
       client: { request: vi.fn() } as unknown as GatewayBrowserClient,
       sessions: {} as SessionCapability,
     });
-    const lifecycle = pane as TestChatPane & {
-      render: () => { layout: null };
-      requestUpdate: () => void;
-    };
-    lifecycle.render = () => ({ layout: null });
+    const lifecycle = pane;
+    lifecycle.render = () => ({
+      layout: html`${emptyLegacyContent}`,
+      capabilityDialogs: undefined,
+    });
     connectPaneTestView(lifecycle);
     await lifecycle.updateComplete;
     const performUpdate = vi.spyOn(lifecycle, "render");

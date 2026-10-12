@@ -4,6 +4,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createDeferred as deferred } from "../../../../test/helpers/promise.js";
 
+// mock-isolation: Fake panes own staged-attachment callbacks during MCP teardown; real tag registration would replace that lifecycle.
 vi.mock("./chat-pane.tsx", async () => {
   const { mockChatPagePane } = await import("./chat-page-pane.test-support.ts");
   return { ChatPaneView: mockChatPagePane };

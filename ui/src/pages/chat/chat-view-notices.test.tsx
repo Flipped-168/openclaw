@@ -183,3 +183,20 @@ it.each([true, false])(
     expect(onRetrySessionPlacementStartup).not.toHaveBeenCalled();
   },
 );
+
+it("keeps an expanded diagnostic and its focus across an equivalent owner publication", () => {
+  const ComposerNotices = renderChatComposerNotices;
+  const diagnostic = "Synthetic failure\n  at workspace/session.ts:42";
+  const [runError, publish] = createSignal({ summary: diagnostic });
+  const { container } = mountSolid(() => <ComposerNotices messages={[]} runError={runError()} />);
+  const details = container.querySelector("details")!;
+  const summary = details.querySelector("summary")!;
+  details.open = true;
+  summary.focus();
+  publish({ summary: diagnostic });
+  flush();
+  expect(container.querySelector("details")).toBe(details);
+  expect(details.open).toBe(true);
+  expect(document.activeElement).toBe(summary);
+  expect(details.querySelector("pre")?.textContent).toBe(diagnostic);
+});

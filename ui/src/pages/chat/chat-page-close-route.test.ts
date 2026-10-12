@@ -6,6 +6,7 @@ import { createRouter } from "@openclaw/uirouter";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createDeferred } from "../../../../test/helpers/promise.js";
 
+// mock-isolation: Control delayed route handoff with fake pane bindings, without the real tag's session startup.
 vi.mock("./chat-pane.tsx", async () => {
   const { mockChatPagePane } = await import("./chat-page-pane.test-support.ts");
   return { ChatPaneView: mockChatPagePane };

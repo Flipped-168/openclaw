@@ -1,6 +1,7 @@
 /* @vitest-environment jsdom */
 /* @vitest-environment-options {"url":"http://chat-pane-retained.test/"} */
 
+import { html } from "lit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createDeferred } from "../../../../test/helpers/promise.js";
 import type { GatewayBrowserClient } from "../../api/gateway.ts";
@@ -8,6 +9,7 @@ import type { SessionWorkspaceGetResult } from "../../api/types.ts";
 import { chatInputOwnerForContext } from "../../app/chat-input-owner.ts";
 import { loadSettings, patchSettings } from "../../app/settings.ts";
 import type { SessionCapability } from "../../lib/sessions/index.ts";
+import { emptyLegacyContent } from "../../lit/solid-content.tsx";
 import { createApplicationContextProvider } from "../../test-helpers/application-context.ts";
 import { createMockBoardProvider } from "../../test-helpers/board-provider.ts";
 import { installDialogPolyfill } from "../../test-helpers/modal-dialog.ts";
@@ -112,7 +114,6 @@ describe("chat pane retained presentation lifecycle", () => {
     const panes = [page, dock].map(({ pane, state }, index) => {
       const mounted = pane as TestChatPane & {
         inputRegion: "page" | "dock";
-        render(): { layout: null };
       };
       mounted.inputRegion = index === 0 ? "page" : "dock";
       mounted.sessionKey = index === 0 ? "agent:work:task" : "agent:main:main";
@@ -123,7 +124,10 @@ describe("chat pane retained presentation lifecycle", () => {
       } as ChatPageHost["settings"];
       state.handleChatDraftChange = vi.fn();
       state.loadAssistantIdentity = vi.fn(async () => undefined);
-      mounted.render = () => ({ layout: null });
+      mounted.render = () => ({
+        layout: html`${emptyLegacyContent}`,
+        capabilityDialogs: undefined,
+      });
       mounted.active = true;
       const composer = document.createElement("div");
       composer.className = "agent-chat__composer-combobox";

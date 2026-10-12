@@ -4,7 +4,14 @@ import { AsyncDirective } from "lit/async-directive.js";
 import { Directive, directive } from "lit/directive.js";
 import { guard } from "lit/directives/guard.js";
 import { until } from "lit/directives/until.js";
-import { createEffect, createRoot, createSignal, onCleanup, runWithOwner } from "solid-js";
+import {
+  createEffect,
+  createRoot,
+  createSignal,
+  getOwner,
+  onCleanup,
+  runWithOwner,
+} from "solid-js";
 import {
   isThemeAvatarHatId,
   type ThemeBranding,
@@ -36,10 +43,11 @@ import { AVATAR_HAT_SPRITES } from "./theme-flair-sprites.ts";
 
 // The existing artwork helpers own the children of these named leaf containers.
 export function avatarArtwork(read: () => unknown) {
+  const owner = getOwner();
   let target: HTMLElement;
   let mount: ReturnType<typeof mountLitContent> | undefined;
   createEffect(read, (template) => {
-    mount = mountLitContent(template, target);
+    mount = runWithOwner(owner, () => mountLitContent(template, target));
   });
   onCleanup(() => mount?.dispose());
   return (element: HTMLElement) => {
@@ -171,6 +179,7 @@ export const identityAvatarClass = directive(IdentityAvatarClassDirective);
 
 // Lit keeps its direct-child image; the shared Solid binding owns resources and events.
 class IdentityAvatarImageDirective extends AsyncDirective {
+  private readonly owner = getOwner();
   private image!: HTMLImageElement;
   private input!: IdentityAvatarImageProps;
   private dispose?: () => void;
@@ -198,7 +207,7 @@ class IdentityAvatarImageDirective extends AsyncDirective {
   }
 
   private mount() {
-    runWithOwner(null, () =>
+    runWithOwner(this.owner, () =>
       createRoot((dispose) => {
         this.dispose = dispose;
         const [input, publish] = createSignal(this.input, { ownedWrite: true });

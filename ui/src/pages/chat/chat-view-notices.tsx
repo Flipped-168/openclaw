@@ -126,52 +126,55 @@ function renderWorkerRuntimeInstallNotice(
   );
 }
 
-function renderErrorNotice(
-  error: string,
-  action?: JSX.Element,
-  displayError = formatWebUiIconErrorText(error),
-  tone: "danger" | "warn" = "danger",
-  summary?: string,
-) {
-  const lines = displayError
-    .trim()
-    .split(/\r?\n/u)
-    .map((line) => line.replace(/\s+/gu, " ").trim());
+function ChatErrorNotice(props: {
+  error: string;
+  action?: JSX.Element;
+  displayError?: string;
+  tone?: "danger" | "warn";
+  summary?: string;
+}) {
+  const displayError = () => props.displayError ?? formatWebUiIconErrorText(props.error);
+  const lines = () =>
+    displayError()
+      .trim()
+      .split(/\r?\n/u)
+      .map((line) => line.replace(/\s+/gu, " ").trim());
   // Local action errors already contain recovery instructions; keep those visible.
-  const title = summary ?? clampText(lines[0] ?? "");
-  const hasDetails = lines.some((line) => line !== "" && line !== title);
+  const title = () => props.summary ?? clampText(lines()[0] ?? "");
+  const hasDetails = () => lines().some((line) => line !== "" && line !== title());
+  const tone = () => props.tone ?? "danger";
   return (
     <div
-      class={`chat-composer-neighbor-card chat-composer-neighbor-card--${tone} chat-error`}
-      role={tone === "warn" ? "status" : "alert"}
+      class={`chat-composer-neighbor-card chat-composer-neighbor-card--${tone()} chat-error`}
+      role={tone() === "warn" ? "status" : "alert"}
     >
       <span class="chat-composer-neighbor-card__icon" aria-hidden="true">
         <Icon name="alertTriangle" />
       </span>
       <Show
-        when={hasDetails}
+        when={hasDetails()}
         fallback={
           <span class="chat-error__content">
-            <strong>{title}</strong>
-            <CopyButton text={error} idleLabel={t("chat.copyError")} />
+            <strong>{title()}</strong>
+            <CopyButton text={props.error} idleLabel={t("chat.copyError")} />
           </span>
         }
       >
         <details class="chat-error__content">
           <summary class="chat-error__summary">
-            <strong>{title}</strong>
+            <strong>{title()}</strong>
             <span>{t("chat.details")}</span>
             <span class="chat-error__chevron" aria-hidden="true">
               <Icon name="chevronDown" />
             </span>
-            <CopyButton text={error} idleLabel={t("chat.copyError")} />
+            <CopyButton text={props.error} idleLabel={t("chat.copyError")} />
           </summary>
           <pre class="chat-error__diagnostic" tabindex={0} aria-label={t("chat.errorDetails")}>
-            {displayError}
+            {displayError()}
           </pre>
         </details>
       </Show>
-      {action}
+      {props.action}
     </div>
   );
 }
@@ -195,7 +198,9 @@ export function renderChatTopbarNotices(props: ChatViewNoticesProps) {
     <div class="chat-topbar-notices">
       {renderDiskSpaceNotice(props.diskSpace)}
       {renderWorkerRuntimeInstallNotice(props.workerRuntimeInstall)}
-      <Show when={props.error}>{(error) => <>{renderErrorNotice(error(), dismiss)}</>}</Show>
+      <Show when={props.error}>
+        {(error) => <ChatErrorNotice error={error()} action={dismiss} />}
+      </Show>
     </div>
   );
 }
@@ -237,21 +242,22 @@ export function renderChatComposerNotices(props: ChatComposerNoticesProps) {
       <Show when={props.runError}>
         {(error) => (
           <>
-            {renderErrorNotice(
-              error().summary,
-              refresh,
-              undefined,
-              contention() ? "warn" : "danger",
-              error().kind === "stop"
-                ? undefined
-                : t(
-                    contention()
-                      ? "chat.errorBusySummary"
-                      : error().kind === "auth_refresh"
-                        ? "chat.errorSignInSummary"
-                        : "chat.errorReplySummary",
-                  ),
-            )}
+            <ChatErrorNotice
+              error={error().summary}
+              action={refresh}
+              tone={contention() ? "warn" : "danger"}
+              summary={
+                error().kind === "stop"
+                  ? undefined
+                  : t(
+                      contention()
+                        ? "chat.errorBusySummary"
+                        : error().kind === "auth_refresh"
+                          ? "chat.errorSignInSummary"
+                          : "chat.errorReplySummary",
+                    )
+              }
+            />
           </>
         )}
       </Show>
@@ -325,15 +331,18 @@ function renderPlacementStartupError(
       {t(checking ? "chat.queue.checkDelivery" : "common.retry")}
     </button>
   ) : undefined;
-  return renderErrorNotice(
-    error,
-    action,
-    displayError,
-    "danger",
-    checking
-      ? t("chat.queue.checkDeliveryHelp")
-      : status.discardAndReload
-        ? displayError
-        : t("chat.errorStartSummary"),
+  return (
+    <ChatErrorNotice
+      error={error}
+      action={action}
+      displayError={displayError}
+      summary={
+        checking
+          ? t("chat.queue.checkDeliveryHelp")
+          : status.discardAndReload
+            ? displayError
+            : t("chat.errorStartSummary")
+      }
+    />
   );
 }

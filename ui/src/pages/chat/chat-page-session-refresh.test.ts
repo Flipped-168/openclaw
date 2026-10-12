@@ -4,7 +4,7 @@
 import { expectDefined } from "@openclaw/normalization-core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-// Keep this complete mock in the dedicated unit-mock-registry project.
+// mock-isolation: Observe page title publications without registering real panes that start session requests.
 vi.mock("./chat-pane.tsx", async () => {
   const { mockChatPagePane } = await import("./chat-page-pane.test-support.ts");
   return { ChatPaneView: mockChatPagePane };

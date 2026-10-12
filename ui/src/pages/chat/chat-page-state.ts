@@ -11,6 +11,7 @@ import {
   isUiGlobalSessionKey,
   resolveUiGlobalAliasAgentId,
 } from "../../lib/sessions/session-key.ts";
+import type { SolidBridgeElement } from "../../lit/solid-bridge.ts";
 import {
   ControllerHost,
   SubscriptionsController,
@@ -32,7 +33,6 @@ import {
   renderChatPageSplitLayout,
 } from "./chat-page-pane-render.tsx";
 import { ChatPageRetainedSessions } from "./chat-page-retained-sessions.ts";
-import type { ChatPageHost } from "./chat-page.ts";
 import { resumeStagedPanes } from "./chat-pane-attachment-handoff.ts";
 import { bindChatPageSession } from "./chat-state-route.ts";
 import { ChatViewerPresenceController } from "./chat-viewer-presence.ts";
@@ -56,6 +56,19 @@ import {
   setPaneSession,
   singlePaneLayout,
 } from "./split-layout.ts";
+export type ChatPageProps = {
+  data: SessionChatRouteData;
+  navDrawerOpen: boolean;
+  presented: boolean;
+  context?: ApplicationContext;
+};
+export type ChatPageMethods = {
+  requestUpdate(): void;
+  addController: ControllerHost["addController"];
+  removeController: ControllerHost["removeController"];
+};
+export type ChatPageHost = SolidBridgeElement<ChatPageProps, ChatPageMethods>;
+
 export class ChatPageState extends ControllerHost {
   context!: ApplicationContext;
   @viewState() private layout: ChatSplitLayout | undefined;

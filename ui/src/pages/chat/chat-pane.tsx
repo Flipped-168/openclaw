@@ -114,6 +114,17 @@ export const ChatPaneView = defineSolidBridge<ChatPaneProps, PaneMethods>(
   (props, element) => {
     const runtime = new ChatPaneRuntime(element, useApplication());
     runtimes.set(element, runtime);
+    const bridgeCompletion = Object.getOwnPropertyDescriptor(
+      Object.getPrototypeOf(element),
+      "updateComplete",
+    )?.get;
+    if (!bridgeCompletion) {
+      throw new Error("Chat pane requires the bridge commit fence");
+    }
+    Object.defineProperty(element, "updateComplete", {
+      configurable: true,
+      get: () => Promise.resolve(bridgeCompletion.call(element)).then(() => runtime.updateComplete),
+    });
     for (const key of [
       "transcriptLoading",
       "transcriptReady",
@@ -128,7 +139,13 @@ export const ChatPaneView = defineSolidBridge<ChatPaneProps, PaneMethods>(
       () =>
         Object.fromEntries(Object.keys(properties).map((key) => [key, Reflect.get(props, key)])),
       (next) => {
-        Object.assign(runtime, next);
+        for (const [key, value] of Object.entries(next)) {
+          const previous = Reflect.get(runtime, key);
+          if (!Object.is(previous, value)) {
+            Reflect.set(runtime, key, value);
+            runtime.requestUpdate(key, previous);
+          }
+        }
       },
     );
     onCleanup(() => runtimes.delete(element));
