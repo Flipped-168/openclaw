@@ -1,5 +1,5 @@
 import { asOptionalRecord } from "@openclaw/normalization-core/record-coerce";
-import { createEffect, createSignal, onCleanup, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, onCleanup, Show } from "solid-js";
 import { Icon } from "../../../components/solid/icon.tsx";
 import { formatUiError } from "../../../lib/format-error.ts";
 import { canCallGatewayMethod } from "../../../lib/gateway-methods.ts";
@@ -25,15 +25,16 @@ export function ReadAloud(props: { text: string }) {
     cancelPlayback();
     setPlaying(false);
   };
-  createEffect(
+  const playbackIdentity = createMemo(
     () => [gateway?.read().snapshot.client, gateway?.read().snapshot.phase, props.text] as const,
-    () => {
-      stop();
-      setError("");
-      // The config capability coalesces this with the other chat consumers.
-      void context?.runtimeConfig.ensureLoaded().catch(() => undefined);
-    },
+    { equals: (before, after) => before.every((value, index) => value === after[index]) },
   );
+  createEffect(playbackIdentity, () => {
+    stop();
+    setError("");
+    // The config capability coalesces this with the other chat consumers.
+    void context?.runtimeConfig.ensureLoaded().catch(() => undefined);
+  });
   onCleanup(cancelPlayback);
   const available = () => {
     const snapshot = config?.read().state.configSnapshot;

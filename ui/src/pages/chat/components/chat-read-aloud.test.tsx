@@ -47,12 +47,22 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-function mount(request: ReturnType<typeof vi.fn>, configured = true) {
+function mount(
+  request: ReturnType<typeof vi.fn>,
+  configured = true,
+  gatewayListeners?: Set<() => void>,
+) {
   const runtimeConfig = createRuntimeConfigStub();
   Object.assign(runtimeConfig.state, {
     configSnapshot: { runtimeConfig: configured ? { tts: { provider: "openai" } } : {} },
   });
   const context = createContext(request, { methods: ["tts.speak"], runtimeConfig });
+  if (gatewayListeners) {
+    context.gateway.subscribe = (listener) => {
+      gatewayListeners.add(listener);
+      return () => gatewayListeners.delete(listener);
+    };
+  }
   const provider = createSolidApplicationContextProvider(context);
   const details = resolveMessageActionDetails(
     prepareChatMessageRender({ role: "assistant", content: "Local voice is working." }),
@@ -93,6 +103,31 @@ it("unlocks and reuses the same audio element before awaiting Gateway speech", a
   expect(pause).toHaveBeenCalledTimes(2);
   expect(revoke).toHaveBeenCalledWith("blob:synthetic-speech");
   expect(view.getByRole("button", { name: "Read aloud" })).toBe(button);
+});
+
+it("keeps speech through Gateway notifications that preserve connection and text", async () => {
+  const pending = createDeferred();
+  const gatewayListeners = new Set<() => void>();
+  const view = mount(
+    vi.fn(() => pending.promise),
+    true,
+    gatewayListeners,
+  );
+  view.getByRole<HTMLButtonElement>("button", { name: "Read aloud" }).click();
+  for (const notify of gatewayListeners) {
+    notify();
+  }
+  flush();
+  pending.resolve({ audioBase64: "UklGRg==", mimeType: "audio/wav", provider: "openai" });
+  await waitForSolid(() => expect(play).toHaveBeenCalledTimes(2));
+  for (const notify of gatewayListeners) {
+    notify();
+  }
+  flush();
+  expect(revoke).not.toHaveBeenCalled();
+  view.getByRole<HTMLButtonElement>("button", { name: "Stop reading" }).click();
+  flush();
+  expect(revoke).toHaveBeenCalledWith("blob:synthetic-speech");
 });
 
 it("reads replies rendered through the Lit pane's native transcript", async () => {
