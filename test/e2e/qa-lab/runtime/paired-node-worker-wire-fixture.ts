@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import path from "node:path";
 import { promisify } from "node:util";
+import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import type { GatewayClient } from "openclaw/plugin-sdk/gateway-runtime";
 import type { createQaGatewayChild, QaGatewayChild } from "../../../../extensions/qa-lab/api.js";
 import {
@@ -36,7 +37,7 @@ import type { NodeWorkerContainerEngine } from "../../../../src/node-host/node-w
 import type { createNodeWorkerSupervisor } from "../../../../src/node-host/node-worker-supervisor.js";
 import type { NodeWorkerWorkspaceRuntime } from "../../../../src/node-host/node-worker-workspace.js";
 import { VERSION } from "../../../../src/version.js";
-import { createDeferred, withTestTimeout } from "../../../helpers/promise.js";
+import { createDeferred, withinTest, withTestTimeout } from "../../../helpers/promise.js";
 import { MODEL_REF, PROOF_TIMEOUT_MS } from "./cloud-worker-midturn-loss-fixture.js";
 
 const execFileAsync = promisify(execFile);
@@ -58,6 +59,44 @@ async function waitUntil<T>(read: () => Promise<T | undefined>): Promise<T> {
 
 export type WireGateway = QaGatewayChild;
 type WireGatewayEvent = { event: string; payload?: unknown };
+
+export function createWireWorkspaceSettlementWaiter() {
+  const waiting = new Map<string, ReturnType<typeof createDeferred<void>>>();
+  const settled = (placement: unknown) =>
+    isRecord(placement) &&
+    placement.state === "active" &&
+    placement.workspaceResultReconciling !== true;
+  return {
+    onEvent: (event: WireGatewayEvent) => {
+      if (event.event !== "sessions.changed" || !isRecord(event.payload)) {
+        return;
+      }
+      const session = event.payload.session;
+      if (isRecord(session) && settled(session.placement)) {
+        const key = event.payload.sessionKey ?? session.key;
+        if (typeof key === "string") {
+          waiting.get(key)?.resolve();
+        }
+      }
+    },
+    async wait(client: GatewayClient, key: string, signal: AbortSignal) {
+      const changed = createDeferred();
+      waiting.set(key, changed);
+      try {
+        // Register before the current read so fast reconciliation needs no later event.
+        const current = await client.request<{ session: { placement?: unknown } }>(
+          "sessions.describe",
+          { key },
+        );
+        if (!settled(current.session.placement)) {
+          await withinTest(changed.promise, signal);
+        }
+      } finally {
+        waiting.delete(key);
+      }
+    },
+  };
+}
 export type WireNodeRead = {
   nodeId: string;
   approvalState?: string;

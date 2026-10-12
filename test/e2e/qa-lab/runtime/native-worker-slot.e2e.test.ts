@@ -26,6 +26,7 @@ import {
   connectWireClient,
   createPairedNodeWorkerHost,
   createPublishedWireWorkspace,
+  createWireWorkspaceSettlementWaiter,
   startPairedNodeWorkerGateway,
   wireMessageText,
   type PairedNodeWorkerHost,
@@ -131,6 +132,7 @@ it.skipIf(process.platform === "win32")(
     const provider = await providerFixture();
     const published = await createPublishedWireWorkspace(root);
     const gatewayOwner = createQaGatewayChild();
+    const settlement = createWireWorkspaceSettlementWaiter();
     const identity = loadOrCreateDeviceIdentity({ path: path.join(root, "node-identity.sqlite") });
     const nodeHostRoot = path.join(root, "node-state", "node-host");
     await mkdir(nodeHostRoot, { recursive: true });
@@ -174,7 +176,13 @@ it.skipIf(process.platform === "win32")(
             tempParentDir: root,
           },
         });
-        operator = await connectWireClient({ gateway, role: "operator", identity: null });
+        operator = await connectWireClient({
+          gateway,
+          role: "operator",
+          identity: null,
+          onEvent: settlement.onEvent,
+        });
+        await operator.request("sessions.subscribe", {});
         node = await createPairedNodeWorkerHost({
           gateway,
           operator,
@@ -239,6 +247,7 @@ it.skipIf(process.platform === "win32")(
         expect(readPlacement(gateway, keys.A).placement?.turn_claim_id).toBeTruthy();
         provider.releases.A.resolve();
         expect(await wait("native-slot-a")).toMatchObject({ status: "ok" });
+        await settlement.wait(operator, keys.A, signal);
         const settled = readPlacement(gateway, keys.A);
         expect(settled.placement).toMatchObject({
           state: "active",
@@ -282,6 +291,7 @@ it.skipIf(process.platform === "win32")(
         expect(await node.supervisor.status(activeB.launchId)).toMatchObject({ state: "running" });
         provider.releases.B.resolve();
         expect(await wait("native-slot-b")).toMatchObject({ status: "ok" });
+        await settlement.wait(operator, keys.B, signal);
         expect(readPlacement(gateway, keys.B)).toMatchObject({
           placement: { state: "active", turn_claim_id: null },
           pending: undefined,

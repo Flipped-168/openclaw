@@ -31,6 +31,7 @@ import {
   connectWireClient,
   createPairedNodeWorkerHost,
   createPublishedWireWorkspace,
+  createWireWorkspaceSettlementWaiter,
   startPairedNodeWorkerGateway,
   type PairedNodeWorkerHost,
   type WireGateway,
@@ -81,11 +82,12 @@ describe("node worker launch wire", () => {
   it(
     "transfers and reconciles a gateway-push workspace through a device runner",
     { timeout: TEST_TIMEOUT_MS },
-    async () => {
+    async ({ signal }) => {
       const root = tempDirs.make("openclaw-node-worker-launch-wire-");
       const provider = await startMidturnProvider();
       const published = await createPublishedWireWorkspace(root);
       const gatewayOwner = createQaGatewayChild();
+      const settlement = createWireWorkspaceSettlementWaiter();
       let gateway: WireGateway | undefined;
       let operator: GatewayClient | undefined;
       let workerNode: PairedNodeWorkerHost | undefined;
@@ -108,7 +110,13 @@ describe("node worker launch wire", () => {
           executionIdentity: true,
           useRepoCli: false,
         });
-        operator = await connectWireClient({ gateway, role: "operator", identity: null });
+        operator = await connectWireClient({
+          gateway,
+          role: "operator",
+          identity: null,
+          onEvent: settlement.onEvent,
+        });
+        await operator.request("sessions.subscribe", {});
         workerNode = await createPairedNodeWorkerHost({
           gateway,
           operator,
@@ -236,6 +244,7 @@ describe("node worker launch wire", () => {
             `node worker turn failed: ${JSON.stringify(completed)}\n${gateway.logs().slice(-12_000)}`,
           );
         }
+        await settlement.wait(operator, SESSION_KEY, signal);
         await workerNode.waitForInvokes();
         expect(workerNode.invokeErrors).toEqual([]);
         expect(reconnected).toBe(true);
@@ -317,6 +326,7 @@ describe("node worker launch wire", () => {
             { timeoutMs: PROOF_TIMEOUT_MS + 5_000 },
           ),
         ).resolves.toMatchObject({ status: "ok" });
+        await settlement.wait(operator, SESSION_KEY, signal);
         await workerNode.waitForInvokes();
         expect(workerNode.invokeErrors).toEqual([]);
 
@@ -491,13 +501,14 @@ describe("node worker launch wire", () => {
         const freshConnectionSamples: number[] = [];
         try {
           for (let wave = 0; wave < FINALIZATION_LOAD_WAVES; wave += 1) {
+            const waveOperator = operator;
             const waveFinalizationStarted = new Promise<number>((resolve) => {
               resolveWaveFinalizationStarted = resolve;
             });
             const loadRunIds = await Promise.all(
               loadSessions.map(async (sessionKey, index) => {
                 const loadRunId = `node-worker-finalization-load-${wave}-${index}-${Date.now()}`;
-                const loadStarted = await operator!.request<{ runId?: string; status?: string }>(
+                const loadStarted = await waveOperator.request<{ runId?: string; status?: string }>(
                   "chat.send",
                   {
                     sessionKey,
@@ -513,7 +524,7 @@ describe("node worker launch wire", () => {
             const waveGateway = gateway;
             const waits = Promise.all(
               loadRunIds.map(async (loadRunId) => {
-                const completedLoad = await operator!.request<{ status?: string }>(
+                const completedLoad = await waveOperator.request<{ status?: string }>(
                   "agent.wait",
                   { runId: loadRunId, timeoutMs: PROOF_TIMEOUT_MS },
                   { timeoutMs: PROOF_TIMEOUT_MS + 5_000 },
@@ -541,6 +552,9 @@ describe("node worker launch wire", () => {
             freshConnectionSamples.push(performance.now() - freshConnectionStartedAt);
             await freshClient.stopAndWait({ timeoutMs: 2_000 });
             await waits;
+            await Promise.all(
+              loadSessions.map((sessionKey) => settlement.wait(waveOperator, sessionKey, signal)),
+            );
           }
         } finally {
           samplerAbort.abort();

@@ -38,6 +38,7 @@ function placementStoreDefaults(
 ) {
   return {
     readChangeSnapshot: async () => readPlacements(),
+    registerTurnClaimClosedHandler: vi.fn(() => vi.fn()),
     readEnvironmentOwner: async (environmentId: string) =>
       readPlacements().find((placement) => placement.environmentId === environmentId),
     readProjection: async () => ({
