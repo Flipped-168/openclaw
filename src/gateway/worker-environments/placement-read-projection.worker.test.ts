@@ -186,7 +186,7 @@ describe("worker placement read projection", () => {
     expect(assertCurrent).toThrow("placement late-placement changed before mutation");
   });
 
-  it("publishes node retention without host SQL and refuses a drained placement on the next authority check", async () => {
+  it("publishes node retention without host SQL and refuses a drained placement before dispatch", async () => {
     vi.stubEnv("OPENCLAW_STATE_DIR", roots.make("placement-node-retention-"));
     const database = openOpenClawStateDatabase();
     const { store, placement, identity } = await activePlacement(database, "node-retention");
@@ -245,14 +245,14 @@ describe("worker placement read projection", () => {
       expect(request.params).toMatchObject({
         retain: [expect.objectContaining({ manifestRefs: null })],
       });
-      expect(request.isDispatchAuthorized()).toBe(true);
+      expect(await request.authorizeDispatch?.()).toBe(true);
       sql.expectIdle();
       await store.startDispatch({
         sessionId: "unrelated",
         sessionKey: "agent:main:unrelated",
         agentId: "main",
       });
-      expect(request.isDispatchAuthorized()).toBe(true);
+      expect(await request.authorizeDispatch?.()).toBe(true);
       await store.startDrain({
         sessionId: placement.sessionId,
         environmentId: placement.environmentId!,
@@ -260,7 +260,8 @@ describe("worker placement read projection", () => {
         expectedGeneration: placement.generation,
       });
       sql.clear();
-      expect(request.isDispatchAuthorized()).toBe(false);
+      expect(await request.authorizeDispatch?.()).toBe(false);
+      expect(request.isDispatchAuthorized()).toBe(true);
       sql.expectIdle();
       expect(warn).not.toHaveBeenCalled();
     } finally {

@@ -552,10 +552,6 @@ export async function prepareSessionMutationFacts(
                     throw new SessionMutationFactsUnavailableError();
                   }
                   retainedReads.set(key, retained);
-                  const publication = retained.prepareRead();
-                  if (publication) {
-                    await publication;
-                  }
                   if (!initializedReads.has(key)) {
                     const entry = store[sessionKey];
                     retained.initialize({
@@ -569,13 +565,6 @@ export async function prepareSessionMutationFacts(
                     });
                     initializedReads.add(key);
                   }
-                  const current = retained.readCurrent();
-                  if (!current) {
-                    throw new SessionMutationFactsUnavailableError();
-                  }
-                  if (current.entry) {
-                    store[sessionKey] = current.entry;
-                  }
                 }
               }
             }
@@ -586,6 +575,15 @@ export async function prepareSessionMutationFacts(
         return target;
       });
       assertActive();
+      // Selection cleanup can yield while a writer stages its postimage.
+      // Join that publication before consuming the retained sharing facts.
+      const publications = [...retainedReads.values()].flatMap((retained) => {
+        const publication = retained.prepareRead();
+        return publication ? [publication] : [];
+      });
+      if (publications.length > 0) {
+        await Promise.all(publications);
+      }
       storageTarget = Object.freeze({
         agentId: selected.agentId,
         canonicalKey: selected.canonicalKey,

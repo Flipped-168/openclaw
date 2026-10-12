@@ -546,7 +546,7 @@ async function mutatePreparedSessionAtMessage({
                 source: () => {
                   if (
                     memoryOwner?.owner?.readSession(targetKey, memory.authority)?.entry
-                      .repositoryWorkspaceId === workspaceId
+                      ?.repositoryWorkspaceId === workspaceId
                   ) {
                     throw new Error("Repository fork was committed before cleanup");
                   }

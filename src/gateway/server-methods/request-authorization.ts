@@ -437,9 +437,10 @@ export async function authorizeGatewayRequestPreDispatch(params: {
     params.markSessionSubscribePhase?.(
       subscriptionAccessOnly ? "accessFacts" : "projectionReadiness",
     );
-    // Resident rows retain projection authority; missing targets retain their absence.
+    // Describe prepares its projection even for absent rows; mutations retain their absence.
     const needsRetainedTargetFacts =
       projection &&
+      params.method !== "sessions.describe" &&
       !params.consumeSessionTurn &&
       resolveDirectIncognitoTargets(params.method, requestParams).length === 0 &&
       resolveDirectSessionTargets(params.method, requestParams).some((target) => {

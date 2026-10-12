@@ -260,12 +260,12 @@ describe("node workspace retain coordinator", () => {
           nodeId: "node-1",
           connId: "connection-1",
           ok: true,
-          payload: {
+          payloadJSON: JSON.stringify({
             applied: true,
             deleted: 0,
             hasMore: false,
             bundleStatus: { bundleHash, status: "installed" },
-          },
+          }),
         }),
       ).toBe(true);
       await publishing;

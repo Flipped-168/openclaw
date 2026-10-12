@@ -32,18 +32,20 @@ export { sessionLog } from "../session-log.js";
 export async function prepareSessionWorkerPlacementPatchCheck(
   params: Parameters<typeof resolveSessionWorkerPlacementPatchError>[0],
 ) {
+  const validatesRuntime =
+    params.validateModelRuntime &&
+    (params.patch.model !== undefined ||
+      params.patch.agentRuntime !== undefined ||
+      params.patch.nativeRuntimeConsent !== undefined);
+  if (params.patch.archived !== false && !("permissionMode" in params.patch) && !validatesRuntime) {
+    return () => undefined;
+  }
   const placement = await readSessionWorkerPlacementAsync({
     context: params.context,
     sessionId: params.entry?.sessionId,
   });
   const runtime =
-    placement &&
-    placement.state !== "local" &&
-    params.entry?.sessionId &&
-    params.validateModelRuntime &&
-    (params.patch.model !== undefined ||
-      params.patch.agentRuntime !== undefined ||
-      params.patch.nativeRuntimeConsent !== undefined)
+    placement && placement.state !== "local" && params.entry?.sessionId && validatesRuntime
       ? await resolveWorkerPlacementSessionRuntimeCapabilitiesAsync({
           cfg: params.cfg,
           entry: params.entry,
