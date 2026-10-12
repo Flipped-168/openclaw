@@ -414,6 +414,7 @@ it.each(["missing", "receipt-held", "malformed-receipt", "malformed-journal"])(
 it("re-registers durable lineage children before configured-only runtime reads", async () => {
   const root = fs.realpathSync.native(tempDirs.make("openclaw-startup-registry-recovery-"));
   const stateDir = path.join(root, "state");
+  let phase = "preparing fixture paths";
   await withEnvAsync({ OPENCLAW_STATE_DIR: stateDir }, async () => {
     const env = { ...process.env };
     const storeTemplate = path.join(stateDir, "agents", "{agentId}", "sessions", "sessions.json");
@@ -425,14 +426,17 @@ it("re-registers durable lineage children before configured-only runtime reads",
     const childKey = "agent:codex:subagent:upgrade-child";
     const storePathFor = (agentId: string) => storeTemplate.replace("{agentId}", agentId);
 
+    phase = "seeding configured parent";
     await replaceSessionEntry(
       { agentId: "ops", env, sessionKey: mainKey, storePath: storePathFor("ops") },
       { sessionId: "session-ops", updatedAt: 20 },
     );
+    phase = "seeding lineage child";
     await replaceSessionEntry(
       { agentId: "codex", env, sessionKey: childKey, storePath: storePathFor("codex") },
       { sessionId: "session-codex", spawnedBy: mainKey, updatedAt: 30 },
     );
+    phase = "seeding unrelated agent";
     await replaceSessionEntry(
       {
         agentId: "local",
@@ -447,10 +451,13 @@ it("re-registers durable lineage children before configured-only runtime reads",
       agentId: "codex",
       env,
     }).path;
+    phase = "closing fixture agent databases";
     await closeOpenClawAgentDatabasesAsync(stateDir);
     closeOpenClawAgentDatabasesForTest();
+    phase = "disposing child registration";
     await disposeOpenClawAgentDatabaseByPath(childDatabasePath, { env });
 
+    phase = "checking retained file and removed registration";
     expect(fs.existsSync(childDatabasePath)).toBe(true);
     expect(
       listOpenClawRegisteredAgentDatabases({ env }).some(
@@ -458,6 +465,7 @@ it("re-registers durable lineage children before configured-only runtime reads",
       ),
     ).toBe(false);
 
+    phase = "running startup migration";
     await runSessionStartupMigration({
       cfg,
       env,
@@ -476,12 +484,14 @@ it("re-registers durable lineage children before configured-only runtime reads",
       },
     });
 
+    phase = "checking recovered child registration";
     expect(listOpenClawRegisteredAgentDatabases({ env })).toContainEqual(
       expect.objectContaining({ agentId: "codex", path: childDatabasePath }),
     );
 
     const enumerateAgentDirs = vi.spyOn(sessionDirs, "resolveAgentSessionDirsFromAgentsDirSync");
     try {
+      phase = "reading configured-only combined store";
       const store = loadCombinedSessionStoreForGatewayCore(cfg, {
         configuredAgentsOnly: true,
       }).store;
@@ -492,6 +502,8 @@ it("re-registers durable lineage children before configured-only runtime reads",
     } finally {
       enumerateAgentDirs.mockRestore();
     }
+  }).catch((error: unknown) => {
+    throw new Error(`Registry recovery failed while ${phase}`, { cause: error });
   });
 });
 
