@@ -374,9 +374,9 @@ describe("Codex initialization through the registered session deletion owner", (
         });
 
         if (failure === "import") {
-          // Install the import fault before the fork retains its source authority.
+          // Allow the child header so the callback captures identity before imported messages fail.
           openOpenClawAgentDatabase({ agentId: "main" }).db.exec(
-            "CREATE TRIGGER reject_import BEFORE INSERT ON transcript_events BEGIN SELECT RAISE(ABORT, 'injected import failure'); END",
+            "CREATE TRIGGER reject_import BEFORE INSERT ON transcript_events WHEN NEW.navigation_type = 'message' BEGIN SELECT RAISE(ABORT, 'injected import failure'); END",
           );
         }
         const result = await withPluginRuntimeRegistryScope(

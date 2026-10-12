@@ -25,6 +25,7 @@ import {
 import { withOpenClawTestState } from "../test-utils/openclaw-test-state.js";
 import { acquireTestPortBlock } from "../test-utils/port-claims.js";
 import * as configReload from "./config-reload.js";
+import { gatewayKernelLogs } from "./server-kernel.js";
 import * as agentDatabases from "./server-reload-agent-databases.js";
 import { startGatewayServer } from "./server.js";
 import { connectGatewayClient, disconnectGatewayClient } from "./test-helpers.e2e.js";
@@ -43,28 +44,58 @@ it("publishes agent mutations before acknowledging immediate session and roster 
   let publicationHeld = false;
   let reloadScheduler: GatewayScheduler | undefined;
   const reloadFailures: string[] = [];
+  const reloadWarn = vi.spyOn(gatewayKernelLogs.logReload, "warn");
+  const reloadInfo = vi.spyOn(gatewayKernelLogs.logReload, "info");
+  const reloadError = vi.spyOn(gatewayKernelLogs.logReload, "error");
   const startReloader = configReload.startGatewayConfigReloader;
   const reloaderSpy = vi
     .spyOn(configReload, "startGatewayConfigReloader")
     .mockImplementation((options) => {
       reloadScheduler = options.scheduler;
+      const hasOutstandingGatewayRestart = options.hasOutstandingGatewayRestart;
       return startReloader({
         ...options,
         log: {
           ...options.log,
+          info: (message) => {
+            reloadFailures.push(`info: ${message}`);
+            options.log.info(message);
+          },
+          warn: (message) => {
+            reloadFailures.push(`warn: ${message}`);
+            options.log.warn(message);
+          },
           error: (message) => {
-            reloadFailures.push(message);
+            reloadFailures.push(`error: ${message}`);
             options.log.error(message);
           },
         },
+        hasOutstandingGatewayRestart: hasOutstandingGatewayRestart
+          ? () => {
+              const outstanding = hasOutstandingGatewayRestart();
+              reloadFailures.push(`outstanding restart: ${outstanding}`);
+              return outstanding;
+            }
+          : undefined,
         onHotReload: async (...args) => {
+          const plan = args[0];
+          reloadFailures.push(
+            `hot reload plan: ${JSON.stringify({
+              changedPaths: plan.changedPaths,
+              restartGateway: plan.restartGateway,
+              restartReasons: plan.restartReasons,
+              hotReasons: plan.hotReasons,
+            })}`,
+          );
           if (!publicationHeld && args[1].agents?.entries?.[agentId]) {
             publicationHeld = true;
             publicationEntered.resolve();
             await releasePublication.promise;
           }
           try {
-            return await options.onHotReload(...args);
+            const application = await options.onHotReload(...args);
+            reloadFailures.push(`hot reload result: ${JSON.stringify(application)}`);
+            return application;
           } catch (error) {
             reloadFailures.push(
               error instanceof Error ? (error.stack ?? error.message) : String(error),
@@ -87,6 +118,9 @@ it("publishes agent mutations before acknowledging immediate session and roster 
     releasePublication.resolve();
     reloaderSpy.mockRestore();
     revivalSpy.mockRestore();
+    reloadWarn.mockRestore();
+    reloadInfo.mockRestore();
+    reloadError.mockRestore();
   });
   await withOpenClawTestState(
     {
@@ -284,7 +318,7 @@ it("publishes agent mutations before acknowledging immediate session and roster 
                         })
                         .catch((error: unknown) => {
                           throw new Error(
-                            `Agent ${overlapAgentId} creation failed; reload errors:\n${reloadFailures.join("\n")}`,
+                            `Agent ${overlapAgentId} creation failed; reload errors:\n${reloadFailures.join("\n")}\nreload warnings: ${JSON.stringify(reloadWarn.mock.calls)}\nreload info: ${JSON.stringify(reloadInfo.mock.calls)}\nreload errors: ${JSON.stringify(reloadError.mock.calls)}`,
                             { cause: error },
                           );
                         }),
