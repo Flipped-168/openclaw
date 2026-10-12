@@ -26,6 +26,7 @@ afterEach(() => {
 
 describe("native Bash execution policy", () => {
   it("rejects native Bash when OpenClaw owns shell execution", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
     const { context } = await createExecution({ nativeTools: ["Bash"] });
     context.hostOwnedTools = ["exec", "process"];
     let decision: CliBackendToolPermissionResult | undefined;

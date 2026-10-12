@@ -144,6 +144,7 @@ describe("CLI execution cancellation", () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     setCliRunnerExecuteTestDeps({ getProcessSupervisor: restoreProcessSupervisor });
     vi.restoreAllMocks();
   });
@@ -151,6 +152,8 @@ describe("CLI execution cancellation", () => {
   it.each([true, false])(
     "marks only rejected protocol on interruption (protocol=%s)",
     async (protocol) => {
+      // Exercise interruption after output, independently of worker preparation time.
+      vi.useFakeTimers({ toFake: ["Date"] });
       const controller = new AbortController();
       const context = createRunContext({ runId: "interrupted-output", signal: controller.signal });
       context.preparedBackend.backend.command = process.execPath;
