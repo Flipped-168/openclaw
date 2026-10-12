@@ -1,6 +1,5 @@
 import { afterEach, expect, test, vi } from "vitest";
 import { loadSessionEntry } from "../config/sessions/session-accessor.js";
-import * as errors from "../infra/errors.js";
 import { createDeferredCore } from "../shared/deferred.js";
 import {
   closeOpenClawStateDatabaseAsync,
@@ -202,7 +201,6 @@ test.each([false, true])(
       return await destroy(environmentId);
     });
     const archiveWarnings = vi.spyOn(sessionLog, "warn");
-    const archiveErrors = vi.spyOn(errors, "formatErrorMessage");
     const archive = directSessionReq(
       "sessions.patch",
       {
@@ -252,9 +250,6 @@ test.each([false, true])(
         [
           outcome.error?.message,
           ...archiveWarnings.mock.calls.map((args) => JSON.stringify(args)),
-          ...archiveErrors.mock.calls.map(([error]) =>
-            error instanceof Error ? error.stack : String(error),
-          ),
         ].join("\n"),
       ).toMatchObject({ ok: true });
       expect(placements.get(REQUEST.sessionId)?.state).toBe("local");
@@ -266,7 +261,6 @@ test.each([false, true])(
       release.resolve();
       await archive;
       archiveWarnings.mockRestore();
-      archiveErrors.mockRestore();
     }
   },
 );
