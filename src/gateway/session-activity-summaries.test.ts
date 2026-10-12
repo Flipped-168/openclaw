@@ -381,11 +381,16 @@ describe("Activity recap lifecycle with the canonical session store", () => {
     await patchSessionEntryCore(scope, () => ({ skillsSnapshot: { prompt, skills: [] } }));
     const before = read()!;
     const completion = createDeferred<ReturnType<typeof result>>();
-    complete.mockImplementationOnce(() => completion.promise);
+    const completionStarted = createDeferred();
+    complete.mockImplementationOnce(() => {
+      completionStarted.resolve();
+      return withinTest(completion.promise, testSignal);
+    });
     residentProjection = await createSessionRowProjection({ cfg, getConfig: () => cfg });
     await residentProjection.ensureMaterialized();
     await service.ensure(target);
-    await vi.waitFor(() => expect(complete).toHaveBeenCalledTimes(1));
+    await withinTest(completionStarted.promise, testSignal);
+    expect(complete).toHaveBeenCalledTimes(1);
     const queries = observeSqliteReadSql(requireNodeSqlite().StatementSync.prototype);
     const parse = vi.spyOn(JSON, "parse");
     try {
@@ -586,7 +591,7 @@ describe("Activity recap lifecycle with the canonical session store", () => {
     const completionStarted = createDeferred();
     complete.mockImplementationOnce(() => {
       completionStarted.resolve();
-      return completion.promise;
+      return withinTest(completion.promise, testSignal);
     });
     try {
       await service.ensure(target);

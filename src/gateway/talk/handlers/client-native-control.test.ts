@@ -364,12 +364,12 @@ describe("native Talk through the public OpenAI plugin registration", () => {
     "preserves intentional native cancellation after %s backend settlement",
     async (settlement, { signal }) => {
       const releaseBackend = createDeferredCore();
-      const backendCanceled = createDeferredCore();
+      const cancellationObserved = createDeferredCore();
       let activeRun: RunEmbeddedAgentParams | undefined;
       let backendAborted = false;
       const abortOwned = vi.fn(() => {
         backendAborted = true;
-        backendCanceled.resolve();
+        cancellationObserved.resolve();
       });
       upstream.runEmbeddedAgent
         .mockImplementationOnce(async (params) => {
@@ -434,7 +434,7 @@ describe("native Talk through the public OpenAI plugin registration", () => {
 
           socket.serverEvent({ type: "turn.done", turn: { role: "user", transcript: "cancel" } });
           socket.serverEvent(nativeDelegation("cancel-request", "cancel"));
-          await withinTest(backendCanceled.promise, signal);
+          await withinTest(cancellationObserved.promise, signal);
           expect(abortOwned).toHaveBeenCalledOnce();
           await vi.waitFor(() =>
             expect(sentFrames()).toContainEqual(

@@ -129,7 +129,7 @@ export function registerClientCreateEnsureTests(harness: EnsureHarness) {
     { change: "display", phase: "publication" },
     { change: "role", phase: "preparation" },
   ] as const)(
-    "rechecks an owner profile $change commit after entry $phase",
+    "preserves voice admission after a profile $change commit during entry $phase",
     async ({ change, phase }) => {
       const key = `agent:main:entry-profile-${change}-${phase}`;
       const fixture = harness.configureProvider(async () => browserSession);

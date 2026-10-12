@@ -147,12 +147,13 @@ describe("CLI execution cancellation", () => {
     vi.useRealTimers();
     setCliRunnerExecuteTestDeps({ getProcessSupervisor: restoreProcessSupervisor });
     vi.restoreAllMocks();
+    vi.useRealTimers();
   });
 
   it.each([true, false])(
     "marks only rejected protocol on interruption (protocol=%s)",
     async (protocol) => {
-      // Exercise interruption after output, independently of worker preparation time.
+      // Reach the fixture's explicit abort even when policy workers start cold.
       vi.useFakeTimers({ toFake: ["Date"] });
       const controller = new AbortController();
       const context = createRunContext({ runId: "interrupted-output", signal: controller.signal });

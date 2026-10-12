@@ -183,13 +183,14 @@ it.for([false, true])(
           };
         };
         expect((await list()).ids).not.toContain("account-exclusive");
+        // A configured provider can queue this refresh behind startup discovery.
         await waitForCatalogPublication({
           signal,
           start: () => list(true),
           read: list,
           ready: () => {
-            const work = catalogWork.read();
-            return work.completedTasks > 0 && work.pendingTasks === 0;
+            const { completedTasks, pendingTasks } = catalogWork.read();
+            return completedTasks > 0 && pendingTasks === 0;
           },
         });
         const beforeLoginWork = catalogWork.read();

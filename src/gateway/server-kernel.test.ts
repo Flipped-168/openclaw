@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import { setImmediate as nextTurn } from "node:timers/promises";
 import { isDeepStrictEqual } from "node:util";
 import { describe, expect, it, vi } from "vitest";
-import { createDeferred } from "../../test/helpers/promise.js";
+import { createDeferred, withinTest } from "../../test/helpers/promise.js";
 import type { ChannelPlugin } from "../channels/plugins/types.public.js";
 import {
   getConfigOverrides,
@@ -785,7 +785,7 @@ describe("createGatewayKernel", () => {
     }
   });
 
-  it("dispatches health and an agent turn without creating a transport", async () => {
+  it("dispatches health and an agent turn without creating a transport", async ({ signal }) => {
     const port = await getFreePort();
     const state = await createOpenClawTestState({
       label: "gateway-kernel-no-transport",
@@ -978,7 +978,7 @@ describe("createGatewayKernel", () => {
       }
     }
     expect(prematureCleanupCalls).toBe(0);
-    await waitForPluginRegistryRetirement(ambientRegistry);
+    await withinTest(waitForPluginRegistryRetirement(ambientRegistry), signal);
     expect(capturedRegistryCleanup).toHaveBeenCalledOnce();
     expect(inspectAccount).not.toHaveBeenCalled();
   });
