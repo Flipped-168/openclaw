@@ -61,7 +61,7 @@ const observed = vi.hoisted(() => ({
   timers: vi.spyOn(globalThis, "setTimeout"),
   workers: [] as Worker[],
   idleCloseKeepsWorker: new WeakMap<Worker, boolean>(),
-  dispatch: undefined as ((message: unknown) => void) | undefined,
+  dispatch: undefined as ((message: unknown, worker: Worker) => void) | undefined,
   restoration: undefined as
     | {
         sessionId: string;
@@ -91,7 +91,7 @@ vi.mock("node:worker_threads", async (importOriginal) => {
         ) {
           observed.workers.push(this);
         }
-        observed.dispatch?.(args[0]);
+        observed.dispatch?.(args[0], this);
         super.postMessage(...args);
       }
     },
@@ -314,18 +314,20 @@ async function seed(state: OpenClawTestState, agentId: string, sessionId: string
   };
 }
 
-it("settles cancelled message reads before reuse and closes their database handles", async () => {
+it("settles cancelled message reads before later reads and closes their database handles", async () => {
   await withOpenClawTestState({ scenario: "minimal" }, async (state) => {
     const fixture = await seed(state, "main", "cancel-message-read");
     await closeOpenClawAgentDatabaseByPathAsync(fixture.path, "main");
     const controller = new AbortController();
     const cancelled = new Error("history consumer closed");
     let dispatched = false;
-    observed.dispatch = (message) => {
+    let dispatchedWorker: Worker | undefined;
+    observed.dispatch = (message, worker) => {
       const input = asOptionalRecord(asOptionalRecord(message)?.input);
       if (asOptionalRecord(input?.request)?.kind === "message-by-id") {
         observed.dispatch = undefined;
         dispatched = true;
+        dispatchedWorker = worker;
         controller.abort(cancelled);
       }
     };
@@ -338,23 +340,28 @@ it("settles cancelled message reads before reuse and closes their database handl
     );
     await expect(pending).rejects.toBe(cancelled);
     expect(dispatched).toBe(true);
-    const worker = observed.workers.at(-1)!;
+    const worker = dispatchedWorker!;
     const threadId = worker.threadId;
+    expect(threadId).toBeGreaterThan(0);
     expect((await fixture.read()).messages.map(readChatHistoryMessageId)).toEqual([
       "cancel-message-read-message",
     ]);
-    expect(observed.workers.at(-1)).toBe(worker);
-    const keepsWorker = observed.idleCloseKeepsWorker.get(worker) === true;
+    expect(worker.threadId).toBe(threadId);
+    // Cold admission and foreground pages can use different workers; close both owners.
+    const retainedWorkers = observed.workers
+      .filter((reader) => reader.threadId > 0)
+      .map((reader) => ({
+        worker: reader,
+        threadId: reader.threadId,
+        keepsWorker: observed.idleCloseKeepsWorker.get(reader) === true,
+      }));
     await closeOpenClawAgentDatabaseByPathAsync(fixture.path, "main");
-    expect(worker.threadId).toBe(keepsWorker ? threadId : -1);
+    for (const retained of retainedWorkers) {
+      expect(retained.worker.threadId).toBe(retained.keepsWorker ? retained.threadId : -1);
+    }
     expect((await fixture.read()).messages.map(readChatHistoryMessageId)).toEqual([
       "cancel-message-read-message",
     ]);
-    if (!keepsWorker) {
-      expect(observed.workers.at(-1)).not.toBe(worker);
-    } else {
-      expect(observed.workers.at(-1)).toBe(worker);
-    }
   });
 });
 
