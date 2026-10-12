@@ -1,3 +1,4 @@
+import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import { normalizeLowercaseStringOrEmpty } from "@openclaw/normalization-core/string-coerce";
 import type { GetReplyOptions } from "../auto-reply/get-reply-options.types.js";
 import type { ReplyPayload } from "../auto-reply/reply-payload.js";
@@ -116,22 +117,19 @@ export async function prepareBtwRuntimeAuth(params: {
 }
 
 function isBtwTextBlock(block: unknown): block is TextContent {
-  if (!block || typeof block !== "object") {
-    return false;
-  }
-  const record = block as { type?: unknown; text?: unknown };
-  return normalizeLowercaseStringOrEmpty(record.type) === "text" && typeof record.text === "string";
+  return (
+    isRecord(block) &&
+    normalizeLowercaseStringOrEmpty(block.type) === "text" &&
+    typeof block.text === "string"
+  );
 }
 
 function isBtwImageBlock(block: unknown): block is ImageContent {
-  if (!block || typeof block !== "object") {
-    return false;
-  }
-  const record = block as { type?: unknown; data?: unknown; mimeType?: unknown };
   return (
-    normalizeLowercaseStringOrEmpty(record.type) === "image" &&
-    typeof record.data === "string" &&
-    typeof record.mimeType === "string"
+    isRecord(block) &&
+    normalizeLowercaseStringOrEmpty(block.type) === "image" &&
+    typeof block.data === "string" &&
+    typeof block.mimeType === "string"
   );
 }
 
@@ -175,7 +173,7 @@ async function sanitizeBtwUserMessage(params: {
 function sanitizeBtwAssistantMessage(
   message: Extract<Message, { role: "assistant" }>,
 ): Extract<Message, { role: "assistant" }> | undefined {
-  const rawContent = (message as { content?: unknown }).content;
+  const rawContent: unknown = message.content;
   let content: TextContent[];
   if (typeof rawContent === "string") {
     const text = rawContent.trim();
@@ -194,22 +192,28 @@ export async function toSimpleContextMessages(params: {
 }): Promise<Message[]> {
   const contextMessages: Message[] = [];
   for (const message of params.messages) {
-    if (!message || typeof message !== "object") {
+    if (!isRecord(message)) {
       continue;
     }
-    const role = (message as { role?: unknown }).role;
+    const role = message.role;
     if (role !== "user" && role !== "assistant") {
       continue;
     }
     // BTW is a no-tools path, so keep only user-visible blocks from prior
     // messages and strip hidden reasoning/tool replay data.
-    const sanitizedMessage =
-      role === "user"
-        ? await sanitizeBtwUserMessage({
-            message: message as Extract<Message, { role: "user" }>,
-            imageLimits: params.imageLimits,
-          })
-        : sanitizeBtwAssistantMessage(message as Extract<Message, { role: "assistant" }>);
+    let sanitizedMessage: Message | undefined;
+    if (role === "user") {
+      // SAFETY: transcript entries with role "user" are persisted user Messages; only content is read and replaced.
+      const userMessage = message as Extract<Message, { role: "user" }>;
+      sanitizedMessage = await sanitizeBtwUserMessage({
+        message: userMessage,
+        imageLimits: params.imageLimits,
+      });
+    } else {
+      // SAFETY: transcript entries with role "assistant" are persisted assistant Messages; only content is read and replaced.
+      const assistantMessage = message as Extract<Message, { role: "assistant" }>;
+      sanitizedMessage = sanitizeBtwAssistantMessage(assistantMessage);
+    }
     if (sanitizedMessage) {
       contextMessages.push(sanitizedMessage);
     }

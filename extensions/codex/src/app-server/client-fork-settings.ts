@@ -59,19 +59,27 @@ export function recordCodexThreadForkSettings(
   if (!settings || settings.has(threadId)) {
     return;
   }
+  const permissions = typeof params.permissions === "string" ? params.permissions : undefined;
+  // Fork params are a JSON record: absent settings must be omitted, never `undefined`.
   const thread: CodexThreadForkParams = {
     threadId,
-    model: params.model,
-    modelProvider: params.modelProvider,
-    cwd: params.cwd,
-    runtimeWorkspaceRoots: params.runtimeWorkspaceRoots,
-    approvalPolicy: params.approvalPolicy,
-    approvalsReviewer: params.approvalsReviewer,
-    sandbox: params.sandbox,
-    permissions: typeof params.permissions === "string" ? params.permissions : undefined,
-    serviceTier: params.serviceTier,
-    config: params.config,
-    developerInstructions: params.developerInstructions,
+    ...(params.model !== undefined ? { model: params.model } : {}),
+    ...(params.modelProvider !== undefined ? { modelProvider: params.modelProvider } : {}),
+    ...(params.cwd !== undefined ? { cwd: params.cwd } : {}),
+    ...(params.runtimeWorkspaceRoots !== undefined
+      ? { runtimeWorkspaceRoots: params.runtimeWorkspaceRoots }
+      : {}),
+    ...(params.approvalPolicy !== undefined ? { approvalPolicy: params.approvalPolicy } : {}),
+    ...(params.approvalsReviewer !== undefined
+      ? { approvalsReviewer: params.approvalsReviewer }
+      : {}),
+    ...(params.sandbox !== undefined ? { sandbox: params.sandbox } : {}),
+    ...(permissions !== undefined ? { permissions } : {}),
+    ...(params.serviceTier !== undefined ? { serviceTier: params.serviceTier } : {}),
+    ...(params.config !== undefined ? { config: params.config } : {}),
+    ...(params.developerInstructions !== undefined
+      ? { developerInstructions: params.developerInstructions }
+      : {}),
   };
   // Native history already owns base instructions and immutable dynamic declarations.
   settings.set(threadId, { thread });
