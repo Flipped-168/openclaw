@@ -124,6 +124,7 @@ function PendingSessionCreateContent(props: PendingSessionCreateProps) {
       submitting,
       header: renderChatPaneHeader({
         paneId: composerId,
+        presented: false,
         narrow: props.narrow,
         mergedChrome: props.mergedChrome,
         navDrawerOpen: props.navDrawerOpen,
