@@ -104,7 +104,7 @@ export class SplitTalkTransport implements RealtimeTalkTransport {
   }
 
   private async send(message: string): Promise<string> {
-    const runId = crypto.randomUUID();
+    const runId: string = crypto.randomUUID();
     this.runId = runId;
     const controller = new AbortController();
     this.chatAbort = controller;
@@ -116,15 +116,7 @@ export class SplitTalkTransport implements RealtimeTalkTransport {
     };
     // A terminal event can precede the admission ACK; subscribe before sending.
     const answer = waitForChatResult(waiting);
-    let settled = false;
-    void answer.then(
-      () => {
-        settled = true;
-      },
-      () => {
-        settled = true;
-      },
-    );
+    void answer.catch(() => undefined);
     try {
       const ack = await this.options.sendMessage(message, runId);
       if (this.closed) {
@@ -136,7 +128,7 @@ export class SplitTalkTransport implements RealtimeTalkTransport {
       }
       waiting.runId = ack.runId;
       this.runId = ack.runId;
-      const result = ack.status === "ok" && !settled ? "" : await answer;
+      const result = await answer;
       this.runId = undefined;
       return result;
     } finally {

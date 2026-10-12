@@ -287,27 +287,48 @@ it("keeps listening for the model answer after an empty final", async () => {
   expect(h.request.mock.calls.filter(([method]) => method === "chat.send")).toHaveLength(1);
 });
 
-it("speaks a final that arrives before an already-completed admission ACK", async () => {
-  const h = harness();
-  const sent = createDeferred();
-  const impl = h.request.getMockImplementation()!;
-  h.request.mockImplementation(async (method, params) => {
-    const result = await impl(method, params);
-    if (method !== "chat.send") return result;
-    h.emit("chat", {
-      runId: h.getRunId(),
-      state: "final",
-      message: { role: "assistant", content: [{ type: "text", text: "Already answered." }] },
+it.each(["text before", "empty before", "text after"])(
+  "waits for the model answer with an already-completed ACK (%s)",
+  async (sequence) => {
+    const h = harness();
+    const sent = createDeferred();
+    const impl = h.request.getMockImplementation()!;
+    h.request.mockImplementation(async (method, params) => {
+      const result = await impl(method, params);
+      if (method !== "chat.send") return result;
+      if (sequence !== "text after") {
+        h.emit("chat", {
+          runId: h.getRunId(),
+          state: "final",
+          ...(sequence === "text before"
+            ? {
+                message: {
+                  role: "assistant",
+                  content: [{ type: "text", text: "Already answered." }],
+                },
+              }
+            : {}),
+        });
+      }
+      sent.resolve();
+      return { ...result, status: "ok" };
     });
-    sent.resolve();
-    return { ...result, status: "ok" };
-  });
-  await h.state.toggleRealtimeTalk();
-  h.utterance();
-  await sent.promise;
-  await vi.advanceTimersByTimeAsync(0);
-  expect(h.request).toHaveBeenCalledWith("tts.speak", { text: "Already answered." });
-});
+    await h.state.toggleRealtimeTalk();
+    h.utterance();
+    await sent.promise;
+    await vi.advanceTimersByTimeAsync(0);
+    if (sequence !== "text before") {
+      expect(h.state.realtimeTalkStatus).toBe("thinking");
+      h.emit("chat", {
+        runId: h.getRunId(),
+        state: "final",
+        message: { role: "assistant", content: [{ type: "text", text: "Already answered." }] },
+      });
+      await vi.advanceTimersByTimeAsync(0);
+    }
+    expect(h.request).toHaveBeenCalledWith("tts.speak", { text: "Already answered." });
+  },
+);
 
 it("waits for buffered local STT to finish instead of dropping a slow final transcript", async () => {
   const h = harness();
