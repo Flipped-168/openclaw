@@ -598,14 +598,12 @@ async function resumeMainSessionWithinAdmission(
           ...deliveryContext,
           agentId: params.agentId,
           runId: recoveryRunId,
-          isCurrent: (cfg) =>
-            !dispatchSettled && taskRemainsOwed() && isDeliveryCurrent?.(cfg) === true,
+          isCurrent: (cfg) => !dispatchSettled && taskRemainsOwed() && isDeliveryCurrent(cfg),
         });
       }
       await announceRestartRecoveryResumption({
         ...target,
-        isCurrent: (cfg) =>
-          !dispatchSettled && taskRemainsOwed() && isDeliveryCurrent?.(cfg) === true,
+        isCurrent: (cfg) => !dispatchSettled && taskRemainsOwed() && isDeliveryCurrent(cfg),
         sessionKey: dispatchSessionKey,
         sessionId: params.entry.sessionId,
         recoveryRunId,

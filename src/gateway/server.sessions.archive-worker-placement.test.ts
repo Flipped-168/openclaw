@@ -247,9 +247,10 @@ test.each([false, true])(
       const outcome = await archive;
       expect(
         outcome,
-        [outcome.error?.message, ...archiveWarnings.mock.calls.map((args) => args.join(" "))].join(
-          "\n",
-        ),
+        [
+          outcome.error?.message,
+          ...archiveWarnings.mock.calls.map((args) => JSON.stringify(args)),
+        ].join("\n"),
       ).toMatchObject({ ok: true });
       expect(placements.get(REQUEST.sessionId)?.state).toBe("local");
       expect(harness.environments.get(harness.ready.environmentId)?.state).toBe("destroyed");
