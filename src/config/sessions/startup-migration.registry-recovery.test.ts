@@ -88,7 +88,7 @@ it.each(["cold", "preexisting"] as const)(
     } finally {
       statements.restore();
     }
-    // Open handles retain the stored policy; final close retires it before cold re-admission.
+    // Final close retires admission facts; only a retained handle reuses the stored policy.
     if (lifetime === "preexisting") {
       expect(
         statements.queries.filter((sql) =>
