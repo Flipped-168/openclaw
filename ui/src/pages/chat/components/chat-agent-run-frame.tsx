@@ -55,17 +55,19 @@ type FrameProps = { frame: AgentRunFrameRenderItem; options: AgentRunFrameOption
 type BodyPart =
   | Exclude<AgentRunFrameRenderItem["parts"][number], { kind: "stream-run" }>
   | StreamGroupPart;
+type PartInput = { part: BodyPart; options: AgentRunFrameOptions };
 type PartRange = {
   start: Comment;
   end: Comment;
-  write: (part: BodyPart) => void;
+  write: (input: PartInput) => void;
   dispose: () => void;
 };
 
 /** Completion can reorder the reply after a live widget has moved into it. */
 function FrameBody(props: {
   parts: readonly BodyPart[];
-  children: (part: Accessor<BodyPart>) => JSX.Element;
+  options: AgentRunFrameOptions;
+  children: (input: Accessor<PartInput>) => JSX.Element;
 }): JSX.Element {
   const owner = getOwner();
   const anchor = document.createComment("frame-body");
@@ -95,8 +97,8 @@ function FrameBody(props: {
     setParent(committedParent);
   });
   createRenderEffect(
-    () => ({ parent: readParent(), parts: props.parts }),
-    ({ parent, parts }) => {
+    () => ({ parent: readParent(), parts: props.parts, options: props.options }),
+    ({ parent, parts, options }) => {
       if (!parent) {
         return;
       }
@@ -112,7 +114,7 @@ function FrameBody(props: {
         const key = `${value.kind}:${value.key}`;
         const existing = ranges.get(key);
         if (existing) {
-          existing.write(value);
+          existing.write({ part: value, options });
           return existing;
         }
         const start = document.createComment("frame-part");
@@ -121,10 +123,11 @@ function FrameBody(props: {
         parent.insertBefore(end, anchor);
         const range = runWithOwner(owner, () =>
           createRoot((dispose): PartRange => {
-            const [part, write] = createSignal(value, { ownedWrite: true });
+            // The headline's connection scope must change with its activity.
+            const [readInput, write] = createSignal({ part: value, options }, { ownedWrite: true });
             insert(
               parent,
-              untrack(() => props.children(part)),
+              untrack(() => props.children(readInput)),
               end,
             );
             return { start, end, write, dispose };
@@ -246,13 +249,15 @@ export function AgentRunFrame(props: FrameProps) {
 
 function RunFrame(props: FrameProps) {
   const state = createMemo(() => prepareFrame(props.frame, props.options));
-  const groupOptions = (group: MessageGroupData) => ({
-    ...props.options.renderGroupOptions(group),
-    firstBubbleKey: state().firstBubbleKey,
-  });
   const frameContent = [
-    <FrameBody parts={state().bodyParts}>
-      {(part) => {
+    <FrameBody parts={state().bodyParts} options={props.options}>
+      {(input) => {
+        const part = () => input().part;
+        const options = () => input().options;
+        const groupOptions = (group: MessageGroupData) => ({
+          ...options().renderGroupOptions(group),
+          firstBubbleKey: state().firstBubbleKey,
+        });
         const streamPart = () => {
           const value = part();
           return value.kind === "stream" ||
@@ -280,7 +285,7 @@ function RunFrame(props: FrameProps) {
                 <StreamPartView
                   part={stream()}
                   options={{
-                    ...props.options.streamOptions,
+                    ...options().streamOptions,
                     firstBubbleKey: state().firstBubbleKey,
                   }}
                   presentation="standalone"
@@ -293,18 +298,15 @@ function RunFrame(props: FrameProps) {
                   <WorkGroupSummary
                     item={work()}
                     options={{
-                      expanded: props.options.isWorkExpanded(work().key),
-                      bubbleMode: props.options.streamOptions.bubbleMode,
+                      expanded: options().isWorkExpanded(work().key),
+                      bubbleMode: options().streamOptions.bubbleMode,
                       onToggle: () =>
-                        props.options.onToggleWork(
-                          work().key,
-                          props.options.isWorkExpanded(work().key),
-                        ),
+                        options().onToggleWork(work().key, options().isWorkExpanded(work().key)),
                       presentation: "continuation",
                       browserTabPreviews: state().workPreviews.get(work().key),
                     }}
                   />
-                  <Show when={props.options.isWorkExpanded(work().key)}>
+                  <Show when={options().isWorkExpanded(work().key)}>
                     <For each={work().groups} keyed={(group) => group.key}>
                       {(group) => (
                         <MessageGroupContent group={group()} options={groupOptions(group())} />
@@ -322,7 +324,7 @@ function RunFrame(props: FrameProps) {
                     {(first) => (
                       <ActivityGroup
                         groups={groups()}
-                        options={props.options.renderGroupOptions(first())}
+                        options={options().renderGroupOptions(first())}
                         presentation="continuation"
                       />
                     )}
