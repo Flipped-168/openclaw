@@ -1451,6 +1451,13 @@ describe("main-session-restart-recovery", () => {
       idempotencyKey: `main-session-restart-recovery:${String(gatewayParams().idempotencyKey)}:resumed-notice`,
     });
     expect(notice?.isCurrent?.({})).toBe(false);
+    const current = loadSessionEntry({
+      sessionKey,
+      storePath: path.join(sessionsDir, "sessions.json"),
+    });
+    if (!current) {
+      throw new Error("Recovered session fixture is missing");
+    }
     await writeStore(sessionsDir, {
       [sessionKey]: { ...current, sessionId: "replacement-session" },
     });

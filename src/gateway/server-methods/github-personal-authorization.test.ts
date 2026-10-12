@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setRuntimeConfigSnapshot } from "../../config/runtime-snapshot.js";
 import { recordCommittedSessionMetadataPublication } from "../../config/sessions/session-accessor.sqlite-entry-cache-publication-state.js";
+import type { SessionEntry } from "../../config/sessions/types.js";
 import { prepareGitHubPublicationOptionsRead } from "./github-personal-authorization.js";
 import type { GatewayClient, GatewayRequestContext } from "./types.js";
 
@@ -97,6 +98,7 @@ function createRequest() {
 }
 
 function sessionRead(agentId = "main") {
+  const entry: SessionEntry = { sessionId: "session-cache-test", updatedAt: 1 };
   return {
     cfg: {},
     canonicalKey: `agent:${agentId}:main`,
@@ -104,7 +106,7 @@ function sessionRead(agentId = "main") {
     storePath: "/test/sessions.json",
     store: {},
     storeKeys: [`agent:${agentId}:main`],
-    entry: { sessionId: "session-cache-test", updatedAt: 1 },
+    entry,
     legacyKey: undefined,
   };
 }
