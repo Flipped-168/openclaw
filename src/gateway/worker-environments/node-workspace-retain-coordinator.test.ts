@@ -730,7 +730,8 @@ describe("node workspace retain coordinator", () => {
     const options = {
       placements,
       node: { ...node, connId: "connection-1" },
-      additionalManifestRefs: async () => () => [baseManifest],
+      additionalManifestRefs: async () =>
+        Object.assign(() => [baseManifest], { [Symbol.dispose]: () => {} }),
     };
     const { coordinator, invoke } = createHarness(options);
     try {
@@ -773,7 +774,9 @@ describe("node workspace retain coordinator", () => {
         additionalManifestRefs: async () => {
           entered.resolve();
           await release.promise;
-          return () => (sessionCurrent ? [baseManifest] : null);
+          return Object.assign(() => (sessionCurrent ? [baseManifest] : null), {
+            [Symbol.dispose]: () => {},
+          });
         },
       });
       const startup = coordinator.start();

@@ -37,13 +37,8 @@ import {
 
 const { tempDirs, writeSession, writeSqliteSession } = setupSessionHistoryFixtures();
 
-beforeEach(() => {
-  setRuntimeConfigSnapshot({});
-});
-
-afterEach(() => {
-  clearRuntimeConfigSnapshot();
-});
+beforeEach(() => setRuntimeConfigSnapshot({}));
+afterEach(() => clearRuntimeConfigSnapshot());
 
 // Fixtures keep legacy string content on purpose: session ingest normalizes
 // assistant strings into [{ type: "text" }] blocks, so expectations below

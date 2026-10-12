@@ -12,7 +12,7 @@ import {
 import { modelKey, parseModelRef, resolveDefaultModelForAgent } from "../agents/model-selection.js";
 import { createModelVisibilityPolicy } from "../agents/model-visibility-policy.js";
 import { getRuntimeConfig } from "../config/io.js";
-import { resolveSessionEntryAccessTarget } from "../config/sessions/session-accessor.js";
+import { readResolvedSessionEntryInWorker } from "../config/sessions/session-accessor.entry.js";
 import { getCurrentPluginMetadataSnapshot } from "../plugins/current-plugin-metadata-snapshot.js";
 import { getActivePluginRegistryWorkspaceDirFromState } from "../plugins/runtime-state.js";
 import {
@@ -32,8 +32,15 @@ import { getHeader, type AuthorizedGatewayHttpRequest } from "./http-auth-utils.
 import { ADMIN_SCOPE } from "./method-scopes.js";
 import { loadGatewayModelCatalog } from "./server-model-catalog.js";
 import { createSyntheticPluginRuntimeClient } from "./server-plugin-runtime-client.js";
-import { withSessionSharingTarget } from "./session-sharing-policy.js";
-import { authorizeResolvedSessionMutation, isResolvedIncognitoSession } from "./session-sharing.js";
+import {
+  authorizePreparedSessionMutation,
+  withSessionSharingTarget,
+} from "./session-sharing-policy.js";
+import {
+  prepareProjectedSessionSharing,
+  prepareSessionSharingProfiles,
+} from "./session-sharing-read.js";
+import { isResolvedIncognitoSession } from "./session-sharing.js";
 import { canonicalizeSessionKeyForAgent } from "./session-store-key.js";
 
 export {
@@ -228,16 +235,16 @@ export function resolveAgentIdForRequest(params: {
   return resolveDefaultAgentId(cfg);
 }
 
-function isReservedSessionKeyOverride(sessionKey: string, agentId: string): boolean {
+async function isReservedSessionKeyOverride(sessionKey: string, agentId: string): Promise<boolean> {
   const lowered = normalizeLowercaseStringOrEmpty(sessionKey);
   const harnessLookupKey = sessionKey.startsWith("agent:")
     ? sessionKey
     : canonicalizeSessionKeyForAgent(agentId, sessionKey);
   const harnessEntry = isAgentHarnessSessionKey(sessionKey)
-    ? resolveSessionEntryAccessTarget({
+    ? await readResolvedSessionEntryInWorker({
         cfg: getRuntimeConfig(),
         sessionKey: harnessLookupKey,
-      }).entry
+      })
     : undefined;
   const harnessKeyReserved =
     isAgentHarnessSessionKey(sessionKey) &&
@@ -253,17 +260,17 @@ function isReservedSessionKeyOverride(sessionKey: string, agentId: string): bool
   );
 }
 
-export function resolveGatewayRequestContext(params: {
+export async function resolveGatewayRequestContext(params: {
   req: IncomingMessage;
   model: string | undefined;
   user?: string | undefined;
   sessionPrefix: string;
-}): { agentId: string; sessionKey: string; messageChannel: string } {
+}): Promise<{ agentId: string; sessionKey: string; messageChannel: string }> {
   const agentId = resolveAgentIdForRequest({ req: params.req, model: params.model });
   const explicit = getHeader(params.req, "x-openclaw-session-key")?.trim();
   let sessionKey: string;
   if (explicit) {
-    if (isReservedSessionKeyOverride(explicit, agentId)) {
+    if (await isReservedSessionKeyOverride(explicit, agentId)) {
       throw new GatewaySessionKeyOverrideError();
     }
     sessionKey = explicit;
@@ -288,6 +295,13 @@ export async function authorizeOpenAiCompatibleHttpSession(params: {
   senderIsOwner: boolean;
 }): Promise<{ allowed: true } | { allowed: false; message: string }> {
   const authenticatedUserProfile = params.requestAuth.authenticatedUserProfile;
+  const client = createSyntheticPluginRuntimeClient({
+    ...(authenticatedUserProfile ? { authenticatedUserProfile } : {}),
+    operatorRoleActor: params.requestAuth.operatorRoleActor,
+    operatorAccessAuthority: params.requestAuth.operatorAccessAuthority,
+    scopes: params.senderIsOwner ? [ADMIN_SCOPE] : [],
+  });
+  const profiles = await prepareSessionSharingProfiles(client);
   return withSessionSharingTarget<{ allowed: true } | { allowed: false; message: string }>(
     {
       cfg: getRuntimeConfig(),
@@ -297,19 +311,22 @@ export async function authorizeOpenAiCompatibleHttpSession(params: {
     (read) => {
       read.assertCurrent();
       const cfg = getRuntimeConfig();
-      const authorizationError = authorizeResolvedSessionMutation(
+      const membership = new Set(read.members.map((member) => member.identityId));
+      const sharing = prepareProjectedSessionSharing({
+        cfg,
+        client,
+        profiles,
+        isMember: (_target, id) => membership.has(id),
+      });
+      const authorizationError = authorizePreparedSessionMutation(
         {
           cfg,
-          client: createSyntheticPluginRuntimeClient({
-            ...(authenticatedUserProfile ? { authenticatedUserProfile } : {}),
-            operatorRoleActor: params.requestAuth.operatorRoleActor,
-            operatorAccessAuthority: params.requestAuth.operatorAccessAuthority,
-            scopes: params.senderIsOwner ? [ADMIN_SCOPE] : [],
-          }),
+          client,
           sessionKey: params.sessionKey,
           agentId: params.agentId,
         },
-        read.target,
+        { target: read.target, membership },
+        { policy: sharing.policy, aliases: profiles.readCurrent().profile?.aliases ?? new Set() },
       );
       if (authorizationError) {
         return { allowed: false, message: authorizationError.message };

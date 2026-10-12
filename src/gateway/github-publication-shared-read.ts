@@ -135,11 +135,11 @@ export async function readSharedGitHubPublication(
   using selected = await prepareGitHubPublicationSession(session.sessionKey, {
     agentId: session.agentId,
   });
-  const entry = selected.initial.entry;
+  const entry = selected.loaded.entry;
   if (
     !entry ||
-    selected.initial.agentId !== session.agentId ||
-    selected.initial.canonicalKey !== session.sessionKey ||
+    selected.loaded.agentId !== session.agentId ||
+    selected.loaded.canonicalKey !== session.sessionKey ||
     entry.sessionId !== session.sessionId ||
     (session.lifecycleRevision !== undefined &&
       (entry.lifecycleRevision ?? null) !== session.lifecycleRevision)
@@ -147,7 +147,7 @@ export async function readSharedGitHubPublication(
     throw new GitHubPublicationSessionChangedError();
   }
   const row = await observe(entry);
-  const current = selected.current().entry;
+  const current = selected.readCurrent().entry;
   if (
     !current ||
     current.sessionId !== entry.sessionId ||

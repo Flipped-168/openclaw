@@ -56,7 +56,8 @@ export function createRepositoryGitHubPublicationExecution(params: {
     }
     const { assertCustody, action } = context;
     assertCustody();
-    using preparedOwner = await prepareReceiptOwner(row);
+    const preparedOwner = await prepareReceiptOwner(row);
+    using _ = { [Symbol.dispose]: () => preparedOwner.release() };
     assertCustody();
     context.assertCurrent?.();
     const { loaded } = assertReceiptOwner(row, preparedOwner);

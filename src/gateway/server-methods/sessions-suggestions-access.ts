@@ -215,13 +215,7 @@ export async function createSessionSuggestionMutation(params: {
       client: params.client,
       isMember: (_target, identityId) => current.membership.has(identityId),
     });
-    return {
-      target,
-      physicalStorePath: current.sourcePath,
-      cfg: policyConfig,
-      sharing,
-      members: [...current.membership],
-    };
+    return { target, physicalStorePath: current.sourcePath, cfg: policyConfig, sharing };
   };
   const run = async <T>(
     operation: SessionSuggestionMutation<T>,

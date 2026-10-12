@@ -34,7 +34,7 @@ async function portalOperations(
   environmentId?: string,
 ) {
   if (!environmentId) {
-    return Object.assign(createPortalOperations(service), { [Symbol.dispose]: () => {} });
+    return { operations: createPortalOperations(service), release() {} };
   }
   const { context } = options;
   const environments = context.workerEnvironmentService;
@@ -52,31 +52,33 @@ async function portalOperations(
       environments.assertSessionAttachment(binding);
     };
     assertCurrent();
-    const operations = createPortalOperations(service, {
-      ...binding,
-      assertCurrent,
-      ownershipError: "Portal does not belong to the attached environment",
-      async prepareTarget(remotePort) {
-        await environments.touchSessionAttachment(binding);
-        assertCurrent();
-        const connection = await environments.openNodePortal({
-          environmentId: binding.environmentId,
-          ownerEpoch: binding.ownerEpoch,
-          remotePort,
-        });
-        return {
-          ...connection,
-          connect: () =>
-            connection.connect(
-              () => environments.assertSessionAttachment(binding),
-              () => environments.touchSessionAttachment(binding),
-            ),
-        };
-      },
-    });
-    return Object.assign(operations, { [Symbol.dispose]: () => caller[Symbol.dispose]() });
+    return {
+      release: caller.release,
+      operations: createPortalOperations(service, {
+        ...binding,
+        assertCurrent,
+        ownershipError: "Portal does not belong to the attached environment",
+        async prepareTarget(remotePort) {
+          await environments.touchSessionAttachment(binding);
+          assertCurrent();
+          const connection = await environments.openNodePortal({
+            environmentId: binding.environmentId,
+            ownerEpoch: binding.ownerEpoch,
+            remotePort,
+          });
+          return {
+            ...connection,
+            connect: () =>
+              connection.connect(
+                () => environments.assertSessionAttachment(binding),
+                () => environments.touchSessionAttachment(binding),
+              ),
+          };
+        },
+      }),
+    };
   } catch (error) {
-    caller[Symbol.dispose]();
+    caller.release();
     throw error;
   }
 }
@@ -90,9 +92,10 @@ async function mutatePortal(
   if (!service) {
     return;
   }
+  let scope: Awaited<ReturnType<typeof portalOperations>> | undefined;
   try {
-    using operations = await portalOperations(options, service, environmentId);
-    const result = await mutate(operations);
+    scope = await portalOperations(options, service, environmentId);
+    const result = await mutate(scope.operations);
     broadcastPortalChange(options.context, service);
     options.respond(true, result, undefined);
   } catch (error) {
@@ -101,6 +104,8 @@ async function mutatePortal(
       undefined,
       errorShape(ErrorCodes.UNAVAILABLE, error instanceof Error ? error.message : String(error)),
     );
+  } finally {
+    scope?.release();
   }
 }
 
@@ -118,8 +123,12 @@ export const portalHandlers: GatewayRequestHandlers = {
       const scopes = client?.connect.scopes ?? [];
       let portals: PortalSummary[];
       try {
-        using operations = await portalOperations(options, service, params.environmentId);
-        portals = operations.list().portals;
+        const scope = await portalOperations(options, service, params.environmentId);
+        try {
+          portals = scope.operations.list().portals;
+        } finally {
+          scope.release();
+        }
       } catch (error) {
         respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, String(error)));
         return;

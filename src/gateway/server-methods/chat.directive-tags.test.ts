@@ -58,6 +58,7 @@ import { withTempDir } from "../../test-utils/temp-dir.js";
 import { normalizeSessionDeliveryState } from "../../utils/delivery-context.shared.js";
 import { consumeCronCreatorAuthorityGrant } from "../cron-creator-authority-grant.js";
 import { createChatRunState } from "../server-chat-state.js";
+import * as gatewaySessionWorker from "../session-utils-store-worker.js";
 import { STALE_WORKER_BUILD_REASON } from "../worker-environments/admission.js";
 import { agentHandlers } from "./agent.js";
 import { createScopedCliClient } from "./chat-client.test-support.js";
@@ -268,8 +269,8 @@ vi.mock("../session-utils.js", async () => {
     await vi.importActual<typeof import("../session-utils.js")>("../session-utils.js");
   return {
     ...original,
-    loadSessionEntryAsync: loadFixtureSessionEntry,
-    loadGatewaySessionEntryReadOnlyAsync: loadFixtureSessionEntry,
+    loadGatewaySessionEntryReadOnlyInWorker: async (params: { key: string; agentId?: string }) =>
+      loadFixtureSessionEntry(params.key, { agentId: params.agentId }),
   };
 });
 
@@ -284,6 +285,7 @@ vi.mock("../session-utils-store-worker.js", async () => {
     ) => {
       params.assertActive?.();
       const loaded = loadFixtureSessionEntry(params.key, { agentId: params.agentId });
+      params.onSelected?.(loaded);
       params.assertActive?.();
       return loaded;
     },
@@ -3727,13 +3729,28 @@ describe("chat directive tag stripping for non-streaming final payloads", () => 
     const storePath = mockState.storePath;
     const mutationStarted = createDeferred();
     const releaseMutation = createDeferred();
+    const sessionSelected = createDeferred();
+    const { loadGatewaySessionEntryReadOnlyInWorker } = await vi.importActual<
+      typeof import("../session-utils-store-worker.js")
+    >("../session-utils-store-worker.js");
+    const readSession = vi
+      .spyOn(gatewaySessionWorker, "loadGatewaySessionEntryReadOnlyInWorker")
+      .mockImplementationOnce(async (params) =>
+        loadGatewaySessionEntryReadOnlyInWorker({
+          ...params,
+          onSelected: (target) => {
+            params.onSelected?.(target);
+            sessionSelected.resolve();
+          },
+        }),
+      );
     const mutation = runExclusiveSessionLifecycleMutation("patch", {
       scope: storePath,
       identities: ["main", mockState.sessionId],
       run: async () => {
         mutationStarted.resolve();
         await releaseMutation.promise;
-        await seedSqliteSessionEntry(mockState.sessionEntry);
+        await seedSqliteSessionEntry({ archivedAt: Date.now() });
       },
     });
     await mutationStarted.promise;
@@ -3751,8 +3768,7 @@ describe("chat directive tag stripping for non-streaming final payloads", () => 
         isWebchatConnect: () => false,
         context,
       });
-      await waitForAssertion(() => expect(mockState.loadSessionEntryCalls).toHaveLength(1));
-      mockState.sessionEntry = { archivedAt: Date.now() };
+      await withinTest(sessionSelected.promise, testSignal);
       releaseMutation.resolve();
       await mutation;
       await inject;
@@ -3765,6 +3781,7 @@ describe("chat directive tag stripping for non-streaming final payloads", () => 
     } finally {
       releaseMutation.resolve();
       await mutation;
+      readSession.mockRestore();
     }
   });
 

@@ -6,7 +6,7 @@ import { telegramOutbound, telegramPlugin } from "../extensions/telegram/api.js"
 import { getOrCreateAccountThrottler } from "../extensions/telegram/test-api.js";
 import {
   announceRestartRecoveryResumption,
-  captureRestartRecoveryDeliveryCurrent,
+  prepareRestartRecoveryDeliveryCurrent,
 } from "../src/agents/main-session-recovery/main-session-restart-recovery-delivery.js";
 import type { ChannelHeartbeatAdapter } from "../src/channels/plugins/types.adapters.js";
 import { replaceSessionEntry } from "../src/config/sessions/session-accessor.js";
@@ -378,6 +378,9 @@ describe("recovery typing final transport fence", () => {
       );
       let held: ServerResponse | undefined;
       let stop: (() => void) | undefined;
+      let deliveryCurrent:
+        | Awaited<ReturnType<typeof prepareRestartRecoveryDeliveryCurrent>>
+        | undefined;
       try {
         held = await Promise.race([
           blocked.promise,
@@ -385,11 +388,11 @@ describe("recovery typing final transport fence", () => {
             throw new Error("Predecessor did not enter HTTP");
           }),
         ]);
-        using isCurrent = await captureRestartRecoveryDeliveryCurrent(scope);
+        deliveryCurrent = await prepareRestartRecoveryDeliveryCurrent(scope);
         stop = runtime.recovery.startRecoveryTyping?.({
           ...scope.deliveryContext,
           runId: scope.recoveryRunId,
-          isCurrent,
+          isCurrent: deliveryCurrent.isCurrent,
         });
         await started.promise;
         await new Promise<void>((resolve) => {
@@ -445,6 +448,7 @@ describe("recovery typing final transport fence", () => {
         }
         await predecessor.catch(() => {});
         stop?.();
+        deliveryCurrent?.release();
         runtime.close();
         restoreActivePluginRegistrySnapshot(snapshot);
         for (const socket of sockets) {

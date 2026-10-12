@@ -85,14 +85,15 @@ describe("repository checkpoint GitHub publication", () => {
       await f.capture("later unselected change\n", "later");
       const retiredCoordinator = person.coordinator;
       await restartPersonalPublicationFixture(person);
-      using preparedStatus = await person.coordinator.preparePersonalStatus(first.requestId);
+      const preparedStatus = await person.coordinator.preparePersonalStatus(first.requestId);
+      using _ = { [Symbol.dispose]: () => preparedStatus?.release() };
       const pending = await person.coordinator.personalStatusAsync(
         person.action,
         person.action,
         first.requestId,
         preparedStatus,
       );
-      expect(pending.confirmation?.workspaceTree).toBe(f.first.workspaceTree);
+      expect(pending?.confirmation?.workspaceTree).toBe(f.first.workspaceTree);
       await expect(
         person.coordinator.personalStatusAsync(
           { ...person.action, owner: person.otherOwner },
@@ -172,7 +173,7 @@ describe("repository checkpoint GitHub publication", () => {
         requestId: first.requestId,
         generation: person.generation,
         account: personalPublicationAccount,
-        requestDigest: pending.confirmation!.requestDigest,
+        requestDigest: pending!.confirmation!.requestDigest,
       };
       if (boundary === "retired-owner") {
         const aborted = await callPersonalPublicationRpc(

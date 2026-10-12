@@ -7,7 +7,6 @@ import { createTestGatewayScheduler } from "../test-utils/gateway-scheduler-cloc
 import type { WorkerPlacementSessionWorkCancellation } from "./server-worker-placement-cancel.js";
 import { createGatewayWorkerPlacementRuntime } from "./server-worker-placement-startup.js";
 import { getWorkerPlacementStartupMocks } from "./server-worker-placement-startup.test-harness.js";
-import { resolveGatewaySessionStoreTargetWithStoreAsync } from "./session-utils-store-lookup.js";
 import type { WorkerSessionPlacementIdentity } from "./worker-environments/placement-record.js";
 import type { createWorkerSessionPlacementStore } from "./worker-environments/placement-store.js";
 import * as support from "./worker-environments/service.test-support.js";
@@ -55,6 +54,7 @@ export async function createRuntime(
 export function setupSessionFixture(request: WorkerSessionPlacementIdentity) {
   beforeEach(async () => {
     const { runtimeFactoryMocks, moveDestinationMocks } = getWorkerPlacementStartupMocks();
+    moveDestinationMocks.prepareGatewaySessionTarget.mockReset();
     const actual = await vi.importActual<
       typeof import("./worker-environments/placement-dispatch.js")
     >("./worker-environments/placement-dispatch.js");
@@ -78,19 +78,23 @@ export function setupSessionFixture(request: WorkerSessionPlacementIdentity) {
       { agentId: request.agentId, sessionKey: request.sessionKey, storePath },
       entry,
     );
-    const target = await resolveGatewaySessionStoreTargetWithStoreAsync({
+    const targetReader = await vi.importActual<typeof import("./session-utils-store-worker.js")>(
+      "./session-utils-store-worker.js",
+    );
+    moveDestinationMocks.prepareGatewaySessionTarget.mockImplementation(
+      targetReader.resolveGatewaySessionStoreTargetInWorker,
+    );
+    const worktree = { id: "workspace", ownerId: request.sessionKey, path: support.testState.root };
+    const target = await targetReader.resolveGatewaySessionStoreTargetInWorker({
       cfg: config,
       key: request.sessionKey,
       agentId: request.agentId,
-      exactRead: true,
     });
-    const worktree = { id: "workspace", ownerId: request.sessionKey, path: support.testState.root };
     moveDestinationMocks.getRuntimeConfig.mockReturnValue(config);
     moveDestinationMocks.resolveGatewaySessionTarget.mockReturnValue(target);
     moveDestinationMocks.resolveCanonicalSession.mockReturnValue(entry);
     moveDestinationMocks.findManagedWorktree.mockReturnValue(worktree);
     moveDestinationMocks.resolveSessionTarget.mockResolvedValue({
-      [Symbol.dispose]: () => {},
       assertCurrent: () => {},
       assertBindingCurrent: () => {},
       config,
@@ -98,6 +102,7 @@ export function setupSessionFixture(request: WorkerSessionPlacementIdentity) {
       entry,
       worktree,
       workspace: { kind: "local", path: worktree.path },
+      [Symbol.dispose]: () => {},
     });
   });
   // Later teardown hooks run first, before the service fixture removes this directory.

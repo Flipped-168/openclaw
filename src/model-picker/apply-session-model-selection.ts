@@ -38,7 +38,8 @@ import type { InternalSessionEntry as SessionEntry } from "../config/sessions/ty
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { triggerSessionPatchHook } from "../gateway/session-patch-hooks.js";
 import { resolveSessionWorkerPlacementContext } from "../gateway/session-worker-placement-context.js";
-import { resolveWorkerPlacementSessionRuntimeCapabilitiesAsync } from "../gateway/worker-environments/placement-session-runtime.js";
+import { prepareWorkerPlacementSessionRuntime } from "../gateway/worker-environments/placement-session-runtime-preparation.js";
+import { resolveWorkerPlacementCapabilities } from "../gateway/worker-environments/placement-session-runtime.js";
 import type { readSessionWorkerPlacementAsync } from "../gateway/worker-environments/session-placement-lifecycle.js";
 import { formatErrorMessage } from "../infra/errors.js";
 import { resolveSystemEventQueueKey } from "../infra/system-event-ownership.js";
@@ -136,14 +137,11 @@ function rejectNotAllowed(provider: string, model: string): ApplySessionModelSel
  */
 function resolveActivePlacementModelSelectionError(
   params: {
-    cfg: OpenClawConfig;
-    agentId: string;
-    sessionKey: string;
     entry: SessionEntry;
+    readRuntimeCapabilities: () => ReturnType<typeof resolveWorkerPlacementCapabilities>;
   },
   prepared: {
     placement: Awaited<ReturnType<typeof readSessionWorkerPlacementAsync>>;
-    runtime?: Awaited<ReturnType<typeof resolveWorkerPlacementSessionRuntimeCapabilitiesAsync>>;
   },
 ): string | undefined {
   const sessionId = params.entry.sessionId;
@@ -154,10 +152,7 @@ function resolveActivePlacementModelSelectionError(
   if (!placement || placement.state === "local") {
     return undefined;
   }
-  if (!prepared.runtime) {
-    return "Session runtime is unavailable; retry model selection.";
-  }
-  const { executionMode } = prepared.runtime;
+  const { executionMode } = params.readRuntimeCapabilities();
   if (executionMode === placement.executionMode) {
     return undefined;
   }
@@ -291,15 +286,14 @@ export async function applySessionModelSelectionInternal(
     : undefined;
   using _ = { [Symbol.dispose]: () => placementAuthority?.release() };
   const placement = placementAuthority?.placement;
-  const placementRuntime =
-    placement && placement.state !== "local"
-      ? await resolveWorkerPlacementSessionRuntimeCapabilitiesAsync({
-          cfg: params.cfg,
-          agentId: params.agentId,
-          sessionKey: params.sessionKey,
-          entry: nextEntry,
-        })
-      : undefined;
+  using placementRuntime = await prepareWorkerPlacementSessionRuntime({
+    cfg: params.cfg,
+    agentId: params.agentId,
+    sessionKey: params.sessionKey,
+    entry: nextEntry,
+  });
+  const readRuntimeCapabilities = () =>
+    resolveWorkerPlacementCapabilities(placementRuntime.read(params.cfg, nextEntry));
   // An explicit selection retains the existing persistence and conflict semantics even when idempotent.
   nextEntry.updatedAt = Date.now();
   let persistedEntry: SessionEntry;
@@ -313,12 +307,10 @@ export async function applySessionModelSelectionInternal(
     }
     placementError = resolveActivePlacementModelSelectionError(
       {
-        cfg: params.cfg,
-        agentId: params.agentId,
-        sessionKey: params.sessionKey,
         entry: nextEntry,
+        readRuntimeCapabilities,
       },
-      { placement, runtime: placementRuntime },
+      { placement },
     );
     return (
       params.validateAuthProfileSelection?.() ??

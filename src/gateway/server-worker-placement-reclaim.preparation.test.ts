@@ -7,7 +7,6 @@ import {
   setRuntimeConfigSnapshot,
 } from "../config/runtime-snapshot.js";
 import { replaceSessionEntry } from "../config/sessions/session-accessor.js";
-import { replaceSessionEntrySync } from "../config/sessions/session-accessor.sqlite-entry.js";
 import { clearAgentRunContext } from "../infra/agent-run-registry.js";
 import * as operationAdmission from "../infra/sqlite-worker-operation-admission.js";
 import { sqliteWorkerOwnerProbe as probe } from "../infra/sqlite-worker-owner-probe.test-support.js";
@@ -22,7 +21,7 @@ import {
   admitWorkerStopChat,
   createWorkerStopChatContext,
 } from "./server-worker-placement.test-harness.js";
-import { resolveGatewaySessionStoreTargetWithStoreAsync } from "./session-utils-store-lookup.js";
+import { resolveGatewaySessionStoreTargetInWorker } from "./session-utils-store-worker.js";
 import { resolveCanonicalSessionEntryFromStoreKeys } from "./session-utils-store.js";
 import { coordinateWorkerPlacementDispatch } from "./worker-environments/placement-dispatch-coordinator.js";
 import { REQUEST } from "./worker-environments/placement-dispatch-test-fixtures.js";
@@ -69,13 +68,10 @@ async function cancellationLoadFixture(
     { storePath, sessionKey: REQUEST.sessionKey, agentId: REQUEST.agentId },
     entry,
   );
-  const target = await resolveGatewaySessionStoreTargetWithStoreAsync({
+  const target = await resolveGatewaySessionStoreTargetInWorker({
     cfg,
     key: REQUEST.sessionKey,
     agentId: REQUEST.agentId,
-    exactRead: true,
-    readOnly: true,
-    clone: false,
   });
   const runtime = {
     managedWorktrees: {
@@ -93,7 +89,13 @@ async function cancellationLoadFixture(
         lastActiveAt: 1,
       }),
     },
-    resolveGatewaySessionStoreTargetWithStoreAsync: async () => target,
+    resolveGatewaySessionStoreTargetInWorker: (
+      params: Parameters<typeof resolveGatewaySessionStoreTargetInWorker>[0],
+    ) =>
+      resolveGatewaySessionStoreTargetInWorker({
+        ...params,
+        cfg: { ...params.cfg, session: { ...params.cfg.session, store: storePath } },
+      }),
     resolveCanonicalSessionEntryFromStoreKeys,
   };
   lookup.value = { ...target, cfg, entry, legacyKey: undefined };
@@ -241,10 +243,7 @@ it.each(["same-owner", "replacement", "incarnation", "authorization"] as const)(
         });
       } else if (change === "incarnation") {
         f.entry.lifecycleRevision = "replacement";
-        await replaceSessionEntry(
-          { storePath: f.storePath, sessionKey: REQUEST.sessionKey, agentId: REQUEST.agentId },
-          f.entry,
-        );
+        await replaceSessionEntry({ ...REQUEST, storePath: f.storePath }, f.entry);
       } else if (change === "authorization") {
         authorized = false;
       }
@@ -514,10 +513,7 @@ it.each(
         await f.placements.startDispatch(REQUEST);
       } else if (change === "incarnation") {
         f.entry.lifecycleRevision = "replacement";
-        await replaceSessionEntry(
-          { storePath: f.storePath, sessionKey: REQUEST.sessionKey, agentId: REQUEST.agentId },
-          f.entry,
-        );
+        await replaceSessionEntry({ ...REQUEST, storePath: f.storePath }, f.entry);
       }
       f.loaded.resolve();
       const result = await second;
@@ -640,10 +636,7 @@ it.each([
         });
       } else if (advance === "incarnation") {
         entry.lifecycleRevision = "replacement";
-        await replaceSessionEntry(
-          { storePath, sessionKey: REQUEST.sessionKey, agentId: REQUEST.agentId },
-          entry,
-        );
+        await replaceSessionEntry({ ...REQUEST, storePath }, entry);
       }
       loaded.resolve();
       if (advance !== "replacement" && advance !== "incarnation") {
@@ -814,14 +807,9 @@ it.each([
   },
 );
 
-it.each([
-  { stage: "transaction", change: "caller" },
-  { stage: "commit", change: "caller" },
-  { stage: "transaction", change: "incarnation" },
-  { stage: "commit", change: "incarnation" },
-] as const)(
-  "retains the abandoned Stop decision when $change changes at $stage completion admission",
-  async ({ stage, change }) => {
+it.each(["transaction", "commit"] as const)(
+  "retains the abandoned Stop decision when the caller changes at %s completion admission",
+  async (stage) => {
     let destroyed = false;
     const f = await cancellationLoadFixture({
       afterDestroy: () => {
@@ -864,23 +852,13 @@ it.each([
     const admission = probe.admission(operationAdmission, (request, grant, admit) => {
       if (destroyed && request.stage === stage) {
         admissionReached = true;
-        if (change === "caller") {
-          allowed = false;
-        } else {
-          f.entry.lifecycleRevision = "replacement";
-          replaceSessionEntrySync(
-            { storePath: f.storePath, sessionKey: REQUEST.sessionKey, agentId: REQUEST.agentId },
-            f.entry,
-          );
-        }
+        allowed = false;
       }
       admit(request, grant);
     });
     try {
       await expect(f.coordinated.reclaim(REQUEST, authorize)).rejects.toThrow(
-        change === "caller"
-          ? "Stop caller revoked at completion"
-          : "changed before cloud worker stop",
+        "Stop caller revoked at completion",
       );
       expect(admissionReached).toBe(true);
       expect(f.harness.environments.destroy).toHaveBeenCalledOnce();

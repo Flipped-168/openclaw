@@ -344,11 +344,6 @@ vi.mock("../channels/plugins/session-thread-info-loaded.js", () => ({
   resolveLoadedSessionThreadInfo: mocks.parseSessionThreadInfo,
 }));
 
-vi.mock("./session-utils.js", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("./session-utils.js")>()),
-  loadSessionEntryAsync: mocks.loadSessionEntryAsync,
-}));
-
 vi.mock("../utils/delivery-context.read.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../utils/delivery-context.read.js")>()),
   deliveryContextFromSession: mocks.deliveryContextFromSession,
@@ -661,7 +656,10 @@ describe("scheduleRestartSentinelWake", () => {
     mocks.getRuntimeConfig.mockReset();
     mocks.getRuntimeConfig.mockReturnValue({ commands: { ownerAllowFrom: ["+15550002"] } });
     configureRestartSessionEventMocks(mocks);
-    mocks.loadSessionEntryInWorker.mockReset();
+    mocks.loadSessionEntryInWorker.mockReset().mockImplementation(async ({ key, agentId, env }) => {
+      const loaded = await mocks.loadSessionEntryAsync(key, { agentId, env });
+      return { ...loaded, agentId: loaded.agentId ?? agentId ?? "main" };
+    });
     mocks.loadSessionEntryAsync.mockReset();
     mocks.loadSessionEntryAsync.mockImplementation(async (sessionKey: string) =>
       sessionFixture(
@@ -979,8 +977,6 @@ describe("scheduleRestartSentinelWake", () => {
     const entry = { sessionId, updatedAt: 1, lifecycleRevision: "update-lifecycle" };
     await upsertSessionEntryCore({ agentId: "main", sessionKey, storePath }, entry);
     const originalMerge = mocks.mergeDeliveryContext.getMockImplementation()!;
-    const sessionUtils =
-      await vi.importActual<typeof import("./session-utils.js")>("./session-utils.js");
     const delivery = await vi.importActual<typeof import("../utils/delivery-context.shared.js")>(
       "../utils/delivery-context.shared.js",
     );
@@ -993,7 +989,13 @@ describe("scheduleRestartSentinelWake", () => {
     mocks.loadSessionEntryInWorker.mockImplementation(
       sessionWorker.loadGatewaySessionEntryReadOnlyInWorker,
     );
-    mocks.loadSessionEntryAsync.mockImplementation(sessionUtils.loadSessionEntryAsync);
+    mocks.loadSessionEntryAsync.mockImplementation((key, options) =>
+      sessionWorker.loadGatewaySessionEntryReadOnlyInWorker({
+        cfg: mocks.getRuntimeConfig(),
+        key,
+        ...options,
+      }),
+    );
     mocks.deliveryContextFromSession.mockImplementation(deliveryRead.deliveryContextFromSession);
     mocks.mergeDeliveryContext.mockImplementation(delivery.mergeDeliveryContext);
     const updateRun = createUpdateRun({ trigger: "api", origin: { sessionKey } });

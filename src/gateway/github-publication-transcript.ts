@@ -32,7 +32,7 @@ function formatGitHubPublicationResult(result: SessionGitHubPublicationResult): 
 export async function reportGitHubPublicationTranscript(
   loadSessionRuntime: () => Promise<{
     resolveCanonicalSessionEntryFromStoreKeys: typeof import("./session-utils.js").resolveCanonicalSessionEntryFromStoreKeys;
-    resolveGatewaySessionStoreTargetWithStoreAsync: typeof import("./session-utils.js").resolveGatewaySessionStoreTargetWithStoreAsync;
+    resolveGatewaySessionStoreTargetInWorker: typeof import("./session-utils-store-worker.js").resolveGatewaySessionStoreTargetInWorker;
   }>,
   coordinator: Pick<GitHubPublicationCoordinator, "markReportedAsync">,
   params: {
@@ -55,11 +55,10 @@ export async function reportGitHubPublicationTranscript(
       }
     : await (async () => {
         const runtime = await loadSessionRuntime();
-        const target = await runtime.resolveGatewaySessionStoreTargetWithStoreAsync({
+        const target = await runtime.resolveGatewaySessionStoreTargetInWorker({
           cfg: getRuntimeConfig(),
           key: params.sessionKey,
           agentId: params.agentId,
-          clone: false,
         });
         return {
           target,

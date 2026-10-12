@@ -16,12 +16,9 @@ import type {
 } from "../../config/sessions/session-accessor.js";
 import { mutateSessionAtMessageWithPreconditions } from "../../config/sessions/session-accessor.sqlite-message-cut.js";
 import {
-  captureSessionActorStorageOwner,
   getSessionActorStorageBinding,
   runWithSessionActorStorage,
 } from "../../config/sessions/session-actor-storage-binding.js";
-import { captureSessionEntryCurrentCheckAsyncInternal } from "../../config/sessions/session-entry-current-check.js";
-import { readSessionEntryReadOnlyInWorker } from "../../config/sessions/session-entry-read-runtime.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { isIncognitoSessionKey } from "../../routing/session-key.js";
 import { ModelSelectionLockedError } from "../../sessions/model-overrides.js";
@@ -61,10 +58,11 @@ import { resolveVisibleActiveSessionRunState } from "./session-active-runs.js";
 import { emitSessionsChanged } from "./session-change-event.js";
 import { prepareSessionForkFilesystemRoot } from "./session-create-root.js";
 import { resolveEditorMediaAttachments } from "./session-rewind-editor-media.js";
+import { prepareRewindRepositoryEntries } from "./session-rewind-repository-entries.js";
 import { waitForTerminalSessionRunSettlement } from "./session-run-settlement.js";
 import { listSessionBranchesForGateway } from "./sessions-branches-list.js";
 import {
-  createUpstreamForkCurrentGuard,
+  prepareUpstreamForkCurrentGuard,
   resolveUpstreamForkHarness,
 } from "./sessions-fork-runtime-guard.js";
 import { sessionLog } from "./sessions-shared.js";
@@ -317,59 +315,69 @@ async function mutatePreparedSessionAtMessage({
       }
       const creation = resolveOperatorSessionCreation(client);
       const sandbox = action === "fork" ? resolveCreatorSandbox(cfg, creation) : undefined;
-      const upstreamForkGuard =
-        upstreamLink && upstreamForkHarness
-          ? createUpstreamForkCurrentGuard({
-              client,
-              commitGuard: assertMutationCurrent,
-              context,
-              forkHarness: upstreamForkHarness,
-              requestedAgentId,
-              sessionKey,
-              source: current,
-              targetKey,
-            })
-          : { assertCurrent: assertMutationCurrent, assertRollbackCurrent: assertMutationCurrent };
-      if (upstreamForkHarness) {
-        try {
-          upstreamForkGuard.assertCurrent();
-        } catch (error) {
-          if (error instanceof SessionMutationAuthorizationChangedError) {
-            respond(false, undefined, error.error);
-            return;
-          }
-          throw error;
-        }
-      }
-      const upstreamFork =
-        upstreamLink && upstreamForkHarness
-          ? await withSessionInitializationSource(upstreamForkGuard, (assertCurrent) => {
-              const forkParams = {
+      let upstreamForkGuard: {
+        assertCurrent: () => void;
+        assertRollbackCurrent: () => void;
+        release?: () => void;
+      };
+      try {
+        upstreamForkGuard =
+          upstreamLink && upstreamForkHarness
+            ? await prepareUpstreamForkCurrentGuard({
+                client,
+                commitGuard: assertMutationCurrent,
+                context,
+                forkHarness: upstreamForkHarness,
+                requestedAgentId,
+                sessionKey,
+                source: current,
                 targetKey,
-                sandbox,
-                source: {
-                  agentId: current.agentId,
-                  sessionId: initialSessionId,
-                  sessionKey: current.canonicalKey,
-                  storePath: current.storePath,
-                  entryId,
-                },
-                upstream: {
-                  catalogId: upstreamLink.catalogId,
-                  hostId: upstreamLink.hostId,
-                  kind: upstreamLink.upstreamKind,
-                  threadId: upstreamLink.threadId,
-                  ref: upstreamLink.upstreamRef,
-                },
+              })
+            : {
+                assertCurrent: assertMutationCurrent,
+                assertRollbackCurrent: assertMutationCurrent,
               };
-              return upstreamForkHarness.contract === "v2"
-                ? upstreamForkHarness.sessionFork.fork({
-                    ...forkParams,
-                    assertCurrent,
-                  })
-                : upstreamForkHarness.sessionFork.fork(forkParams);
-            })
-          : undefined;
+      } catch (error) {
+        if (error instanceof SessionMutationAuthorizationChangedError) {
+          respond(false, undefined, error.error);
+          return;
+        }
+        throw error;
+      }
+      const upstreamFork = await (async () => {
+        try {
+          return upstreamLink && upstreamForkHarness
+            ? await withSessionInitializationSource(upstreamForkGuard, (assertCurrent) => {
+                const forkParams = {
+                  targetKey,
+                  sandbox,
+                  source: {
+                    agentId: current.agentId,
+                    sessionId: initialSessionId,
+                    sessionKey: current.canonicalKey,
+                    storePath: current.storePath,
+                    entryId,
+                  },
+                  upstream: {
+                    catalogId: upstreamLink.catalogId,
+                    hostId: upstreamLink.hostId,
+                    kind: upstreamLink.upstreamKind,
+                    threadId: upstreamLink.threadId,
+                    ref: upstreamLink.upstreamRef,
+                  },
+                };
+                return upstreamForkHarness.contract === "v2"
+                  ? upstreamForkHarness.sessionFork.fork({
+                      ...forkParams,
+                      assertCurrent,
+                    })
+                  : upstreamForkHarness.sessionFork.fork(forkParams);
+              })
+            : undefined;
+        } finally {
+          upstreamForkGuard.release?.();
+        }
+      })();
       if (upstreamFork?.status === "failed") {
         respond(
           false,
@@ -428,11 +436,10 @@ async function mutatePreparedSessionAtMessage({
             source: ReturnType<typeof captureOpenClawStateWorkerContext>;
           }
         | undefined;
-      const repositoryEntryScope = {
-        agentId: current.readSource?.agentId ?? current.agentId,
-        storePath: current.readSource?.path ?? current.storePath,
-      };
-      const memoryOwner = memory && captureSessionActorStorageOwner(memory);
+      using repositoryEntries =
+        action === "fork" && current.entry.repositoryWorkspaceId
+          ? await prepareRewindRepositoryEntries(current, targetKey, assertMutationCurrent)
+          : undefined;
       const mutationParams = {
         agentId: current.agentId,
         commitGuard: assertMutationCurrent,
@@ -476,20 +483,16 @@ async function mutatePreparedSessionAtMessage({
           const assertRepositoryCurrent = () => {
             assertRepositoryOwnerCurrent();
             assertLocalUpstreamCurrent();
+            const sourceEntry = repositoryEntries?.readSource();
+            if (
+              sourceEntry?.sessionId !== initialSessionId ||
+              sourceEntry.lifecycleRevision !== initialLifecycleRevision ||
+              sourceEntry.repositoryWorkspaceId !== source.workspaceId
+            ) {
+              throw new Error("Repository workspace changed before session fork");
+            }
           };
-          const sourceEntry = memory
-            ? memoryOwner?.owner?.readSession(current.canonicalKey, memory.authority)?.entry
-            : await readSessionEntryReadOnlyInWorker(
-                { ...repositoryEntryScope, sessionKey: current.canonicalKey, projection: "list" },
-                assertRepositoryCurrent,
-              );
-          if (
-            sourceEntry?.sessionId !== initialSessionId ||
-            sourceEntry.lifecycleRevision !== initialLifecycleRevision ||
-            sourceEntry.repositoryWorkspaceId !== source.workspaceId
-          ) {
-            throw new Error("Repository workspace changed before session fork");
-          }
+          assertRepositoryCurrent();
           const forked = await forkSessionRepositoryWorkspace({
             sourceWorkspaceId: current.entry.repositoryWorkspaceId,
             agentId: current.agentId,
@@ -539,35 +542,13 @@ async function mutatePreparedSessionAtMessage({
       } finally {
         if (forkRepository && !repositoryForkCommitted) {
           const { workspaceId, store, source } = forkRepository;
-          const child = memory
-            ? {
-                entry: memoryOwner?.owner?.readSession(targetKey, memory.authority)?.entry,
-                entryCurrent: undefined,
-                source: () => {
-                  if (
-                    memoryOwner?.owner?.readSession(targetKey, memory.authority)?.entry
-                      ?.repositoryWorkspaceId === workspaceId
-                  ) {
-                    throw new Error("Repository fork was committed before cleanup");
-                  }
-                },
-              }
-            : await captureSessionEntryCurrentCheckAsyncInternal({
-                ...repositoryEntryScope,
-                sessionKey: targetKey,
-                fields: ["repositoryWorkspaceId"],
-                matchGeneration: false,
-                errorMessage: "Repository fork changed before cleanup",
-              });
-          if (child.entry?.repositoryWorkspaceId !== workspaceId) {
+          if (repositoryEntries?.isForkUnclaimed(workspaceId)) {
             await store.delete({
               workspaceId,
-              sessionEntryCurrent: child.entryCurrent,
               assertCurrent: () => {
                 source.admission.assertCurrent();
-                // Incognito retains its actor predicate; file-backed checks run in the writer.
-                if (!child.entryCurrent) {
-                  child.source();
+                if (!repositoryEntries?.isForkUnclaimed(workspaceId)) {
+                  throw new Error("Repository fork was committed before cleanup");
                 }
               },
             });

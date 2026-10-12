@@ -16,7 +16,7 @@ import {
 } from "./server.sessions.create.test-support.js";
 import { resolveSessionMutationAuthorizationAsync } from "./session-sharing-authorization-async.js";
 import { SessionMutationAuthorizationChangedError } from "./session-sharing.js";
-import { resolveGatewaySessionStoreTargetAsync } from "./session-utils.js";
+import { resolveGatewaySessionStoreTargetInWorker } from "./session-utils-store-worker.js";
 import { testState, writeSessionStore } from "./test-helpers.js";
 import {
   createCompactedSessionFixture,
@@ -186,7 +186,7 @@ test("operator role agent allowlists protect creation without blocking existing 
     sessionId: "role-existing-session",
   });
   expect(
-    (await resolveGatewaySessionStoreTargetAsync({ cfg, key: existingKey, agentId: "main" }))
+    (await resolveGatewaySessionStoreTargetInWorker({ cfg, key: existingKey, agentId: "main" }))
       .storePath,
   ).toBe(storePath);
   const adopted = await directSessionReq(

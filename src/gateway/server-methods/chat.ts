@@ -6,15 +6,17 @@ import {
   validateChatToolTitlesParams,
 } from "../../../packages/gateway-protocol/src/index.js";
 import { resolveSessionWorkStartError } from "../../config/sessions.js";
-import { readRetainedSessionEntryFacts } from "../../config/sessions/session-entry-read-facts.js";
-import { captureSessionEntryMetadataRead } from "../../config/sessions/session-entry-source-authority.js";
+import { retainPreparedSessionEntryPredicate } from "../../config/sessions/session-accessor.sqlite-entry-cache-publication-state.js";
+import { isIncognitoSessionKey } from "../../routing/session-key.js";
 import { beginSessionWorkAdmission } from "../../sessions/session-lifecycle-admission.js";
 import {
   projectChatDisplayMessage,
   resolveEffectiveChatHistoryMaxChars,
 } from "../chat-display-projection.js";
 import { resolveRequestedSessionAgentId } from "../session-request-agent.js";
-import { loadSessionEntryAsync } from "../session-utils.js";
+import { findCanonicalStoreMatch } from "../session-utils-store-selection.js";
+import { loadGatewaySessionEntryReadOnlyInWorker } from "../session-utils-store-worker.js";
+import { loadIncognitoGatewaySessionEntryReadOnly } from "../session-utils.js";
 import { formatForLog } from "../ws-log.js";
 import {
   resolveGlobalAwareNodeChatDeliveryKeys,
@@ -50,25 +52,35 @@ export const chatHandlers: GatewayRequestHandlers = {
       return;
     }
     const sessionLoadOptions = { agentId: requestedAgent.agentId };
-    const {
-      agentId,
-      storePath,
-      readSource,
-      entry,
-      legacyKey,
-      canonicalKey: sessionKey,
-    } = await loadSessionEntryAsync(rawSessionKey, sessionLoadOptions, cfg);
+    let retained: ReturnType<typeof retainPreparedSessionEntryPredicate> | undefined;
+    const loaded = await loadGatewaySessionEntryReadOnlyInWorker({
+      excludeInternalEffects: true,
+      cfg,
+      key: rawSessionKey,
+      ...sessionLoadOptions,
+      onSelected: (target) => {
+        retained?.release();
+        const selected = findCanonicalStoreMatch(target.store, target.storeKeys)?.entry;
+        if (typeof target.capturedReadSource?.databaseIdentity === "string") {
+          retained = retainPreparedSessionEntryPredicate({
+            databaseIdentity: `file:${target.capturedReadSource.databaseIdentity}`,
+            sessionKey: target.canonicalKey,
+            entry: selected,
+            matches: (_before, after) => after?.sessionId === selected?.sessionId,
+          });
+        }
+      },
+    }).catch((error: unknown) => {
+      retained?.release();
+      throw error;
+    });
+    const { agentId, storePath, entry, canonicalKey: sessionKey } = loaded;
     const sessionId = entry?.sessionId;
     if (!sessionId || !storePath) {
+      retained?.release();
       respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, "session not found"));
       return;
     }
-    const storageKey = legacyKey ?? sessionKey;
-    const metadata = captureSessionEntryMetadataRead({
-      agentId,
-      sessionKey: storageKey,
-      storePath,
-    });
 
     let appended: Awaited<ReturnType<typeof appendInjectedAssistantMessageToTranscript>>;
     try {
@@ -77,19 +89,17 @@ export const chatHandlers: GatewayRequestHandlers = {
         scope: storePath,
         identities: [sessionKey, sessionId],
         assertAllowed: () => {
-          // Admission can wait behind archive/reset; use the owner's committed facts at entry.
-          const latestEntry = metadata
-            ? metadata.readCurrent()
-            : readRetainedSessionEntryFacts(
-                {
-                  agentId: readSource?.agentId ?? agentId,
-                  path: readSource?.path ?? storePath,
-                },
-                { sessionKeys: [storageKey], projection: "exact", snapshotFields: [] },
-              )?.entries.find((row) => row.sessionKey === storageKey)?.entry;
-          const archivedError = resolveSessionWorkStartError(sessionKey, latestEntry, {
-            expectedSessionId: sessionId,
-          });
+          const current = retained?.readCurrent();
+          if (retained && !current) {
+            throw new Error(`Session "${sessionKey}" changed while starting work. Retry.`);
+          }
+          const currentEntry = isIncognitoSessionKey(sessionKey)
+            ? loadIncognitoGatewaySessionEntryReadOnly(rawSessionKey, sessionLoadOptions, cfg).entry
+            : (current?.entry ?? entry);
+          if (currentEntry?.sessionId !== sessionId) {
+            throw new Error(`Session "${sessionKey}" changed while starting work. Retry.`);
+          }
+          const archivedError = resolveSessionWorkStartError(sessionKey, currentEntry);
           if (archivedError) {
             throw new Error(archivedError);
           }
@@ -114,6 +124,8 @@ export const chatHandlers: GatewayRequestHandlers = {
     } catch (err) {
       respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, formatForLog(err)));
       return;
+    } finally {
+      retained?.release();
     }
     if (!appended.ok || !appended.messageId || !appended.message) {
       respond(

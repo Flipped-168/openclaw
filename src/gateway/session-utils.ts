@@ -20,6 +20,10 @@ export {
   resolveGatewaySessionStoreTargetWithStoreAsync,
   resolveGatewaySessionStoreTargetAsync,
 } from "./session-utils-store-lookup.js";
+export {
+  loadGatewaySessionEntryReadOnlyInWorker,
+  resolveGatewaySessionStoreTargetInWorker,
+} from "./session-utils-store-worker.js";
 export { getSessionDefaults } from "./session-utils-model.js";
 export { resolveGatewayModelSupportsImages } from "./session-utils-model.js";
 export { listProjectedSessions } from "./session-utils-list.js";

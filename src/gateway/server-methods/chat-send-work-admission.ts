@@ -260,6 +260,7 @@ export function interruptChatSendWork(params: {
 /** Queued and collected turns share the original session and caller admission until settlement. */
 export function createChatSendWorkAdmission(params: {
   admission: Pick<SessionWorkAdmissionLease, "release">;
+  followRegistration?: SessionMutationAuthorization["followRegistration"];
   releaseCallerAuthority?: () => void;
   releaseGatewayRootContinuation?: () => void;
   logGateway: Pick<GatewayRequestContext["logGateway"], "warn">;
@@ -415,6 +416,7 @@ export function createChatSendWorkAdmission(params: {
             throw new Error("Chat input actor admission ended");
           }
         };
+        const followRegistration = params.followRegistration;
         inputActor = acquireSessionInputActor(
           {
             agentId: terminal.target.agentId,
@@ -426,6 +428,12 @@ export function createChatSendWorkAdmission(params: {
             },
           },
           { assertCurrent, assertReadable: assertCurrent },
+          followRegistration &&
+            ((change) =>
+              followRegistration(
+                { sessionKey: terminal.target.canonicalKey, agentId: terminal.target.agentId },
+                change,
+              )),
         );
       }
       return inputActor;

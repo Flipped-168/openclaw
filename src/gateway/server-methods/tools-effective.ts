@@ -15,7 +15,7 @@ import {
   resolveAgentWorkspaceDir,
   resolveSessionAgentId,
 } from "../../agents/agent-scope.js";
-import { resolveConversationCapabilityProfile } from "../../agents/conversation-capability-profile.js";
+import { prepareConversationCapabilityProfile } from "../../agents/conversation-capability-profile.js";
 import {
   buildConversationToolPolicyPipelineSteps,
   resolveConversationToolPolicies,
@@ -60,7 +60,7 @@ import type { GatewayRequestHandlers, RespondFn } from "./types.js";
 import { defineValidatedGatewayHandler } from "./validation.js";
 
 type TrustedToolsEffectiveContext = NonNullable<
-  ReturnType<typeof resolveTrustedToolsEffectiveContext>
+  Awaited<ReturnType<typeof resolveTrustedToolsEffectiveContext>>
 >;
 
 const TOOLS_EFFECTIVE_FRESH_TTL_MS = 10_000;
@@ -432,7 +432,7 @@ async function projectMcpCatalog(params: {
   }
 }
 
-function resolveTrustedToolsEffectiveContext(
+async function resolveTrustedToolsEffectiveContext(
   params: {
     sessionKey: string;
     requestedAgentId?: string;
@@ -511,7 +511,7 @@ function resolveTrustedToolsEffectiveContext(
   };
   return {
     ...context,
-    capabilityProfile: resolveConversationCapabilityProfile({
+    capabilityProfile: await prepareConversationCapabilityProfile({
       config: context.cfg,
       sessionKey: context.sessionKey,
       preparedSessionEntry: { sessionKey: canonicalKey, entry: loaded.entry },
@@ -555,7 +555,7 @@ export const toolsEffectiveHandlers: GatewayRequestHandlers = {
         loaded: Pick<GatewaySessionEntryRead, "entry" | "canonicalKey" | "cfg">,
         assertSourceCurrent: () => void,
       ) => {
-        const trustedContext = resolveTrustedToolsEffectiveContext(
+        const trustedContext = await resolveTrustedToolsEffectiveContext(
           {
             sessionKey: params.sessionKey,
             requestedAgentId: sessionOwner.agentId,

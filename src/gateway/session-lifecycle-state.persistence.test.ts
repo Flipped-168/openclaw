@@ -16,6 +16,7 @@ import {
   patchSessionEntryCore,
   replaceSessionEntry,
 } from "../config/sessions/session-accessor.js";
+import type { SessionEntry } from "../config/sessions/types.js";
 import { racePromiseWithAbortSignal } from "../infra/abort-signal.js";
 import {
   emitAgentEvent,
@@ -316,7 +317,7 @@ it.each(["success", "failed-write"])(
       context,
       io: { emitAcceptance: vi.fn(), emitFinal: vi.fn() },
     };
-    let admissionSessionEntry: Awaited<ReturnType<typeof replaceSessionEntry>>;
+    let admissionEntry: SessionEntry | undefined = { sessionId, updatedAt: 1_000 };
     const admission = createAgentAdmissionController({
       ...admissionParams,
       dedupeLifecycle: createAgentDedupeLifecycle({
@@ -327,9 +328,12 @@ it.each(["success", "failed-write"])(
       getRequestedSessionKey: () => target.sessionKey,
       getResolvedSessionKey: () => target.sessionKey,
       getResolvedSessionId: () => sessionId,
+      getSessionEntry: () => admissionEntry,
+      setSessionEntry: (entry) => {
+        admissionEntry = entry;
+      },
       getResolvedSessionAgentId: () => "main",
       getAgentId: () => "main",
-      getSessionEntry: () => admissionSessionEntry ?? undefined,
       getSessionPersisted: () => true,
       getSupersededSessionId: () => undefined,
       setAdmittedSessionId: (admittedSessionId) => expect(admittedSessionId).toBe(sessionId),
@@ -377,11 +381,12 @@ it.each(["success", "failed-write"])(
       return respond.mock.calls[0]?.[1];
     };
     try {
-      admissionSessionEntry = await replaceSessionEntry(target, {
-        sessionId,
-        spawnedBy: "agent:main:main",
-        updatedAt: 1_000,
-      });
+      admissionEntry =
+        (await replaceSessionEntry(target, {
+          sessionId,
+          spawnedBy: "agent:main:main",
+          updatedAt: 1_000,
+        })) ?? undefined;
       await admission.acquire(target.storePath);
       const rowProjection = await createSessionRowProjection({ cfg, context });
       bindSessionRowProjection(context, () => rowProjection);

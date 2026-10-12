@@ -532,15 +532,15 @@ export async function handleApprovalResolve<
       respondApprovalStorageUnavailable({ ...params, operation: "resolve", error });
     }
   };
-  const readCustody = () =>
-    params.reviewer
-      ? prepareApprovalChannelCustody({
-          cfg: params.context.getRuntimeConfig(),
-          approvalKind: params.approvalKind,
-          reviewer: params.reviewer,
-        })
-      : null;
-  const custody = readCustody();
+  using custody = params.reviewer
+    ? prepareApprovalChannelCustody({
+        cfg: params.context.getRuntimeConfig(),
+        getCfg: params.context.getRuntimeConfig,
+        assertCurrent: () => params.authority.assertCurrent(),
+        approvalKind: params.approvalKind,
+        reviewer: params.reviewer,
+      })
+    : null;
   if (params.reviewer && !custody) {
     respondUnknownOrExpiredApproval(params.respond);
     return;
@@ -627,7 +627,6 @@ export async function handleApprovalResolve<
     family: params.authority.guard.family,
     assertCurrent: () => {
       params.authority.assertCommitCurrent();
-      const currentCustody = readCustody();
       if (
         params.manager.getLocalSnapshot(resolved.approvalId) !== resolved.snapshot ||
         resolved.snapshot.request.sessionKey !== sourceSessionKey ||
@@ -640,7 +639,7 @@ export async function handleApprovalResolve<
             ? { cfg: params.context.getRuntimeConfig(), sessionAccess: retainedSessionAccess }
             : {}),
         }) ||
-        (params.reviewer && !currentCustody?.authorizes(resolved.snapshot))
+        (params.reviewer && !custody?.isCurrent(resolved.snapshot))
       ) {
         throw new Error("approval resolver authority is no longer active");
       }

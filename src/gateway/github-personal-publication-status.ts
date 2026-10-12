@@ -17,7 +17,7 @@ export type PreparedRepositoryPublicationStatus = {
   requestId: string;
   workspaceId: string;
   repository: Awaited<ReturnType<typeof prepareReceiptOwner>>;
-  [Symbol.dispose](): void;
+  release: () => void;
 };
 
 type PersonalPublicationReceipt =
@@ -46,7 +46,7 @@ export async function preparePersonalRepositoryPublicationStatus(requestId: stri
     requestId: row.request_id,
     workspaceId: row.workspace_id,
     repository,
-    [Symbol.dispose]: () => repository[Symbol.dispose](),
+    release: repository.release,
   };
 }
 

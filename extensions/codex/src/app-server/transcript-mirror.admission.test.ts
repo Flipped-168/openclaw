@@ -30,13 +30,8 @@ import {
 
 registerCodexEventProjectorTestLifecycle();
 
-beforeEach(() => {
-  setRuntimeConfigSnapshot({});
-});
-
-afterEach(() => {
-  clearRuntimeConfigSnapshot();
-});
+beforeEach(() => setRuntimeConfigSnapshot({}));
+afterEach(() => clearRuntimeConfigSnapshot());
 
 it.each([
   {

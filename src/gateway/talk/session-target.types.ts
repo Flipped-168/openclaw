@@ -7,5 +7,5 @@ export type PreparedTalkSessionTarget = Readonly<{
   sessionKey: string;
   canonicalKey: string;
   storePath: string;
-  assertCurrent: (cfg: OpenClawConfig) => void;
+  assertCurrent(cfg: OpenClawConfig): void;
 }>;

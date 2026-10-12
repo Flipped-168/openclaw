@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import { GatewayClient } from "openclaw/plugin-sdk/gateway-runtime";
+import { redactSensitiveText } from "openclaw/plugin-sdk/logging-core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createQaGatewayChild } from "../../../../extensions/qa-lab/api.js";
 import {
@@ -119,7 +120,11 @@ async function expectSuccessfulTurn(params: {
   marker: string;
 }): Promise<void> {
   const runId = await startTurn(params);
-  await expect(waitForTurn(params.operator, runId)).resolves.toMatchObject({ status: "ok" });
+  const completed = await waitForTurn(params.operator, runId);
+  expect(
+    completed,
+    `turn ${params.marker}: ${redactSensitiveText(JSON.stringify(completed)).slice(0, 8_000)}`,
+  ).toMatchObject({ status: "ok" });
   await vi.waitFor(
     async () => {
       const history = await params.operator.request<{ messages?: unknown[] }>("chat.history", {
@@ -183,12 +188,12 @@ async function readEnvironments(operator: GatewayClient): Promise<EnvironmentRea
 }
 
 async function expectPublicBundleStatus(params: {
-  gateway: WireGateway;
   operator: GatewayClient;
-  nodeId: string;
-  status: "installed" | "missing";
-  stage: "initial" | "missing" | "repaired";
+  gateway: WireGateway;
   host: PairedNodeWorkerHost;
+  nodeId: string;
+  phase: "before-loss" | "after-loss" | "after-repair";
+  status: "installed" | "missing";
 }): Promise<void> {
   await vi.waitFor(
     async () => {
@@ -196,42 +201,46 @@ async function expectPublicBundleStatus(params: {
       const environment = (await readEnvironments(params.operator)).find(
         (entry) => entry.id === `node:${params.nodeId}`,
       );
-      const diagnostic = JSON.stringify({
-        stage: params.stage,
-        expectedStatus: params.status,
-        nodeState: node ? { connected: node.connected, sessionHost: node.sessionHost } : null,
-        environmentPresent: Boolean(environment),
-        nodeStatus: node?.workerBundle ?? null,
-        environmentStatus: environment?.workerBundle ?? null,
-        invokeErrors: params.host.invokeErrors,
-        retainCommands: params.host.commands.filter(
-          (command) => command === NODE_WORKER_WORKSPACE_RETAIN_COMMAND,
-        ).length,
-        bundleInstalls: bundleInstallFrames(params.host).length,
-        retainRequests: params.host.frames
-          .filter((frame) => frame.command === NODE_WORKER_WORKSPACE_RETAIN_COMMAND)
-          .map((frame) => {
-            const input = JSON.parse(frame.paramsJSON ?? "{}") as {
-              sequence?: number;
-              bundleHashes?: string[];
-              bundleStatusHash?: string;
-              acknowledgedBundleGeneration?: number;
-            };
-            return {
-              sequence: input.sequence,
-              bundleHashes: input.bundleHashes,
-              bundleStatusHash: input.bundleStatusHash,
-              acknowledgedBundleGeneration: input.acknowledgedBundleGeneration,
-            };
-          }),
-        retentionWarnings: params.gateway
-          .logs()
-          .split("\n")
-          .filter((line) =>
-            /Node (?:bundle retention skipped|workspace retain publication failed)/u.test(line),
-          )
-          .slice(-10),
-      });
+      const diagnostic = redactSensitiveText(
+        JSON.stringify({
+          phase: params.phase,
+          expectedStatus: params.status,
+          node: node && {
+            connected: node.connected,
+            paired: node.paired,
+            sessionHost: node.sessionHost,
+            workerBundle: node.workerBundle,
+          },
+          environment: environment && {
+            type: environment.type,
+            workerState: environment.worker?.state,
+            tunnelStatus: environment.worker?.tunnelStatus,
+            workerBundle: environment.workerBundle,
+          },
+          retentionRequests: params.host.frames
+            .filter((frame) => frame.command === NODE_WORKER_WORKSPACE_RETAIN_COMMAND)
+            .slice(-4)
+            .map((frame) => {
+              const input = JSON.parse(frame.paramsJSON!) as {
+                sequence?: number;
+                acknowledgedBundleGeneration?: number;
+                bundleStatusHash?: string;
+                bundleHashes?: unknown[];
+                retain?: unknown[];
+              };
+              return {
+                sequence: input.sequence,
+                acknowledgedBundleGeneration: input.acknowledgedBundleGeneration,
+                bundleStatusHash: input.bundleStatusHash,
+                bundleCount: input.bundleHashes?.length,
+                workspaceCount: input.retain?.length,
+              };
+            }),
+          bundleInstalls: bundleInstallFrames(params.host).length,
+          invokeErrors: params.host.invokeErrors.map(String),
+          gatewayLogTail: params.gateway.logs().slice(-4_000),
+        }),
+      ).slice(0, 8_000);
       expect(node?.workerBundle?.status, diagnostic).toBe(params.status);
       expect(environment?.workerBundle?.status, diagnostic).toBe(params.status);
       for (const projection of [node?.workerBundle, environment?.workerBundle]) {
@@ -625,12 +634,12 @@ describe("paired node worker lifecycle wire", () => {
 
         // Bundle maintenance reports only the public status/version projection and repairs loss.
         await expectPublicBundleStatus({
-          gateway,
           operator,
-          nodeId,
-          status: "installed",
-          stage: "initial",
+          gateway,
           host: workerNode,
+          nodeId,
+          phase: "before-loss",
+          status: "installed",
         });
         const installedBundle = await workerNode.installedBundleDirectory(bundleHash!);
         const installCountBeforeLoss = bundleInstallFrames(workerNode).length;
@@ -641,12 +650,12 @@ describe("paired node worker lifecycle wire", () => {
         await workerNode.connect();
         await waitForNewRetainCommand(retainCountBeforeReconnect);
         await expectPublicBundleStatus({
-          gateway,
           operator,
-          nodeId,
-          status: "missing",
-          stage: "missing",
+          gateway,
           host: workerNode,
+          nodeId,
+          phase: "after-loss",
+          status: "missing",
         });
         await expectSuccessfulTurn({ operator, key: localKey, marker: "WIRE-LOCAL-AFTER-LOSS" });
 
@@ -659,12 +668,12 @@ describe("paired node worker lifecycle wire", () => {
         );
         await waitForNewRetainCommand(retainCountBeforeRepair);
         await expectPublicBundleStatus({
-          gateway,
           operator,
-          nodeId,
-          status: "installed",
-          stage: "repaired",
+          gateway,
           host: workerNode,
+          nodeId,
+          phase: "after-repair",
+          status: "installed",
         });
 
         // An offline runner fails before handoff, leaves the active placement retryable, and
@@ -831,6 +840,9 @@ describe("paired node worker lifecycle wire", () => {
         expect(workerNode.invokeErrors).toEqual([]);
       } catch (error) {
         testFailure = { error };
+        process.stderr.write(
+          `Paired node worker lifecycle failed; Gateway log tail:\n${redactSensitiveText(gateway?.logs().slice(-8_000) ?? "Gateway did not start")}\n`,
+        );
       } finally {
         provider.releaseAll();
         const cleanup = await Promise.allSettled([

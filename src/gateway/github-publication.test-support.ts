@@ -14,6 +14,7 @@ import {
 } from "../agents/worktrees/registry.js";
 import { findLiveRegistryWorktreeByOwner } from "../agents/worktrees/registry.test-support.js";
 import { clearRuntimeConfigSnapshot, setRuntimeConfigSnapshot } from "../config/config.js";
+import { resolveSessionStorePathCore } from "../config/sessions/paths.js";
 import {
   loadSessionEntryReadOnly,
   replaceSessionEntrySync,
@@ -53,6 +54,7 @@ const mocks = vi.hoisted(() => ({
   findWorktreeById: vi.fn(),
   resolveRepository: vi.fn(),
   loadSession: vi.fn(),
+  persistedSessionKeys: new Set<string>(),
   getConfigSnapshot: vi.fn(),
   attribution: vi.fn(),
   prepareAttribution: vi.fn(),
@@ -131,10 +133,18 @@ vi.mock("../agents/worktrees/registry-read.js", async (importOriginal) => ({
   readLiveRegistryWorktreeByOwner: mocks.readWorktree,
 }));
 
-vi.mock("./session-utils.js", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("./session-utils.js")>()),
-  loadGatewaySessionEntryReadOnlyAsync: async (...args: unknown[]) => mocks.loadSession(...args),
-}));
+vi.mock("./session-utils-store-worker.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./session-utils-store-worker.js")>();
+  return {
+    ...actual,
+    loadGatewaySessionEntryReadOnlyInWorker: async (
+      params: Parameters<typeof actual.loadGatewaySessionEntryReadOnlyInWorker>[0],
+    ) =>
+      mocks.persistedSessionKeys.has(params.key)
+        ? actual.loadGatewaySessionEntryReadOnlyInWorker(params)
+        : mocks.loadSession(params.key, { agentId: params.agentId }),
+  };
+});
 
 vi.mock("../process/exec.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../process/exec.js")>()),
@@ -395,9 +405,6 @@ export async function persistPublicationTestSession(sessionKey = SESSION_KEY) {
     // Publication fixtures exercise lifecycle writes without unrelated maintenance workers.
     session: { maintenance: { mode: "warn" } },
   });
-  const { loadGatewaySessionEntryReadOnlyInWorker } = await vi.importActual<
-    typeof import("./session-utils-store-worker.js")
-  >("./session-utils-store-worker.js");
   const original = mocks.loadSession.getMockImplementation()!;
   await upsertSessionEntryCore(
     { agentId: "main", sessionKey },
@@ -418,19 +425,18 @@ export async function persistPublicationTestSession(sessionKey = SESSION_KEY) {
       lastActiveAt: Date.now(),
     });
   }
-  const loaded = await loadGatewaySessionEntryReadOnlyInWorker({
-    cfg: currentGitHubPublicationConfig(),
-    key: sessionKey,
+  const storePath = resolveSessionStorePathCore(currentGitHubPublicationConfig().session?.store, {
     agentId: "main",
-    readOnly: true,
   });
-  const read = () =>
-    loadSessionEntryReadOnly({ agentId: "main", sessionKey, storePath: loaded.storePath })!;
+  const read = () => loadSessionEntryReadOnly({ agentId: "main", sessionKey, storePath })!;
   mocks.loadSession.mockImplementation((key: string, options?: { agentId?: string }) =>
-    key === sessionKey ? { ...loaded, entry: read() } : original(key, options),
+    key === sessionKey
+      ? { ...original(key, options), storePath, entry: read() }
+      : original(key, options),
   );
+  mocks.persistedSessionKeys.add(sessionKey);
   return {
-    storePath: loaded.storePath,
+    storePath,
     read,
     async reset(placements: WorkerSessionPlacementStore) {
       const before = read();
@@ -471,6 +477,7 @@ export function installGitHubPublicationTestHarness(
     }),
   );
   beforeEach(async () => {
+    mocks.persistedSessionKeys.clear();
     root = tempDirs.make("openclaw-publication-");
     vi.stubEnv("OPENCLAW_STATE_DIR", root);
     realWorktree = harnessOptions.realWorktree ?? false;
@@ -653,10 +660,7 @@ export function installGitHubPublicationTestHarness(
         ) {
           return commandResult("", 1);
         }
-        if (command.endsWith("write-tree")) {
-          return commandResult(`${WORKSPACE_TREE}\n`);
-        }
-        if (command === "git rev-parse HEAD^{tree}") {
+        if (command.endsWith("write-tree") || command === "git rev-parse HEAD^{tree}") {
           return commandResult(`${WORKSPACE_TREE}\n`);
         }
         if (command === `git rev-parse ${BASE_HEAD}^{tree}`) {

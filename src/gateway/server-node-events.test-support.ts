@@ -212,10 +212,15 @@ vi.mock("./chat-attachments.js", async (importOriginal) => ({
 
 vi.mock("./session-utils.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./session-utils.js")>()),
-  loadSessionEntryAsync: async (sessionKey: string, opts?: unknown) =>
-    runtimeMocks.loadSessionEntry(sessionKey, opts),
   resolveGatewayModelSupportsImages: runtimeMocks.resolveGatewayModelSupportsImages,
   resolveSessionModelRef: runtimeMocks.resolveSessionModelRef,
+}));
+
+// mock-isolation: Node-event fixtures supply session rows without opening unrelated persistent stores.
+vi.mock("./session-utils-store-worker.js", () => ({
+  loadGatewaySessionEntryReadOnlyInWorker: vi.fn(async (params: { key: string }) =>
+    runtimeMocks.loadSessionEntry(params.key),
+  ),
 }));
 
 vi.mock("./ws-log.js", async (importOriginal) => ({

@@ -74,7 +74,9 @@ export async function settleDeniedRepositoryGitHubPublication(params: {
         "GitHub publication's recorded effects lack the facts needed for recovery; inspect the original target before requesting another publication.",
       );
     }
-    using preparedOwner = await prepareReceiptOwner(row);
+    const preparedOwner = await prepareReceiptOwner(row);
+    using _ = { [Symbol.dispose]: () => preparedOwner.release() };
+
     assertCustody();
     const { assertCurrent, refreshIdentity } = createGitHubPublicationExecutionIdentity({
       row,
@@ -249,7 +251,8 @@ export function createRepositoryGitHubPublicationRecovery(params: {
           await placements.withRepositoryWorkspaceReservation(
             { sessionId: row.session_id, sessionKey: row.session_key, agentId: row.agent_id },
             async (assertCurrent) => {
-              using preparedOwner = await prepareReceiptOwner(row);
+              const preparedOwner = await prepareReceiptOwner(row);
+              using _ = { [Symbol.dispose]: () => preparedOwner.release() };
               assertCurrent();
               const owner = resolveReceiptOwner(row, preparedOwner);
               if (!owner) {

@@ -29,13 +29,13 @@ vi.mock("../session-sharing.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../session-sharing.js")>();
   return {
     ...actual,
-    resolveSessionSharingTargetAsync: mocks.resolveTarget,
+    resolveSessionSharingTargetAsync: async (...args: unknown[]) => mocks.resolveTarget(...args),
   };
 });
-
-vi.mock("../session-sharing-authorization-async.js", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../session-sharing-authorization-async.js")>()),
-  resolveSessionMutationAuthorizationAsync: mocks.resolveAuthorization,
+// mock-isolation: Provider-review tests control authorization changes while the review is awaited.
+vi.mock("../session-sharing-authorization-async.js", () => ({
+  resolveSessionMutationAuthorizationAsync: (...args: unknown[]) =>
+    mocks.resolveAuthorization(...args),
 }));
 
 const sessionKey = "agent:main:provider-review";

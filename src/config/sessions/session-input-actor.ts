@@ -4,6 +4,7 @@ import { SqliteWorkerError } from "../../infra/sqlite-worker-contract.js";
 import type { UserTurnTranscriptRecorder } from "../../sessions/user-turn-transcript.types.js";
 import { isIncognitoSessionKey } from "../../shared/incognito-session-key.js";
 import { isIncognitoOpenClawAgentSqlitePath } from "../../state/openclaw-agent-db.paths.js";
+import type { AgentDatabaseRequestExecutionSource } from "../../state/openclaw-agent-execution-admission-contract.js";
 import { captureOpenClawAgentDatabaseExecution } from "../../state/openclaw-agent-execution.js";
 import { captureSessionPendingInputWorkerCustody } from "./session-accessor.sqlite-pending-inputs.js";
 import { prepareSessionEntryReplacementDatabase } from "./session-accessor.sqlite-replacement-worker.js";
@@ -58,6 +59,7 @@ export function bindUserTurnInputActor(
 export async function acquireSessionInputActor(
   requestedTarget: SessionEntryTargetPatchScope,
   lifetime: SessionActorLifetime,
+  followRegistration?: AgentDatabaseRequestExecutionSource["onRegistryChange"],
 ): Promise<SessionInputActorAcquisition | undefined> {
   const agentId = requestedTarget.readSource?.agentId ?? requestedTarget.agentId;
   if (!agentId) {
@@ -150,6 +152,7 @@ export async function acquireSessionInputActor(
         database,
         () => lifetime.assertCurrent(),
         execution,
+        followRegistration,
       );
     }
     const identity = execution.fileIdentity;

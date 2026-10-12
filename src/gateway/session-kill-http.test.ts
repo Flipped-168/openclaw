@@ -42,9 +42,9 @@ vi.mock("./auth.js", () => ({
   authorizeHttpGatewayConnect: authMock,
 }));
 
-vi.mock("./session-utils.js", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("./session-utils.js")>()),
-  loadSessionEntryAsync: loadSessionEntryMock,
+// mock-isolation: HTTP kill tests supply target rows without opening a session database.
+vi.mock("./session-utils-store-worker.js", () => ({
+  loadGatewaySessionEntryReadOnlyInWorker: loadSessionEntryMock,
 }));
 
 vi.mock("../agents/subagents/registry/subagent-control.js", () => ({

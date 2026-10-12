@@ -83,7 +83,6 @@ import { roundedChatSendTimingMs } from "./server-methods/chat-server-timing.js"
 import { persistGatewaySessionLifecycleEvent } from "./session-lifecycle-state.js";
 import { tryResolveSessionCompatibilityOwnerAgentId } from "./session-request-agent.js";
 import type { SessionRowProjection } from "./session-row-projection.js";
-import { resolveSessionStoreIdentity } from "./session-store-key.js";
 import { resolveSessionSubscriptionKeys } from "./session-subscription-keys.js";
 import { formatForLog } from "./ws-log.js";
 
@@ -1078,11 +1077,11 @@ export function createAgentEventHandler({
     const registeredAt = runContext?.registeredAt ?? event.registeredAt;
     try {
       const cfg = getRuntimeConfig();
-      const identity = resolveSessionStoreIdentity({ cfg, sessionKey, agentId });
-      const entry = getSessionRowProjection?.()?.sharingTarget({
-        key: sessionKey,
-        agentId: identity.agentId,
-      })?.entry;
+      const ownerAgentId = agentId ?? tryResolveSessionCompatibilityOwnerAgentId(cfg, sessionKey);
+      const entry = ownerAgentId
+        ? getSessionRowProjection?.()?.sharingTarget({ key: sessionKey, agentId: ownerAgentId })
+            ?.entry
+        : undefined;
       const sessionVerbose = normalizeVerboseLevel(entry?.verboseLevel);
       const sessionUpdatedAt = typeof entry?.updatedAt === "number" ? entry.updatedAt : undefined;
       const sessionChangedAfterRunStarted =

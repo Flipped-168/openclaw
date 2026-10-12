@@ -29,7 +29,7 @@ import { prepareSessionRepositoryWorkspace } from "./server-methods/session-crea
 import { createGatewaySession } from "./session-create-service.js";
 import { resolveSessionMutationAuthorizationAsync } from "./session-sharing-authorization-async.js";
 import { roleClient, rolePolicyConfig } from "./session-sharing.test-utils.js";
-import { resolveGatewaySessionStoreTargetAsync } from "./session-utils.js";
+import { resolveGatewaySessionStoreTargetInWorker } from "./session-utils-store-worker.js";
 
 describe("Gateway creation preparation", () => {
   it.each(["caller", "database"] as const)(
@@ -143,7 +143,7 @@ describe("Gateway creation preparation", () => {
           throw new Error(first.error.message);
         }
         const scope = {
-          ...(await resolveGatewaySessionStoreTargetAsync({ cfg: {}, key })),
+          ...(await resolveGatewaySessionStoreTargetInWorker({ cfg: {}, key })),
           sessionKey: key,
         };
         const transcriptScope = { ...scope, sessionId: first.entry.sessionId };
@@ -246,7 +246,7 @@ describe("Gateway creation preparation", () => {
       if (!first.ok) {
         throw new Error(first.error.message);
       }
-      const target = await resolveGatewaySessionStoreTargetAsync({ cfg: {}, key });
+      const target = await resolveGatewaySessionStoreTargetInWorker({ cfg: {}, key });
       const scope = { agentId: target.agentId, sessionKey: key, storePath: target.storePath };
       const entered = createDeferredCore();
       const rotate = createDeferredCore();
@@ -316,7 +316,7 @@ describe("Gateway creation preparation", () => {
         expect(
           (await createGatewaySession({ ...common, key: "agent:main:sibling", label: "Taken" })).ok,
         ).toBe(true);
-        const target = await resolveGatewaySessionStoreTargetAsync({ cfg: {}, key });
+        const target = await resolveGatewaySessionStoreTargetInWorker({ cfg: {}, key });
         const scope = { agentId: target.agentId, sessionKey: key, storePath: target.storePath };
         const entered = createDeferredCore();
         const proceed = createDeferredCore();
@@ -437,6 +437,7 @@ describe("Gateway creation preparation", () => {
             storePath: created.storePath,
             sessionId: created.entry.sessionId,
             lifecycleRevision: created.entry.lifecycleRevision,
+            entry: created.entry,
           });
         });
         const afterCreate = vi.fn<
@@ -457,6 +458,7 @@ describe("Gateway creation preparation", () => {
             storePath: created.storePath,
             sessionId: created.entry.sessionId,
             lifecycleRevision: "replacement",
+            entry: { ...created.entry, lifecycleRevision: "replacement" },
           });
           expect(() => authorization.assertCurrent()).toThrow("session changed");
         });

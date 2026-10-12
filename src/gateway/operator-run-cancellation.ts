@@ -12,7 +12,8 @@ import { captureGatewayOperatorRunAuthority } from "./operator-run-authority.js"
 import {
   captureAbortedPartial,
   deferAbortedPartialPersistence,
-  prepareChatAbortSession,
+  prepareChatAbortSessionSnapshot,
+  retainChatAbortSessionSnapshot,
   type ChatAbortSessionSnapshot,
 } from "./server-methods/chat-aborted-partial.js";
 import type { GatewayRequestContext } from "./server-methods/types.js";
@@ -32,34 +33,45 @@ export async function retainGatewayOperatorRun(
     context: OperatorRunCancellationContext;
     runId: string;
     entry?: ChatAbortControllerEntry;
-    abortSession?: ChatAbortSessionSnapshot;
+    abortSession?: Extract<ChatAbortSessionSnapshot, { ok: true }>["value"];
   },
 ) {
   const captured = await captureGatewayOperatorRunAuthority(params);
   const releaseSource =
     captured?.release ?? retainGatewayDeviceRevocation(params.hasCurrentClientAuthority);
   const signal = captured?.authority.signal;
-  const session =
+  const partialSession =
     signal && params.entry
-      ? (params.abortSession ??
-        (await prepareChatAbortSession(params.entry.sessionKey, params.entry.agentId)))
+      ? retainChatAbortSessionSnapshot(
+          params.abortSession
+            ? { ok: true, value: params.abortSession }
+            : await prepareChatAbortSessionSnapshot({
+                cfg: params.context.getRuntimeConfig(),
+                key: params.entry.sessionKey,
+                agentId: params.entry.agentId,
+              }),
+        )
       : undefined;
   const cancellation =
-    signal && params.entry && session
+    signal && params.entry && partialSession
       ? createGatewayOperatorRunCancellation({
           signal,
           runId: params.runId,
           entry: params.entry,
           context: params.context,
-          session,
+          session: partialSession.read,
         })
       : undefined;
   return {
     authority: captured?.authority,
     armCancellation: () => cancellation?.arm(),
-    retireCancellation: () => cancellation?.release(),
+    retireCancellation: () => {
+      cancellation?.release();
+      partialSession?.release();
+    },
     release: () => {
       cancellation?.release();
+      partialSession?.release();
       releaseSource?.();
     },
   };
@@ -71,7 +83,7 @@ function createGatewayOperatorRunCancellation(params: {
   runId: string;
   entry: ChatAbortControllerEntry;
   context: OperatorRunCancellationContext;
-  session: ChatAbortSessionSnapshot;
+  session: () => ChatAbortSessionSnapshot;
 }) {
   const { signal, runId, entry, context } = params;
   const controller = entry.controller;
@@ -128,11 +140,10 @@ function createGatewayOperatorRunCancellation(params: {
             runId,
             sessionKey,
             sessionId: entry.sessionId,
-            agentId: entry.agentId,
             text,
             abortOrigin: "rpc",
             resolveTerminalProducer: entry.resolveTerminalProducer,
-            session: params.session,
+            session: params.session(),
           })
         : undefined;
     const { aborted } = abortChatRunById(createChatAbortOps(context), {

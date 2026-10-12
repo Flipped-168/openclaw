@@ -25,6 +25,7 @@ import type { GatewayRequestContext, GatewayRequestHandlers } from "../../server
 import { sharingPolicyClient } from "../../session-sharing.test-utils.js";
 import { closeTalkClientGatewayControlSession } from "../client-gateway-control.js";
 import { cleanupTalkConnection } from "../session-registry.js";
+import { createTalkClient } from "./client-create.js";
 import { talkClientHandlers } from "./client.js";
 import { talkSessionHandlers } from "./session.js";
 
@@ -560,6 +561,30 @@ describe("Talk target preparation through Gateway authorization", () => {
     },
   );
 
+  it("does not retarget between router authorization and lazy handler dispatch", async () => {
+    const gate = createDeferredCore();
+    const started = createDeferredCore();
+    const pending = dispatch("talk.client.create", createParams, {
+      "talk.client.create": async (request) => {
+        started.resolve();
+        await gate.promise;
+        return createTalkClient(request);
+      },
+    });
+    await started.promise;
+    config = { ...config, talk: { agentId: "primary" } };
+    setRuntimeConfigSnapshot(config);
+    gate.resolve();
+    expect(await pending).toHaveBeenCalledWith(
+      false,
+      undefined,
+      expect.objectContaining({ code: "INVALID_REQUEST" }),
+    );
+    for (const agentId of ["voice", "primary"]) {
+      expect(loadSessionEntry({ agentId, sessionKey: `agent:${agentId}:main` })).toBeUndefined();
+    }
+  });
+
   it.each(["main", undefined])(
     "passes the authorized %s target into relay creation",
     async (sessionKey) => {
@@ -684,5 +709,28 @@ describe("Talk target preparation through Gateway authorization", () => {
     expect(
       loadSessionEntry({ agentId: "voice", sessionKey: "agent:voice:main" })?.createdActor,
     ).toEqual({ type: "human", source: "profile", id: client.authenticatedUserProfile?.profileId });
+  });
+
+  it("rejects a default-owner change while profile preparation is awaited", async () => {
+    const gate = createDeferredCore<undefined>();
+    const started = createDeferredCore();
+    mocks.bootstrap.mockImplementationOnce(async () => {
+      started.resolve();
+      await gate.promise;
+      return "Agent context fixture.";
+    });
+    const pending = dispatch("talk.client.create", createParams);
+    await started.promise;
+    config = { ...config, talk: { agentId: "primary" } };
+    setRuntimeConfigSnapshot(config);
+    gate.resolve(undefined);
+    expect(await pending).toHaveBeenCalledWith(
+      false,
+      undefined,
+      expect.objectContaining({ code: "INVALID_REQUEST" }),
+    );
+    for (const agentId of ["voice", "primary"]) {
+      expect(loadSessionEntry({ agentId, sessionKey: `agent:${agentId}:main` })).toBeUndefined();
+    }
   });
 });

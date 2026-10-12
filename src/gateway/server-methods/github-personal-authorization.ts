@@ -17,12 +17,8 @@ import {
   resolveOperatorRolePolicyForAssignment,
 } from "../operator-role-policy.js";
 import type { SessionMutationTarget } from "../session-mutation-authorization-error.js";
-import { prepareSessionMutationFacts } from "../session-sharing-preparation.js";
-import {
-  createSessionListEntryFilter,
-  resolveSessionMutationAuthorization,
-} from "../session-sharing.js";
-import { resolveSessionStoreIdentity } from "../session-store-key.js";
+import { resolveSessionMutationAuthorizationAsync } from "../session-sharing-authorization-async.js";
+import { createSessionListEntryFilter } from "../session-sharing.js";
 import { isGatewayClientProfilePending } from "./gateway-client-identity.js";
 import {
   isIneligiblePersonalGatewayCaller,
@@ -151,11 +147,13 @@ export async function prepareGitHubPublicationOptionsRead(
           };
   const preparedSession = await prepareGitHubPublicationSession(sessionKey, {
     agentId: requestedAgentId,
-    assertCurrent: assertConnection,
+    assertCurrent: () => {
+      currentClient();
+    },
   });
   try {
     const readSession = () => {
-      const loaded = preparedSession.current();
+      const loaded = preparedSession.readCurrent();
       const filter = createSessionListEntryFilter({
         cfg: options.context.getRuntimeConfig(),
         client: currentClient(),
@@ -174,8 +172,7 @@ export async function prepareGitHubPublicationOptionsRead(
     if (!session) {
       throw new Error("GitHub publication session was not found.");
     }
-    // sessionId/lifecycleRevision pin the incarnation; archivedAt is re-read below because
-    // archiving flips it without touching either identity field.
+    // Archive and access changes invalidate the prepared response through write receipts.
     const readCurrent = () => {
       const current = readSession();
       if (
@@ -190,7 +187,8 @@ export async function prepareGitHubPublicationOptionsRead(
     return {
       personal,
       session,
-      [Symbol.dispose]: preparedSession.release,
+      release: () => preparedSession.release(),
+      [Symbol.dispose]: () => preparedSession.release(),
       sessionScoped: authority.sessionScope === "operator.sessions.read",
       currentSession: readCurrent,
       // Callbacks may refresh live facts, but must not replace the response's archive snapshot.
@@ -302,62 +300,70 @@ function preparePersonalGitHubAction(
   };
 }
 
-function bindPersonalGitHubSessionAction(
+async function bindPersonalGitHubSessionAction(
   options: Request,
   action: PersonalGitHubAction,
-  prepared: Awaited<ReturnType<typeof prepareSessionMutationFacts>>,
+  target: SessionMutationTarget,
 ) {
-  const readFacts = () => {
-    try {
-      return prepared.readCurrent(options.context.getRuntimeConfig());
-    } catch {
-      throw new GitHubPublicationSessionChangedError();
+  const prepared = await prepareGitHubPublicationSession(target.sessionKey, {
+    agentId: target.agentId,
+    assertCurrent: action.assertCurrent,
+    fields: [
+      "sessionId",
+      "lifecycleRevision",
+      "archivedAt",
+      "owner",
+      "createdActor",
+      "visibility",
+      "incognito",
+    ],
+  });
+  let releaseAuthorization = () => {};
+  try {
+    const initial = prepared.readCurrent();
+    if (!initial.entry?.sessionId) {
+      throw new Error("GitHub publication session was not found.");
     }
-  };
-  const initial = readFacts().target;
-  if (!initial?.entry.sessionId) {
-    throw new Error("GitHub publication session was not found.");
-  }
-  const sessionId = initial.entry.sessionId;
-  const lifecycleRevision = initial.entry.lifecycleRevision ?? null;
-  const assertCurrent = () => {
-    action.assertCurrent();
-    const facts = readFacts();
-    const current = facts.target;
-    if (
-      current?.entry.sessionId !== sessionId ||
-      (current.entry.lifecycleRevision ?? null) !== lifecycleRevision ||
-      current.entry.archivedAt !== undefined ||
-      current.canonicalKey !== initial.canonicalKey
-    ) {
-      throw new GitHubPublicationSessionChangedError();
-    }
-    // This is a session mutation, not a run start. Preserve current admin rights without
-    // retaining an admin grant that the person's live role no longer permits.
-    const { error } = resolveSessionMutationAuthorization({
+    const { authorization, error } = await resolveSessionMutationAuthorizationAsync({
       client: currentGitHubClient(options, "operator.write", action.owner),
       method: "sessions.github.publish",
       requestParams: { sessionKey: initial.canonicalKey, agentId: initial.agentId },
       context: options.context,
-      preparedTargetRead: () => ({
-        target: current,
-        storageTarget: prepared.storageTarget,
-        members: [...facts.membership],
-      }),
+      assertInvocationCurrent: action.assertCurrent,
     });
+    releaseAuthorization = () => authorization?.release?.();
     if (error) {
       throw new Error(error.message);
     }
-  };
-  assertCurrent();
-  return {
-    ...action,
-    assertCurrent,
-    sessionId,
-    lifecycleRevision,
-    sessionKey: initial.canonicalKey,
-    agentId: initial.agentId,
-  };
+    const assertCurrent = () => {
+      action.assertCurrent();
+      currentGitHubClient(options, "operator.write", action.owner);
+      const current = prepared.readCurrent();
+      if (current.entry?.archivedAt !== undefined) {
+        throw new GitHubPublicationSessionChangedError();
+      }
+      authorization?.assertCurrent();
+    };
+    assertCurrent();
+    return {
+      action: {
+        ...action,
+        assertCurrent,
+        sessionId: initial.entry.sessionId,
+        lifecycleRevision: initial.entry.lifecycleRevision ?? null,
+        sessionKey: initial.canonicalKey,
+        agentId: initial.agentId,
+      },
+      release: () => {
+        releaseAuthorization();
+        prepared.release();
+      },
+    };
+  } catch (error) {
+    releaseAuthorization();
+    prepared.release();
+    throw error;
+  }
 }
 
 /** Retain the authenticated policy owner for worker commits as well as immediate effects. */
@@ -366,11 +372,9 @@ export async function preparePersonalGitHubSessionActionV2(
   target: SessionMutationTarget,
 ): Promise<{ action: PersonalGitHubSessionActionV2; release: () => void }> {
   const personal = await preparePersonalGitHubActionV2(options, "operator.write");
-  const cfg = options.context.getRuntimeConfig();
-  const { agentId } = resolveSessionStoreIdentity({ cfg, ...target });
-  const prepared = await prepareSessionMutationFacts({ cfg, ...target, agentId });
+  const bound = await bindPersonalGitHubSessionAction(options, personal, target);
+  const { action } = bound;
   try {
-    const action = bindPersonalGitHubSessionAction(options, personal, prepared);
     const admitted = await prepareGitHubPublicationRequesterV2(options, action);
     try {
       action.assertCurrent();
@@ -389,7 +393,7 @@ export async function preparePersonalGitHubSessionActionV2(
         },
         release: () => {
           admitted.release();
-          prepared.release();
+          bound.release();
         },
       };
     } catch (error) {
@@ -397,7 +401,7 @@ export async function preparePersonalGitHubSessionActionV2(
       throw error;
     }
   } catch (error) {
-    prepared.release();
+    bound.release();
     throw error;
   }
 }

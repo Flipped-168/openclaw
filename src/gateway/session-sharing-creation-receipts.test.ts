@@ -63,6 +63,7 @@ it.each(["missing", "idless"] as const)(
               sessionId: entry.sessionId,
               lifecycleRevision: entry.lifecycleRevision,
               readSource,
+              entry,
             });
           },
         });

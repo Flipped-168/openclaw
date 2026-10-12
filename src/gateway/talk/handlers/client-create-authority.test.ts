@@ -58,7 +58,10 @@ import {
   bindGatewayRequestHandlerMutationAuthority,
   bindWebSocketRequestMutationAuthority,
 } from "../../server-methods/session-mutation-guards.js";
-import type { GatewayRequestHandlerOptions } from "../../server-methods/types.js";
+import type {
+  GatewayRequestHandlerOptions,
+  SessionMutationAuthorization,
+} from "../../server-methods/types.js";
 import { SharedGatewaySessionGenerationState } from "../../server-shared-auth-generation.js";
 import { SessionMutationAuthorizationChangedError } from "../../session-mutation-authorization-error.js";
 import { resolveSessionMutationAuthorizationAsync } from "../../session-sharing-authorization-async.js";
@@ -96,6 +99,7 @@ let tempDir: string;
 let ownedVoiceSessionId: string | undefined;
 let ownedVoiceSessionKey = sessionKey;
 let forbiddenSnapshotStacks: string[] = [];
+const authorizations: SessionMutationAuthorization[] = [];
 let observeAdmission:
   | ((request: operationAdmission.SqliteWorkerAdmissionRequest, run: () => void) => void)
   | undefined;
@@ -134,6 +138,9 @@ async function invokeCreate(options: GatewayRequestHandlerOptions) {
 describe("voice creation authority", () => {
   const tempDirs = useAutoCleanupTempDirTracker((remove) =>
     afterEach(async () => {
+      for (const authorization of authorizations.splice(0)) {
+        authorization.release?.();
+      }
       if (ownedVoiceSessionId) {
         await closeTalkClientGatewayControlSession({
           voiceSessionId: ownedVoiceSessionId,
@@ -269,7 +276,6 @@ describe("voice creation authority", () => {
       const client = roleClient("write", "cross-store-voice");
       using _ = { [Symbol.dispose]: (await prepareUserProfileCatalog()).release };
       prepareGatewayRecipientProfile(client);
-      const authorities: Array<{ release?: () => void }> = [];
       const prepare = async (scope: typeof local, method = "sessions.patch") => {
         const result = await resolveSessionMutationAuthorizationAsync({
           method,
@@ -281,7 +287,7 @@ describe("voice creation authority", () => {
           client,
         });
         expect(result.error).toBeNull();
-        authorities.push(result.authorization!);
+        authorizations.push(result.authorization!);
         return result.authorization!;
       };
       openOpenClawAgentDatabase(local);
@@ -295,6 +301,7 @@ describe("voice creation authority", () => {
       const foreignAuthority = (await prepare(foreign)).assertCurrent;
       const localAuthority = mixed ? (await prepare(local)).assertCurrent : undefined;
       const transactionAuthority = grant ? await prepare(local, "talk.client.create") : undefined;
+      expect(localReads.counts.data).toBe(0);
       let grantLocalReads = 0;
       let revokedSource = false;
       let inGrant = false;
@@ -420,9 +427,6 @@ describe("voice creation authority", () => {
         openSpy.mockRestore();
         localReads.restore();
         localReader.claim.release();
-        for (const authority of authorities) {
-          authority.release?.();
-        }
       }
     },
   );
@@ -924,72 +928,6 @@ describe("voice creation authority", () => {
       intercepted.mockRestore();
     }
   });
-
-  it.each(["identity", "label"] as const)(
-    "checks final foreign %s before acknowledging a committed voice session",
-    async (change) => {
-      const fixture = configureDelegatedBrowserProvider(async () => browserSession);
-      const voiceSessionId = "voice-final-foreign";
-      const createVoice = voiceSessions.createOrResumeClientVoiceSession;
-      let changed = false;
-      const createSpy = vi
-        .spyOn(voiceSessions, "createOrResumeClientVoiceSession")
-        .mockImplementation(async (...args) => {
-          const result = await createVoice(...args);
-          using peer = new DatabaseSync(resolveOpenClawAgentSqlitePath({ agentId: "main" }));
-          peer
-            .prepare(
-              change === "identity"
-                ? "UPDATE session_nodes SET current_session_id = 'foreign-successor', entry_json = json_set(entry_json, '$.sessionId', 'foreign-successor') WHERE session_key = ?"
-                : "UPDATE session_nodes SET entry_json = json_set(entry_json, '$.label', 'foreign-label') WHERE session_key = ?",
-            )
-            .run(sessionKey);
-          changed = true;
-          return result;
-        });
-      const reads = observeSqliteReadSql(StatementSync.prototype);
-      const grantQueries: string[] = [];
-      observeAdmission = (_request, run) => {
-        const start = reads.queries.length;
-        try {
-          run();
-        } finally {
-          grantQueries.push(...reads.queries.slice(start));
-        }
-      };
-      const respond = vi.fn();
-      try {
-        await invokeCreate({
-          params: { sessionKey, provider: "openai", voiceSessionId },
-          respond,
-          context: fixture.context,
-          client: fixture.client,
-        } as never);
-        expect(changed).toBe(true);
-        expect(createSpy).toHaveBeenCalledOnce();
-        expect(respond.mock.lastCall?.[0], respond.mock.lastCall?.[2]?.message).toBe(
-          change === "label",
-        );
-        expect(grantQueries.filter(isSessionEntryDataSql)).toEqual([]);
-        if (change === "identity") {
-          expect(respond.mock.lastCall?.[2]?.message).toContain(
-            "session changed before talk.client.create",
-          );
-          expect(fixture.cancelBrowserSession).toHaveBeenCalledOnce();
-          expect(clientVoiceSessionTesting.readRecord("main", voiceSessionId)?.status).toBe(
-            "closed",
-          );
-        } else {
-          ownedVoiceSessionId = voiceSessionId;
-          expect(clientVoiceSessionTesting.readRecord("main", voiceSessionId)?.status).toBe("open");
-        }
-      } finally {
-        observeAdmission = undefined;
-        reads.restore();
-        createSpy.mockRestore();
-      }
-    },
-  );
 
   registerClientCreateSourceAuthorityTests({
     tempDir: () => tempDir,

@@ -283,7 +283,7 @@ export async function prepareAgentRunUserTurn(params: {
         target: async () => {
           params.assertCurrent();
           const loaded = await loadGatewaySessionEntryReadOnlyInWorker({
-            cfg: params.cfg,
+            cfg: params.cfgForAgent ?? params.cfg,
             key: params.resolvedSessionKey!,
             agentId: params.activeSessionAgentId,
             assertActive: params.assertCurrent,

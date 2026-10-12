@@ -59,7 +59,7 @@ import type {
   MutationTarget,
   PreparedPatchTarget,
 } from "./sessions-patch-types.js";
-import { prepareSessionWorkerPlacementPatchCheck } from "./sessions-shared.js";
+import { prepareSessionWorkerPlacementPatchValidation } from "./sessions-shared.js";
 import type {
   GatewayClient,
   GatewayRequestContext,
@@ -109,7 +109,17 @@ export async function executeSessionPatchMutations(params: {
 
   const outcomes = Array.from<MutationOutcome | undefined>({ length: params.targets.length });
   const permissionErrors = new Map<number, ErrorShape>();
-  const placementChecks = new Map<number, () => string | undefined>();
+  const placementChecks = new Map<
+    number,
+    Awaited<ReturnType<typeof prepareSessionWorkerPlacementPatchValidation>>
+  >();
+  using _ = {
+    [Symbol.dispose]: () => {
+      for (const validation of placementChecks.values()) {
+        validation.release();
+      }
+    },
+  };
   const prepared: PreparedPatchTarget[] = [];
   const preparedByIndex = Array.from<PreparedPatchTarget | undefined>({
     length: params.targets.length,
@@ -161,9 +171,11 @@ export async function executeSessionPatchMutations(params: {
       outcomes[index] = invalidSessionRequest(expectationError);
       continue;
     }
-    let validatePlacement: () => string | undefined;
+    let placementValidation: Awaited<
+      ReturnType<typeof prepareSessionWorkerPlacementPatchValidation>
+    >;
     try {
-      validatePlacement = await prepareSessionWorkerPlacementPatchCheck({
+      placementValidation = await prepareSessionWorkerPlacementPatchValidation({
         agentId: resolved.agentId,
         cfg,
         context: params.context,
@@ -177,7 +189,7 @@ export async function executeSessionPatchMutations(params: {
       outcomes[index] = { ok: false, error: unexpectedPatchError(key, error) };
       continue;
     }
-    placementChecks.set(index, validatePlacement);
+    placementChecks.set(index, placementValidation);
     const preparedTarget: PreparedPatchTarget = {
       archiveActor,
       canonicalKey,
@@ -202,7 +214,7 @@ export async function executeSessionPatchMutations(params: {
       if (error) {
         return error;
       }
-      const placementError = placementChecks.get(index)?.();
+      const placementError = placementChecks.get(index)?.validate();
       return placementError ? errorShape(ErrorCodes.INVALID_REQUEST, placementError) : undefined;
     },
   }));
@@ -296,6 +308,12 @@ export async function executeSessionPatchMutations(params: {
               const first = group[0]!;
               const storage = preparation.storage.get(first.index);
               const groupTiming = params.diagnostics?.scope("snapshot");
+              const runtimeSelectionReleases: Array<() => void> = [];
+              const releaseRuntimeSelections = () => {
+                for (const release of runtimeSelectionReleases.splice(0)) {
+                  release();
+                }
+              };
               try {
                 // Keep every resolver candidate for queued alias revalidation. Label
                 // uniqueness needs only the requested label's owners, not the full store.
@@ -326,6 +344,7 @@ export async function executeSessionPatchMutations(params: {
                   admission: "admitted" | "detached",
                   catalogPreparation?: SessionPatchCatalogResult,
                 ): Promise<GroupMutationOperation> => {
+                  releaseRuntimeSelections();
                   createdSessions.length = 0;
                   const workingStore = Object.fromEntries(
                     entries.flatMap(({ entry, sessionKey }) =>
@@ -482,6 +501,15 @@ export async function executeSessionPatchMutations(params: {
                         projectedOutcomes.push(runtimeSelection);
                         continue;
                       }
+                      if (runtimeSelection.release) {
+                        const release = runtimeSelection.release;
+                        runtimeSelectionReleases.push(() => {
+                          if (runtimeSelection.validate) {
+                            commitGuards.delete(runtimeSelection.validate);
+                          }
+                          release();
+                        });
+                      }
                       const authorizationFailure = mutationTargets[target.index]!.commitGuard();
                       if (authorizationFailure) {
                         projectedOutcomes.push({ ok: false, error: authorizationFailure });
@@ -553,6 +581,7 @@ export async function executeSessionPatchMutations(params: {
                             sessionKey: primaryKey,
                             storePath: target.storePath,
                             sessionId: replacement.outcome.entry.sessionId,
+                            entry: replacement.outcome.entry,
                             lifecycleRevision: replacement.outcome.entry.lifecycleRevision,
                           });
                         }
@@ -631,6 +660,7 @@ export async function executeSessionPatchMutations(params: {
                   };
                 }
               } finally {
+                releaseRuntimeSelections();
                 groupTiming?.finish();
               }
             });

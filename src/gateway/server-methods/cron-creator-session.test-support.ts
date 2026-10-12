@@ -5,7 +5,6 @@ import type { CronDeliveryPreview } from "../../cron/types.js";
 import {
   agentTurnCronParams,
   createCronCallerClient as callerClient,
-  type createCronTestContext,
   type createCronTestInvoker,
   expectCronSuccess,
   expectResponseError,
@@ -27,7 +26,6 @@ export type CronCreatorSessionLookup = {
 };
 
 export function registerCronCreatorSessionTests(fixture: {
-  createCronContext: () => ReturnType<typeof createCronTestContext>;
   invokeCron: ReturnType<typeof createCronTestInvoker>;
   loadGatewaySessionEntry: Mock<(sessionKey: string) => CronCreatorSessionLookup>;
   resolveCronDeliveryPreview: Mock<() => Promise<CronDeliveryPreview>>;

@@ -6,16 +6,18 @@ import {
 import { isIncognitoSessionKey } from "../../routing/session-key.js";
 import { hasOperatorBoundary } from "../operator-role-policy.js";
 import { resolveRequestedSessionAgentId } from "../session-request-agent.js";
-import type { PreparedSessionMutationFacts } from "../session-sharing-policy.js";
 import {
   prepareSessionMutationFacts,
+  type PreparedSessionSourceFacts,
   type SessionFactsRead,
 } from "../session-sharing-preparation.js";
 import {
-  authorizeIncognitoSessionTarget,
-  authorizeSessionSharingTarget,
-  prepareSessionSharing,
-} from "../session-sharing.js";
+  prepareProjectedSessionSharing,
+  prepareSessionSharingProfiles,
+} from "../session-sharing-read.js";
+import { authorizeIncognitoSessionTarget } from "../session-sharing.js";
+import { withGatewaySessionStoreTarget } from "../session-utils-store-lookup.js";
+import { resolveCanonicalSessionEntryFromStoreKeys } from "../session-utils-store.js";
 import type { GatewayRequestHandlers } from "./types.js";
 import { defineValidatedGatewayHandler } from "./validation.js";
 
@@ -33,55 +35,87 @@ export const sessionActivitySummaryHandlers: GatewayRequestHandlers = {
         );
         return;
       }
-      const reads: Array<{
-        key: string;
-        agentId: string;
-        facts?: SessionFactsRead<PreparedSessionMutationFacts>;
-      }> = [];
+      const cfg = context.getRuntimeConfig();
+      const profiles = await prepareSessionSharingProfiles(client);
+      const reads: SessionFactsRead<PreparedSessionSourceFacts>[] = [];
       try {
-        const sourceConfig = context.getRuntimeConfig();
+        const requestedTargets = [];
         for (const requested of params.sessions) {
-          const agent = resolveRequestedSessionAgentId(
-            sourceConfig,
-            requested.key,
-            requested.agentId,
-          );
+          const agent = resolveRequestedSessionAgentId(cfg, requested.key, requested.agentId);
           if (!agent.ok) {
             respond(false, undefined, agent.error);
             return;
           }
-          const facts = isIncognitoSessionKey(requested.key)
-            ? undefined
-            : await prepareSessionMutationFacts({
-                cfg: sourceConfig,
-                sessionKey: requested.key,
-                agentId: agent.agentId,
-                allowMissing: true,
-              });
-          reads.push({ key: requested.key, agentId: agent.agentId, facts });
+          requestedTargets.push({ requested, agentId: agent.agentId });
         }
-        const cfg = context.getRuntimeConfig();
-        const sharing = prepareSessionSharing({ client, cfg });
+        const preparations = await Promise.allSettled(
+          requestedTargets.map(async ({ requested, agentId }) => {
+            if (isIncognitoSessionKey(requested.key)) {
+              return undefined;
+            }
+            const [sharing, entry] = await Promise.allSettled([
+              prepareSessionMutationFacts({
+                cfg,
+                sessionKey: requested.key,
+                agentId,
+                allowMissing: true,
+              }).then((read) => {
+                reads.push(read);
+                return read;
+              }),
+              withGatewaySessionStoreTarget(
+                { cfg, key: requested.key, agentId, projection: "list" },
+                (target) =>
+                  resolveCanonicalSessionEntryFromStoreKeys(target.store, target.storeKeys),
+              ),
+            ]);
+            if (sharing.status === "rejected") {
+              throw sharing.reason;
+            }
+            if (entry.status === "rejected") {
+              throw entry.reason;
+            }
+            return { read: sharing.value, entry: entry.value };
+          }),
+        );
+        const prepared = preparations.map((result) => {
+          if (result.status === "rejected") {
+            throw result.reason;
+          }
+          return result.value;
+        });
         const targets = [];
-        // Consume current facts for the whole batch before enqueueing any model work.
-        for (const read of reads) {
-          if (!read.facts) {
+        // Authorize the complete batch before enqueueing any model work.
+        for (const [index, { requested, agentId }] of requestedTargets.entries()) {
+          if (isIncognitoSessionKey(requested.key)) {
             const error = authorizeIncognitoSessionTarget({
               client,
-              sessionKey: read.key,
+              sessionKey: requested.key,
               target: null,
             });
             if (error) {
               respond(false, undefined, error);
               return;
             }
-            targets.push({ key: read.key, agentId: read.agentId, unavailable: true });
+            targets.push({ key: requested.key, agentId, unavailable: true });
             continue;
           }
-          const target = read.facts.readCurrent(cfg).target;
+          const currentCfg = context.getRuntimeConfig();
+          const selected = prepared[index]!;
+          const facts = selected.read.readCurrent(currentCfg);
+          const target = facts.target;
+          const sharing = prepareProjectedSessionSharing({
+            cfg: currentCfg,
+            client,
+            profiles,
+            isMember: (_target, id) => facts.membership.has(id),
+          });
           if (
             !target ||
-            (hasOperatorBoundary(client, cfg) &&
+            !selected.entry ||
+            selected.entry.sessionId !== target.entry.sessionId ||
+            selected.entry.lifecycleRevision !== target.entry.lifecycleRevision ||
+            (hasOperatorBoundary(client, currentCfg) &&
               sharing.entryFilter?.(target.canonicalKey, target.entry) === false)
           ) {
             respond(
@@ -92,8 +126,8 @@ export const sessionActivitySummaryHandlers: GatewayRequestHandlers = {
             return;
           }
           const error =
-            authorizeIncognitoSessionTarget({ client, sessionKey: read.key, target }) ??
-            authorizeSessionSharingTarget({ cfg, client, target });
+            authorizeIncognitoSessionTarget({ client, sessionKey: requested.key, target }) ??
+            sharing.authorizeTarget(target);
           if (error) {
             respond(false, undefined, error);
             return;
@@ -101,8 +135,7 @@ export const sessionActivitySummaryHandlers: GatewayRequestHandlers = {
           targets.push({
             key: target.canonicalKey,
             agentId: target.agentId,
-            sessionId: target.entry.sessionId,
-            facts: read.facts,
+            entry: { ...selected.entry, ...target.entry },
           });
         }
         const sessions = await Promise.all(
@@ -112,30 +145,34 @@ export const sessionActivitySummaryHandlers: GatewayRequestHandlers = {
             activitySummary: {
               ...(target.unavailable
                 ? { state: "unavailable" as const }
-                : await service.ensure({
-                    key: target.key,
-                    agentId: target.agentId,
-                  })),
+                : await service.ensure(target, target.entry)),
               canEnsure: true,
             },
           })),
         );
         const currentCfg = context.getRuntimeConfig();
-        const currentSharing = prepareSessionSharing({ client, cfg: currentCfg });
-        for (const requested of targets) {
-          if (requested.unavailable) {
+        for (const [index, { requested }] of requestedTargets.entries()) {
+          const selected = prepared[index];
+          if (!selected) {
             continue;
           }
-          const target = requested.facts?.readCurrent(currentCfg).target;
-          const error =
-            target && target.entry.sessionId === requested.sessionId
-              ? authorizeSessionSharingTarget({ cfg: currentCfg, client, target })
-              : errorShape(ErrorCodes.INVALID_REQUEST, "Session is unavailable.");
+          const facts = selected.read.readCurrent(currentCfg);
+          const target = facts.target;
+          const sharing = prepareProjectedSessionSharing({
+            cfg: currentCfg,
+            client,
+            profiles,
+            isMember: (_target, id) => facts.membership.has(id),
+          });
+          const error = target
+            ? (authorizeIncognitoSessionTarget({ client, sessionKey: requested.key, target }) ??
+              sharing.authorizeTarget(target))
+            : errorShape(ErrorCodes.INVALID_REQUEST, "Session is unavailable.");
           if (
             error ||
             (target &&
               hasOperatorBoundary(client, currentCfg) &&
-              currentSharing.entryFilter?.(target.canonicalKey, target.entry) === false)
+              sharing.entryFilter?.(target.canonicalKey, target.entry) === false)
           ) {
             respond(
               false,
@@ -148,7 +185,7 @@ export const sessionActivitySummaryHandlers: GatewayRequestHandlers = {
         respond(true, { sessions });
       } finally {
         for (const read of reads) {
-          read.facts?.release();
+          read.release();
         }
       }
     },

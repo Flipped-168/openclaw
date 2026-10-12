@@ -1,27 +1,43 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { setRuntimeConfigSnapshot } from "../../config/runtime-snapshot.js";
+import { recordCommittedSessionMetadataPublication } from "../../config/sessions/session-accessor.sqlite-entry-cache-publication-state.js";
 import { prepareGitHubPublicationOptionsRead } from "./github-personal-authorization.js";
 import type { GatewayClient, GatewayRequestContext } from "./types.js";
 
 const mocks = vi.hoisted(() => ({
-  readSession:
-    vi.fn<
-      Awaited<
-        ReturnType<
-          typeof import("../github-publication-availability.js").prepareGitHubPublicationSession
-        >
-      >["current"]
-    >(),
+  loadSession:
+    vi.fn<(key: string, options?: { agentId?: string }) => ReturnType<typeof sessionRead>>(),
   roleScopes: undefined as string[] | undefined,
 }));
 
-vi.mock("../github-publication-availability.js", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../github-publication-availability.js")>()),
-  prepareGitHubPublicationSession: async () => ({
-    initial: mocks.readSession(),
-    current: mocks.readSession,
-    release() {},
-    [Symbol.dispose]() {},
-  }),
+// mock-isolation: Throw on legacy synchronous reads so publication tests enforce the async storage boundary.
+vi.mock("../session-utils.js", () => ({
+  loadIncognitoGatewaySessionEntryReadOnly: () => {
+    throw new Error("Synchronous publication read");
+  },
+}));
+// mock-isolation: Publication fixtures supply selected rows and source identity without starting storage.
+vi.mock("../session-utils-store-worker.js", () => ({
+  loadGatewaySessionEntryReadOnlyInWorker: async ({
+    key,
+    agentId,
+    onSelected,
+  }: Parameters<
+    typeof import("../session-utils-store-worker.js").loadGatewaySessionEntryReadOnlyInWorker
+  >[0]) => {
+    const loaded = mocks.loadSession(key, { agentId });
+    onSelected?.({
+      ...loaded,
+      store: loaded.entry ? { [loaded.canonicalKey]: loaded.entry } : {},
+      capturedReadSource: {
+        agentId: loaded.agentId,
+        path: loaded.storePath,
+        databaseIdentity: "github-options-fixture",
+        databaseBirthtime: "1",
+      },
+    });
+    return loaded;
+  },
 }));
 vi.mock("../../agents/tools/gateway-caller-context.js", () => ({
   getGatewayToolCallerIdentity: () => undefined,
@@ -93,11 +109,19 @@ function sessionRead(agentId = "main") {
   };
 }
 
+const releases: Array<() => void> = [];
+afterEach(() => {
+  for (const release of releases.splice(0)) {
+    release();
+  }
+});
+
 describe("GitHub publication request discovery", () => {
   beforeEach(() => {
+    setRuntimeConfigSnapshot({});
     mocks.roleScopes = undefined;
-    mocks.readSession.mockReset();
-    mocks.readSession.mockReturnValue(sessionRead());
+    mocks.loadSession.mockReset();
+    mocks.loadSession.mockReturnValue(sessionRead());
   });
 
   it.each([
@@ -108,7 +132,8 @@ describe("GitHub publication request discovery", () => {
     request.client.connect.scopes = [grant];
     mocks.roleScopes = [ceiling];
 
-    using read = await prepareGitHubPublicationOptionsRead(request, { sessionKey: "main" });
+    const read = await prepareGitHubPublicationOptionsRead(request, { sessionKey: "main" });
+    releases.push(read.release);
     expect(read.currentSession()).toEqual(read.session);
     expect(read.personal.kind).toBe("ineligible");
 
@@ -118,36 +143,53 @@ describe("GitHub publication request discovery", () => {
     );
   });
 
+  it("reuses the worker result until publication metadata changes", async () => {
+    const agentId = "research";
+    const loaded = sessionRead(agentId);
+    mocks.loadSession.mockReturnValue(loaded);
+    const read = await prepareGitHubPublicationOptionsRead(createRequest(), {
+      sessionKey: "main",
+      agentId,
+    });
+    releases.push(read.release);
+    expect(read.currentSession()).toEqual(read.session);
+    recordCommittedSessionMetadataPublication(
+      "github-options-fixture",
+      loaded.canonicalKey,
+      undefined,
+      { ...loaded.entry, label: "renamed" },
+    );
+    expect(read.currentSession()).toEqual(read.session);
+    expect(mocks.loadSession).toHaveBeenCalledTimes(1);
+    read.release();
+    expect(() => read.currentSession()).toThrow("session lifecycle changed");
+  });
+
   it.each([null, 123])(
-    "keeps each response archive snapshot immutable from %s",
+    "invalidates a prepared response after an archive receipt from %s",
     async (archivedAt) => {
       const loaded = sessionRead();
-      mocks.readSession.mockReturnValue({
+      mocks.loadSession.mockReturnValue({
         ...loaded,
         entry: { ...loaded.entry, archivedAt: archivedAt ?? undefined },
       });
       using read = await prepareGitHubPublicationOptionsRead(createRequest(), {
         sessionKey: "main",
       });
+      releases.push(read.release);
       const initial = read.currentSession();
-      const changedAt = archivedAt === null ? 123 : null;
-      mocks.readSession.mockReturnValue({
-        ...loaded,
-        entry: { ...loaded.entry, archivedAt: changedAt ?? undefined },
-      });
-      const changed = read.currentSession();
-      expect(changed.archivedAt).toBe(changedAt);
-      expect(() => read.assertSessionUnchanged(changed)).not.toThrow();
-      expect(() => read.assertSessionUnchanged(initial)).toThrow("session access changed");
-
-      mocks.readSession.mockReturnValue({
-        ...loaded,
-        entry: { ...loaded.entry, archivedAt: archivedAt ?? undefined },
-      });
-      const restored = read.currentSession();
-      expect(restored.archivedAt).toBe(archivedAt);
-      expect(() => read.assertSessionUnchanged(changed)).toThrow("session access changed");
-      expect(() => read.assertSessionUnchanged(restored)).not.toThrow();
+      expect(initial.archivedAt).toBe(archivedAt);
+      recordCommittedSessionMetadataPublication(
+        "github-options-fixture",
+        loaded.canonicalKey,
+        undefined,
+        {
+          ...loaded.entry,
+          archivedAt: archivedAt === null ? 123 : undefined,
+        },
+      );
+      expect(() => read.currentSession()).toThrow("session lifecycle changed");
+      expect(() => read.assertSessionUnchanged(initial)).toThrow("session lifecycle changed");
     },
   );
 });

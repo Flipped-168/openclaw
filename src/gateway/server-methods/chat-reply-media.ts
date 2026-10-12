@@ -13,6 +13,7 @@ import {
 } from "../../auto-reply/reply-payload.js";
 import type { ReplyDispatchOperation } from "../../auto-reply/reply/reply-dispatcher.types.js";
 import type { MsgContext } from "../../auto-reply/templating.js";
+import { retainPreparedSessionEntryPredicate } from "../../config/sessions/session-accessor.sqlite-entry-cache-publication-state.js";
 import type { CapturedSessionEntryReadSource } from "../../config/sessions/session-entry-read-source.types.js";
 import type { SessionEntry } from "../../config/sessions/types.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
@@ -25,12 +26,14 @@ import {
 import { resolveAgentScopedOutboundMediaAccess } from "../../media/read-capability.js";
 import { getMediaDir } from "../../media/store.js";
 import { resolveSendableOutboundReplyParts } from "../../plugin-sdk/reply-payload.js";
+import { isIncognitoSessionKey } from "../../routing/session-key.js";
 import {
   captureChannelReadAuthority,
   withChannelReadAuthority,
 } from "../../shared/channel-read-authority.js";
-import { prepareSessionMutationFacts } from "../session-sharing-preparation.js";
-import type { loadSessionEntryAsync } from "../session-utils.js";
+import { findCanonicalStoreMatch } from "../session-utils-store-selection.js";
+import { loadGatewaySessionEntryReadOnlyInWorker } from "../session-utils-store-worker.js";
+import { loadIncognitoGatewaySessionEntryReadOnly } from "../session-utils.js";
 import { resolveSessionWorkerPlacementContext } from "../session-worker-placement-context.js";
 import { resolveSessionWorkspaceRoots } from "../session-workspace-roots.js";
 import type { WorkerSessionPlacementRecord } from "../worker-environments/placement-record.js";
@@ -121,28 +124,51 @@ export function captureWebchatReplyMediaAuthority(
   };
 }
 
-/** Bind media effects to the source session’s receipt-backed policy facts. */
+/** Keep the selected media policy current through the session writer's receipts. */
 export async function captureWebchatReplyMediaScope(
   params: Omit<WebchatReplyMediaScope, "sessionEntry"> & {
     sessionKey: string;
-    sessionLoadOptions?: Parameters<typeof loadSessionEntryAsync>[1];
+    sessionLoadOptions?: Parameters<typeof loadIncognitoGatewaySessionEntryReadOnly>[1];
   },
 ) {
-  const facts = await prepareSessionMutationFacts({
-    cfg: params.cfg,
-    sessionKey: params.sessionKey,
-    agentId: params.sessionLoadOptions?.agentId ?? params.agentId,
-    allowMissing: true,
-  });
+  const readPlacement = (entry: SessionEntry | undefined) =>
+    entry?.sessionId && !entry.execNode && !entry.repositoryWorkspaceId
+      ? resolveSessionWorkerPlacementContext()
+          .workerSessionPlacementService?.getMany([entry.sessionId])
+          .get(entry.sessionId)
+      : undefined;
+  let retained: ReturnType<typeof retainPreparedSessionEntryPredicate> | undefined;
+  let active = true;
+  const release = () => {
+    active = false;
+    retained?.release();
+  };
   try {
-    const readEntry = () => facts.readCurrent(params.cfg).target?.entry;
-    const readPlacement = (entry: SessionEntry | undefined) =>
-      entry?.sessionId && !entry.execNode && !entry.repositoryWorkspaceId
-        ? resolveSessionWorkerPlacementContext()
-            .workerSessionPlacementService?.getMany([entry.sessionId])
-            .get(entry.sessionId)
-        : undefined;
-    const sessionEntry = readEntry();
+    const loaded = await loadGatewaySessionEntryReadOnlyInWorker({
+      cfg: params.cfg,
+      key: params.sessionKey,
+      ...params.sessionLoadOptions,
+      agentId: params.sessionLoadOptions?.agentId ?? params.agentId,
+      onSelected: (target) => {
+        const entry = findCanonicalStoreMatch(target.store, target.storeKeys)?.entry;
+        retained?.release();
+        const selectedAuthority = captureWebchatReplyMediaAuthority(
+          { ...params, sessionEntry: entry },
+          undefined,
+        );
+        const source = target.capturedReadSource;
+        if (typeof source?.databaseIdentity === "string") {
+          retained = retainPreparedSessionEntryPredicate({
+            databaseIdentity: `file:${source.databaseIdentity}`,
+            sessionKey: target.canonicalKey,
+            entry,
+            matches: (_before, after) => selectedAuthority.matches(after, undefined),
+          });
+        }
+      },
+    });
+    const sessionEntry = loaded.entry;
+    const scope = { ...params, sessionEntry, readSource: loaded.capturedReadSource };
     const placement =
       sessionEntry?.sessionId && !sessionEntry.execNode && !sessionEntry.repositoryWorkspaceId
         ? await readSessionWorkerPlacementAsync({
@@ -150,35 +176,37 @@ export async function captureWebchatReplyMediaScope(
             sessionId: sessionEntry.sessionId,
           })
         : undefined;
-    const scope = { ...params, sessionEntry: sessionEntry ? { ...sessionEntry } : undefined };
-    const authority = captureWebchatReplyMediaAuthority(scope, placement);
+    const selectedAuthority = captureWebchatReplyMediaAuthority(scope, placement);
     return {
       ...scope,
-      [Symbol.dispose]: () => facts.release(),
-      // The custody fence already read this workspace; preparation consumes that same snapshot.
-      workspace: authority.workspace,
-      prepareRead: facts.prepareRead,
+      workspace: selectedAuthority.workspace,
+      release,
       assertCurrent: () => {
         params.assertCurrent?.();
-        const current = readEntry();
-        if (!authority.matches(current, readPlacement(current))) {
+        const current = isIncognitoSessionKey(params.sessionKey)
+          ? loadIncognitoGatewaySessionEntryReadOnly(
+              params.sessionKey,
+              params.sessionLoadOptions,
+              params.cfg,
+            ).entry
+          : sessionEntry;
+        if (
+          !active ||
+          (retained && !retained.isCurrent()) ||
+          !selectedAuthority.matches(current, readPlacement(current))
+        ) {
           throw new Error("Session media access changed before attachment delivery.");
         }
       },
     };
   } catch (error) {
-    facts.release();
+    release();
     throw error;
   }
 }
 
-type CapturedWebchatReplyMediaScope = Omit<
-  Awaited<ReturnType<typeof captureWebchatReplyMediaScope>>,
-  typeof Symbol.dispose
->;
-
 type WebchatReplyMediaPreparationParams = {
-  scope: CapturedWebchatReplyMediaScope;
+  scope: Awaited<ReturnType<typeof captureWebchatReplyMediaScope>>;
   inputs: readonly ReplyDispatchOperation[];
   storePath?: string;
   transcriptTarget?: { sessionKey: string; agentId?: string };
@@ -210,11 +238,6 @@ export async function withPreparedWebchatReplyMedia<T>(
   const hasMedia = sourcePayloads.some(
     (payload) => resolveSendableOutboundReplyParts(payload).mediaUrls.length > 0,
   );
-  // Finalization can await transcript reads after capture while a writer publishes.
-  const publication = scope.prepareRead?.();
-  if (publication) {
-    await publication;
-  }
   return await withChannelReadAuthority(
     scope.assertCurrent,
     async () => {
@@ -319,7 +342,7 @@ function resolveWebchatReplyWorkspaceOnly(params: WebchatReplyMediaScope): boole
 
 /** Trusted audio bypasses staging, but its reader must use the same session workspace. */
 export function getWebchatReplyMediaLocalRoots(
-  params: CapturedWebchatReplyMediaScope & { storePath?: string },
+  params: Awaited<ReturnType<typeof captureWebchatReplyMediaScope>> & { storePath?: string },
 ): readonly string[] {
   const { remote, workspaceDir } = params.workspace;
   if (remote) {
@@ -364,7 +387,7 @@ function shouldPreserveDisplayMediaUrl(payload: ReplyPayload, mediaUrl: string):
 
 /** Normalize reply media paths for webchat display without leaking sensitive media. */
 export async function normalizeWebchatReplyMediaPathsForDisplay(
-  params: CapturedWebchatReplyMediaScope & {
+  params: Awaited<ReturnType<typeof captureWebchatReplyMediaScope>> & {
     payloads: ReplyPayload[];
   },
 ): Promise<ReplyPayload[]> {

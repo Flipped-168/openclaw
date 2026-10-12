@@ -1,9 +1,12 @@
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import type { SessionEntry } from "../../config/sessions.js";
+import { resolveRestartRecoveryChannelAuthority } from "../../config/sessions/restart-recovery-state.js";
 import { retainPreparedSessionEntryPredicate } from "../../config/sessions/session-accessor.sqlite-entry-cache-publication-state.js";
+import { resolveSqliteSessionKey } from "../../config/sessions/session-accessor.sqlite-scope.js";
 import { withSessionEntryReadOnlyInWorker } from "../../config/sessions/session-entry-read-runtime.js";
 import { captureIncognitoSessionSource } from "../../config/sessions/session-incognito-binding.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import { isTrustedMessageActionTurnIngress } from "../../gateway/message-action-turn-capability.js";
 import type { GatewayRecoveryRuntime } from "../../gateway/server-instance-runtime.types.js";
 import { getAgentEventLifecycleGeneration } from "../../infra/agent-events.js";
 import { assertExistingDatabaseIdentity } from "../../infra/sqlite-worker-identity.js";
@@ -18,6 +21,22 @@ import {
 import { isDeliverableMessageChannel } from "../../utils/message-channel.js";
 import type { MainSessionRecoveryStoreTarget } from "./main-session-recovery-store.js";
 import { mainSessionRecoveryLog } from "./main-session-restart-recovery-shared.js";
+
+export function hasRestartRecoveryMessageActionAuthority(entry: SessionEntry): boolean {
+  const authority = resolveRestartRecoveryChannelAuthority(entry);
+  // Keep the pre-dispatch gate identical to recovered capability minting.
+  return (
+    authority !== undefined && isTrustedMessageActionTurnIngress(authority.deliveryContext.channel)
+  );
+}
+
+/** Internal continuations never inherit channel authority; every other message-tool recovery must. */
+export function requiresRestartRecoveryMessageActionAuthority(entry: SessionEntry): boolean {
+  return (
+    entry.restartRecoverySourceReplyDeliveryMode === "message_tool_only" &&
+    entry.restartRecoverySourceIngress !== "internal"
+  );
+}
 
 export function resolveRestartRecoveryDeliveryContext(params: {
   cfg?: OpenClawConfig;
@@ -69,9 +88,9 @@ type RestartRecoveryDeliveryScope = MainSessionRecoveryStoreTarget & {
 };
 
 /** Retain the owning recovery through its final transport effect. */
-export async function captureRestartRecoveryDeliveryCurrent(
+export async function prepareRestartRecoveryDeliveryCurrent(
   input: RestartRecoveryDeliveryScope,
-): Promise<((cfg?: OpenClawConfig) => boolean) & Disposable> {
+): Promise<{ isCurrent: (cfg?: OpenClawConfig) => boolean; release: () => void }> {
   const params = { ...input, deliveryContext: { ...input.deliveryContext } };
   const source = captureIncognitoSessionSource(params);
   const claim =
@@ -128,7 +147,7 @@ export async function captureRestartRecoveryDeliveryCurrent(
           }
           const retained = retainPreparedSessionEntryPredicate({
             databaseIdentity: `file:${captured.databaseIdentity}`,
-            sessionKey: params.sessionKey,
+            sessionKey: resolveSqliteSessionKey(params.sessionKey, captured.agentId),
             entry,
             matches: (previous, current) =>
               matchesRecovery(current) &&
@@ -160,14 +179,14 @@ export async function captureRestartRecoveryDeliveryCurrent(
       throw error;
     }
   }
-  return Object.assign(
-    (cfg = params.cfg) =>
+  return {
+    isCurrent: (cfg = params.cfg) =>
       active &&
       params.shouldContinue?.() !== false &&
       getAgentEventLifecycleGeneration() === params.lifecycleGeneration &&
       matchesRecovery(readCurrent(), cfg),
-    { [Symbol.dispose]: dispose },
-  );
+    release: dispose,
+  };
 }
 
 export async function announceRestartRecoveryResumption(
@@ -176,10 +195,10 @@ export async function announceRestartRecoveryResumption(
     isCurrent?: (cfg?: OpenClawConfig) => boolean;
   },
 ): Promise<void> {
-  let owned: Awaited<ReturnType<typeof captureRestartRecoveryDeliveryCurrent>> | undefined;
+  let prepared: Awaited<ReturnType<typeof prepareRestartRecoveryDeliveryCurrent>> | undefined;
   try {
-    const isCurrent =
-      params.isCurrent ?? (owned = await captureRestartRecoveryDeliveryCurrent(params));
+    prepared = params.isCurrent ? undefined : await prepareRestartRecoveryDeliveryCurrent(params);
+    const isCurrent = params.isCurrent ?? prepared!.isCurrent;
     if (!isCurrent()) {
       return;
     }
@@ -196,6 +215,6 @@ export async function announceRestartRecoveryResumption(
       `failed to announce restart recovery ${params.sessionKey}: ${String(error)}`,
     );
   } finally {
-    owned?.[Symbol.dispose]();
+    prepared?.release();
   }
 }

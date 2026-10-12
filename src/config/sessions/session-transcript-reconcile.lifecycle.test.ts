@@ -59,7 +59,6 @@ const tempDirs = useAutoCleanupTempDirTracker(afterEach);
 afterEach(() => clearRuntimeConfigSnapshot());
 
 beforeEach(() => setRuntimeConfigSnapshot({}));
-afterEach(clearRuntimeConfigSnapshot);
 
 type TerminalType = Extract<
   SessionTranscriptReconcileWorkerMessage,

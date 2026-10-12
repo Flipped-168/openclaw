@@ -25,7 +25,7 @@ import { createTestGatewayScheduler } from "../test-utils/gateway-scheduler-cloc
 import { createGatewayWorkerPlacementReclaimBarriers } from "./server-worker-placement-reclaim.js";
 import { resolveWorkerPlacementSessionTarget } from "./server-worker-placement-session-target.js";
 import { createGatewayWorkerPlacementRuntime } from "./server-worker-placement-startup.js";
-import { resolveGatewaySessionStoreTargetWithStoreAsync } from "./session-utils-store-lookup.js";
+import { resolveGatewaySessionStoreTargetInWorker } from "./session-utils-store-worker.js";
 import { resolveCanonicalSessionEntryFromStoreKeys } from "./session-utils-store.js";
 import { LOCAL_PLACEMENT } from "./worker-environments/placement-dispatch-coordinator.test-support.js";
 import {
@@ -39,6 +39,64 @@ import { createWorkerEnvironmentService } from "./worker-environments/service.js
 import { createWorkerEnvironmentStore } from "./worker-environments/store.js";
 
 afterEach(() => resetConfigRuntimeState());
+
+test("guards a durable workspace with committed facts and no host session SQL", async () => {
+  await withStateDirEnv("durable-placement-source-", async () => {
+    setRuntimeConfigSnapshot({});
+    const identity = {
+      agentId: "main",
+      sessionKey: "agent:main:placement-source",
+      sessionId: "placement-source",
+    };
+    await replaceSessionEntry(identity, {
+      sessionId: identity.sessionId,
+      updatedAt: 1,
+      lifecycleRevision: "original",
+      worktree: { id: "original", branch: "synthetic", repoRoot: "/synthetic" },
+    });
+    const sql = observeHostDataSql();
+    let resolved: Awaited<ReturnType<typeof resolveWorkerPlacementSessionTarget>> | undefined;
+    try {
+      try {
+        resolved = await resolveWorkerPlacementSessionTarget({
+          ...identity,
+          config: {},
+          errorMessage: "placement source changed",
+          sessionRuntime: {
+            resolveGatewaySessionStoreTargetInWorker,
+            resolveCanonicalSessionEntryFromStoreKeys,
+            managedWorktrees: {
+              findLiveByOwner: async () => ({
+                id: "original",
+                ownerId: identity.sessionKey,
+                path: "/synthetic",
+              }),
+            },
+          },
+        });
+        expect(resolved.workspace).toEqual({ kind: "local", path: "/synthetic" });
+        resolved.assertCurrent();
+        expect(sql.queries).toEqual([]);
+      } finally {
+        sql.restore();
+      }
+      await patchSessionEntryCore(identity, () => ({ label: "unrelated" }));
+      expect(resolved.assertCurrent).not.toThrow();
+      await patchSessionEntryCore(identity, () => ({
+        worktree: { id: "replacement", branch: "synthetic", repoRoot: "/synthetic" },
+      }));
+      const effectSql = observeHostDataSql();
+      try {
+        expect(resolved.assertCurrent).toThrow("placement source changed");
+        expect(effectSql.queries).toEqual([]);
+      } finally {
+        effectSql.restore();
+      }
+    } finally {
+      resolved?.[Symbol.dispose]();
+    }
+  });
+});
 
 test("prepares an actor workspace and guards exact placement metadata without host session SQL", async () => {
   await withStateDirEnv("actor-placement-source-", async () => {
@@ -79,7 +137,7 @@ test("prepares an actor workspace and guards exact placement metadata without ho
           errorMessage: "placement source changed",
           sessionRuntime: {
             managedWorktrees,
-            resolveGatewaySessionStoreTargetWithStoreAsync,
+            resolveGatewaySessionStoreTargetInWorker,
             resolveCanonicalSessionEntryFromStoreKeys,
           },
         });
@@ -326,7 +384,7 @@ test("rejects stale repository selection and refreshes the accepted checkpoint a
       },
     );
     const sessionRuntime = {
-      resolveGatewaySessionStoreTargetWithStoreAsync,
+      resolveGatewaySessionStoreTargetInWorker,
       resolveCanonicalSessionEntryFromStoreKeys,
       managedWorktrees: { findLiveByOwner: async () => undefined },
     };
@@ -470,7 +528,7 @@ test("resolves consecutive placement workspaces without decoding unrelated sessi
       for (const sessionKey of keys) {
         using resolved = await resolveWorkerPlacementSessionTarget({
           sessionRuntime: {
-            resolveGatewaySessionStoreTargetWithStoreAsync,
+            resolveGatewaySessionStoreTargetInWorker,
             resolveCanonicalSessionEntryFromStoreKeys,
             managedWorktrees: {
               findLiveByOwner: async (_kind, ownerId) => ({
@@ -521,7 +579,7 @@ test("reclaim keeps its session generation through its own workspace metadata co
         waitForTurnClaimRelease: async () => {},
       },
       loadSessionRuntime: async () => ({
-        resolveGatewaySessionStoreTargetWithStoreAsync,
+        resolveGatewaySessionStoreTargetInWorker,
         resolveCanonicalSessionEntryFromStoreKeys,
         managedWorktrees: { findLiveByOwner: async () => undefined },
       }),
@@ -572,7 +630,7 @@ test("retains workspace ownership across row-cache invalidation and observes lat
       config,
       errorMessage: "workspace owner changed",
       sessionRuntime: {
-        resolveGatewaySessionStoreTargetWithStoreAsync,
+        resolveGatewaySessionStoreTargetInWorker,
         resolveCanonicalSessionEntryFromStoreKeys,
         managedWorktrees: {
           findLiveByOwner: async (_kind, ownerId) => {

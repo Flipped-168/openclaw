@@ -1,24 +1,22 @@
 import path from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
-import { createTempDirTracker } from "../../test/helpers/temp-dir.js";
-import { patchSessionEntryCore, replaceSessionEntry } from "../config/sessions/session-accessor.js";
+import { observeHostDataSql } from "../../test/helpers/sqlite-statement-execution-counter.js";
+import { useAutoCleanupTempDirTracker } from "../../test/helpers/temp-dir.js";
+import { replaceSessionEntry } from "../config/sessions/session-accessor.js";
 import { beginSessionWorkAdmission } from "../sessions/session-lifecycle-admission.js";
 import { createDeferredCore } from "../shared/deferred.js";
-import { closeOpenClawAgentDatabasesAsync } from "../state/openclaw-agent-db.js";
+import { closeOpenClawAgentDatabasesForTest } from "../state/openclaw-agent-db.js";
 import { createGatewayWorkerPlacementReclaimBarriers } from "./server-worker-placement-reclaim.js";
-import { resolveGatewaySessionStoreTargetWithStoreAsync } from "./session-utils-store-lookup.js";
+import { resolveGatewaySessionStoreTargetInWorker } from "./session-utils-store-worker.js";
 import { resolveCanonicalSessionEntryFromStoreKeys } from "./session-utils-store.js";
-
-const tempDirs = createTempDirTracker();
-afterEach(async () => {
-  await closeOpenClawAgentDatabasesAsync();
-  tempDirs.cleanup();
-});
 
 vi.mock("../config/config.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../config/config.js")>()),
   getRuntimeConfig: () => ({}),
 }));
+
+const tempDirs = useAutoCleanupTempDirTracker(afterEach);
+afterEach(() => closeOpenClawAgentDatabasesForTest());
 
 async function fixture(
   name: string,
@@ -30,20 +28,14 @@ async function fixture(
     agentId: "main",
   };
   const entry = { sessionId: request.sessionId, lifecycleRevision: "original", updatedAt: 1 };
-  const root = tempDirs.make("worker-reclaim-preparation-");
-  const env = { ...process.env, OPENCLAW_STATE_DIR: root };
-  const storePath = path.join(root, "sessions.sqlite");
-  const scope = { ...request, storePath, env };
-  await replaceSessionEntry(scope, entry);
-  const resolveTarget = () =>
-    resolveGatewaySessionStoreTargetWithStoreAsync({
-      cfg: { session: { store: storePath } },
-      key: request.sessionKey,
-      agentId: request.agentId,
-      env,
-      exactRead: true,
-    });
-  const target = await resolveTarget();
+  const target = {
+    storePath: path.join(tempDirs.make(`reclaim-preparation-${name}-`), "sessions.sqlite"),
+    canonicalKey: request.sessionKey,
+    storeKeys: [request.sessionKey],
+    agentId: request.agentId,
+    store: { [request.sessionKey]: entry },
+  };
+  await replaceSessionEntry({ ...request, storePath: target.storePath }, entry);
   const placement = {
     ...request,
     state,
@@ -60,7 +52,11 @@ async function fixture(
     },
     loadSessionRuntime: async () => ({
       managedWorktrees: { findLiveByOwner: async () => undefined },
-      resolveGatewaySessionStoreTargetWithStoreAsync: resolveTarget,
+      resolveGatewaySessionStoreTargetInWorker: (params) =>
+        resolveGatewaySessionStoreTargetInWorker({
+          ...params,
+          cfg: { ...params.cfg, session: { ...params.cfg.session, store: target.storePath } },
+        }),
       resolveCanonicalSessionEntryFromStoreKeys,
     }),
     cancelSessionWork: cancel,
@@ -76,12 +72,15 @@ async function fixture(
     });
   return {
     ...request,
-    replaceLifecycle: (lifecycleRevision: string) =>
-      patchSessionEntryCore(scope, () => ({ lifecycleRevision }), { skipMaintenance: true }),
+    entry,
     placement,
     cancel,
     run,
     admit,
+    replaceEntry: async (lifecycleRevision: string) => {
+      entry.lifecycleRevision = lifecycleRevision;
+      await replaceSessionEntry({ ...request, storePath: target.storePath }, entry);
+    },
     prepare: (options: Partial<Parameters<typeof barriers.runReclaimPreparation>[0]> = {}) =>
       barriers.runReclaimPreparation({ ...request, run, ...options }),
   };
@@ -146,7 +145,7 @@ it.each(["authorization", "incarnation"] as const)(
       if (change === "authorization") {
         authorized = false;
       } else {
-        await f.replaceLifecycle("replacement-with-same-session-id");
+        await f.replaceEntry("replacement-with-same-session-id");
       }
       release.resolve();
       await rejected;
@@ -199,6 +198,7 @@ it("auto-suspend eligibility rejects before closing admission or signalling canc
 
 it("keeps admissions closed while serialized teardown is queued, then revalidates the incarnation", async () => {
   const f = await fixture("queued-teardown");
+  const sql = observeHostDataSql();
   const entered = createDeferredCore();
   const release = createDeferredCore();
   const teardown = vi.fn();
@@ -212,10 +212,16 @@ it("keeps admissions closed while serialized teardown is queued, then revalidate
     },
   });
   const rejected = expect(stop).rejects.toThrow("Session");
-  await entered.promise;
-  await expect(f.admit()).rejects.toThrow();
-  await f.replaceLifecycle("new-incarnation");
-  release.resolve();
-  await rejected;
-  expect(teardown).not.toHaveBeenCalled();
+  try {
+    await entered.promise;
+    await expect(f.admit()).rejects.toThrow();
+    await f.replaceEntry("new-incarnation");
+    release.resolve();
+    await rejected;
+    expect(teardown).not.toHaveBeenCalled();
+  } finally {
+    release.resolve();
+    sql.restore();
+  }
+  expect(sql.queries).toEqual([]);
 });

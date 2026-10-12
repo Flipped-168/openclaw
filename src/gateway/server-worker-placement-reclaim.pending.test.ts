@@ -1,6 +1,6 @@
 import path from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
-import { createTempDirTracker } from "../../test/helpers/temp-dir.js";
+import { useAutoCleanupTempDirTracker } from "../../test/helpers/temp-dir.js";
 import {
   clearRuntimeConfigSnapshot,
   setRuntimeConfigSnapshot,
@@ -10,26 +10,20 @@ import {
   beginSessionWorkAdmission,
   runExclusiveSessionLifecycleMutation,
 } from "../sessions/session-lifecycle-admission.js";
-import { closeOpenClawAgentDatabasesAsync } from "../state/openclaw-agent-db.js";
+import { closeOpenClawAgentDatabasesForTest } from "../state/openclaw-agent-db.js";
 import { createGatewayWorkerPlacementReclaimBarriers } from "./server-worker-placement-reclaim.js";
-import { resolveGatewaySessionStoreTargetWithStoreAsync } from "./session-utils-store-lookup.js";
+import { resolveGatewaySessionStoreTargetInWorker } from "./session-utils-store-worker.js";
 import { resolveCanonicalSessionEntryFromStoreKeys } from "./session-utils-store.js";
 
-const tempDirs = createTempDirTracker();
-afterEach(async () => {
-  await closeOpenClawAgentDatabasesAsync();
-  tempDirs.cleanup();
-});
-
+const tempDirs = useAutoCleanupTempDirTracker(afterEach);
+afterEach(() => closeOpenClawAgentDatabasesForTest());
 afterEach(clearRuntimeConfigSnapshot);
 
 it.each(["active", "failed"] as const)(
   "a %s reclaim whose canonical cancellation rejects still retires old pending work",
   async (state) => {
     setRuntimeConfigSnapshot({});
-    const root = tempDirs.make(`worker-reclaim-cancel-failure-${state}-`);
-    const env = { ...process.env, OPENCLAW_STATE_DIR: root };
-    const scope = path.join(root, "sessions.sqlite");
+    const scope = path.join(tempDirs.make(`cancel-failure-${state}-`), "sessions.sqlite");
     const sessionKey = "agent:main:cancel-failure";
     const sessionId = "cancel-failure-session";
     const entry = {
@@ -41,15 +35,7 @@ it.each(["active", "failed"] as const)(
         repoRoot: "/fixture/workspace",
       },
     };
-    await replaceSessionEntry({ agentId: "main", sessionKey, storePath: scope, env }, entry);
-    const resolveTarget = () =>
-      resolveGatewaySessionStoreTargetWithStoreAsync({
-        cfg: { session: { store: scope } },
-        key: sessionKey,
-        agentId: "main",
-        env,
-        exactRead: true,
-      });
+    await replaceSessionEntry({ agentId: "main", sessionKey, storePath: scope }, entry);
     const cancellationFailure = new Error("canonical terminal drain rejected");
     const cancel = vi.fn(async () => {
       throw cancellationFailure;
@@ -60,18 +46,21 @@ it.each(["active", "failed"] as const)(
         getAsync: async () => ({ state, sessionId }) as never,
         waitForTurnClaimRelease: vi.fn(),
       },
-      loadSessionRuntime: async () =>
-        ({
-          managedWorktrees: {
-            findLiveByOwner: async () => ({
-              id: "cancel-failure-worktree",
-              ownerId: sessionKey,
-              path: "/fixture/workspace",
-            }),
-          },
-          resolveGatewaySessionStoreTargetWithStoreAsync: resolveTarget,
-          resolveCanonicalSessionEntryFromStoreKeys,
-        }) as never,
+      loadSessionRuntime: async () => ({
+        managedWorktrees: {
+          findLiveByOwner: async () => ({
+            id: "cancel-failure-worktree",
+            ownerId: sessionKey,
+            path: "/fixture/workspace",
+          }),
+        },
+        resolveGatewaySessionStoreTargetInWorker: (params) =>
+          resolveGatewaySessionStoreTargetInWorker({
+            ...params,
+            cfg: { ...params.cfg, session: { ...params.cfg.session, store: scope } },
+          }),
+        resolveCanonicalSessionEntryFromStoreKeys,
+      }),
       cancelSessionWork: cancel,
       revokeSessionAuthority: vi.fn(),
     });

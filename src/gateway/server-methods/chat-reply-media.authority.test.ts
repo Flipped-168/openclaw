@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { onTestFinished, afterEach, beforeEach, expect, it, vi } from "vitest";
 import { createDeferred } from "../../../test/helpers/promise.js";
 import { setRuntimeConfigSnapshot } from "../../config/runtime-snapshot.js";
 import { replaceSessionEntry } from "../../config/sessions/session-accessor.js";
@@ -87,13 +87,14 @@ it.each([
       updatedAt: 1,
     };
     await replaceSessionEntry(target, entry);
-    using scope = await captureWebchatReplyMediaScope({
+    const scope = await captureWebchatReplyMediaScope({
       cfg,
       agentId: "main",
       sessionKey: SESSION_KEY,
       sessionLoadOptions: { agentId: "main" },
     });
     expect(scope.workspace).toEqual({ remote: false, workspaceDir: selected });
+    onTestFinished(scope.release);
     const opened = createDeferred();
     const release = createDeferred();
     const audioReadCounts: Array<() => number> = [];
@@ -168,11 +169,12 @@ it.each([
 it("preserves already-produced text after its turn is aborted", async () => {
   const cfg: OpenClawConfig = {};
   setRuntimeConfigSnapshot(cfg);
-  using scope = await captureWebchatReplyMediaScope({
+  const scope = await captureWebchatReplyMediaScope({
     cfg,
     agentId: "main",
     sessionKey: SESSION_KEY,
   });
+  onTestFinished(scope.release);
   const controller = new AbortController();
   controller.abort();
   const { assistantContent } = await prepareWebchatReplyMediaForDisplay({
@@ -194,11 +196,12 @@ it("joins a publication staged after media authority was captured", async () => 
     lifecycleRevision: "initial",
     updatedAt: 1,
   });
-  using scope = await captureWebchatReplyMediaScope({
+  const scope = await captureWebchatReplyMediaScope({
     cfg: {},
     agentId: "main",
     sessionKey: SESSION_KEY,
   });
+  onTestFinished(scope.release);
   const database = openOpenClawAgentDatabase({ agentId: "main" });
   const identity = readOpenClawAgentDatabaseIdentity(database).identity;
   if (typeof identity !== "string") {

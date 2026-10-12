@@ -1,9 +1,9 @@
 import { resolvePersistedOverrideModelRef } from "../../agents/model-selection.js";
 import { resolveEffectiveAgentRuntime } from "../../agents/thinking-runtime.js";
-import { loadSessionEntryAsync, resolveSessionModelRef } from "../session-utils.js";
+import { resolveSessionModelRef } from "../session-utils.js";
 import type { PrepareAgentRunDispatchParams } from "./agent-run-admission-types.js";
 
-export async function resolveAgentRunAdmissionModel(params: PrepareAgentRunDispatchParams) {
+export function resolveAgentRunAdmissionModel(params: PrepareAgentRunDispatchParams) {
   const effectiveProviderOverride =
     params.restoredCronContinuation?.provider ?? params.providerOverride;
   const effectiveModelOverride = params.restoredCronContinuation?.model ?? params.modelOverride;
@@ -40,21 +40,12 @@ export async function resolveAgentRunAdmissionModel(params: PrepareAgentRunDispa
     provider: activeModel.provider,
     model: activeModel.model,
   };
-  const abortSession = params.resolvedSessionKey
-    ? await loadSessionEntryAsync(params.resolvedSessionKey, {
-        ...(params.activeSessionAgentId ? { agentId: params.activeSessionAgentId } : {}),
-        clone: false,
-        projection: "list",
-      })
-    : undefined;
-  const lifecycleStorePath = abortSession?.storePath ?? `agent:${params.activeSessionAgentId}`;
   return {
     effectiveProviderOverride,
     effectiveModelOverride,
     effectiveThinking,
     effectiveAllowModelOverride,
     resolvedRuntime,
-    lifecycleStorePath,
-    abortSession: abortSession ? { ok: true as const, value: abortSession } : undefined,
+    lifecycleStorePath: params.lifecycleStorePath,
   };
 }

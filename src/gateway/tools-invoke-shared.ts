@@ -48,11 +48,18 @@ import { withOperatorToolGatewayAuthority } from "./server-plugin-in-process-dis
 import { createSyntheticPluginRuntimeClient } from "./server-plugin-runtime-client.js";
 import { SessionMutationAuthorizationChangedError } from "./session-mutation-authorization-error.js";
 import { resolveRequestedSessionAgentId } from "./session-request-agent.js";
-import { authorizeSessionAgentRun } from "./session-sharing-policy.js";
+import {
+  authorizePreparedSessionMutation,
+  authorizeSessionAgentRun,
+  type PreparedSessionMutationFacts,
+} from "./session-sharing-policy.js";
 import { prepareSessionMutationFacts } from "./session-sharing-preparation.js";
-import { authorizeResolvedSessionMutation } from "./session-sharing.js";
+import {
+  prepareProjectedSessionSharing,
+  prepareSessionSharingProfiles,
+} from "./session-sharing-read.js";
 import { resolveStoredSessionKeyForAgentStore } from "./session-store-key.js";
-import { loadGatewaySessionEntryReadOnlyAsync } from "./session-utils.js";
+import { loadGatewaySessionEntryReadOnlyInWorker } from "./session-utils-store-worker.js";
 import { resolveGatewayScopedTools } from "./tool-resolution.js";
 import { isToolUploadRequest } from "./tool-upload-policy.js";
 import {
@@ -321,9 +328,29 @@ async function invokeGatewayToolWithSignal(
     operatorRoleActor: params.operatorRoleActor,
     scopes: params.senderIsOwner ? [ADMIN_SCOPE] : [...(params.operatorScopes ?? [])],
   });
+  const profiles = await prepareSessionSharingProfiles(client);
+  const prepareAuthorization = (cfg: OpenClawConfig, facts: PreparedSessionMutationFacts) => {
+    const sharing = prepareProjectedSessionSharing({
+      cfg,
+      client,
+      profiles,
+      isMember: (_target, id) => facts.membership.has(id),
+    });
+    return {
+      policy: sharing.policy,
+      aliases: profiles.readCurrent().profile?.aliases ?? new Set(),
+    };
+  };
   const sessionEntry = params.preparedSession
     ? params.preparedSession.entry
-    : (await loadGatewaySessionEntryReadOnlyAsync(sessionKey, { agentId: selectedAgentId })).entry;
+    : (
+        await loadGatewaySessionEntryReadOnlyInWorker({
+          cfg: params.cfg,
+          key: sessionKey,
+          agentId: selectedAgentId,
+          assertActive: assertInvocationCurrent,
+        })
+      ).entry;
   const primary = await prepareSessionMutationFacts({
     cfg: params.cfg,
     sessionKey,
@@ -331,24 +358,33 @@ async function invokeGatewayToolWithSignal(
     allowMissing: true,
   });
   retainedScope.reads.push(primary);
-  const authorizePrimary = (cfg = params.cfg) =>
-    authorizeResolvedSessionMutation(
-      {
-        cfg,
-        client,
-        sessionKey,
-        agentId: selectedAgentId,
-      },
-      primary.readCurrent(cfg).target,
-    ) ??
-    // Standalone calls cannot create the sandbox provenance a normal session run records.
-    (!sessionEntry
-      ? authorizeSessionAgentRun({
+  const authorizePrimary = (cfg = params.cfg) => {
+    const facts = primary.readCurrent(cfg);
+    const prepared = prepareAuthorization(cfg, facts);
+    return (
+      authorizePreparedSessionMutation(
+        {
           cfg,
           client,
-          target: { agentId: selectedAgentId, canonicalKey: sessionKey },
-        })
-      : null);
+          sessionKey,
+          agentId: selectedAgentId,
+        },
+        facts,
+        prepared,
+      ) ??
+      // Standalone calls cannot create the sandbox provenance a normal session run records.
+      (!sessionEntry
+        ? authorizeSessionAgentRun(
+            {
+              cfg,
+              client,
+              target: { agentId: selectedAgentId, canonicalKey: sessionKey },
+            },
+            prepared,
+          )
+        : null)
+    );
+  };
   const primarySessionAuthorizationError = authorizePrimary();
   {
     sessionChecks.push(() => {
@@ -387,25 +423,34 @@ async function invokeGatewayToolWithSignal(
       retainedScope.reads.push(nested);
     }
     const existingTarget = nested?.readCurrent(params.cfg).target;
-    const authorizeNested = (cfg = params.cfg) =>
-      (toolName === "sessions_send" && nestedSessionKey
-        ? authorizeResolvedSessionMutation(
-            {
-              cfg,
-              client,
-              sessionKey: nestedSessionKey,
-              agentId: targetAgentId,
-            },
-            nested?.readCurrent(cfg).target ?? null,
-          )
-        : null) ??
-      (!existingTarget
-        ? authorizeGatewaySessionCreation({
-            cfg,
-            client,
-            agentId: targetAgentId,
-          })
-        : null);
+    const authorizeNested = (cfg = params.cfg) => {
+      const facts = nested?.readCurrent(cfg) ?? { target: null, membership: new Set<string>() };
+      const prepared = prepareAuthorization(cfg, facts);
+      return (
+        (toolName === "sessions_send" && nestedSessionKey
+          ? authorizePreparedSessionMutation(
+              {
+                cfg,
+                client,
+                sessionKey: nestedSessionKey,
+                agentId: targetAgentId,
+              },
+              facts,
+              prepared,
+            )
+          : null) ??
+        (!existingTarget
+          ? authorizeGatewaySessionCreation(
+              {
+                cfg,
+                client,
+                agentId: targetAgentId,
+              },
+              prepared,
+            )
+          : null)
+      );
+    };
     const authorizationError = authorizeNested();
     if (nested) {
       sessionChecks.push(() => {

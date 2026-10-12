@@ -600,41 +600,26 @@ export function captureSessionSharingTalkAuthority({
     if (!input || !target) {
       return undefined;
     }
-    let current: PreparedTalkSessionTarget;
     try {
-      if (input.kind === "relay") {
-        if (!input.isCurrent()) {
-          throw sessionMutationTargetChanged(request.method, target.sessionKey);
-        }
-        assertTalkSessionStorageTarget(cfg, target);
-        current = target;
-      } else {
-        assertTalkSessionStorageTarget(cfg, target);
-        current = target;
+      if (input.kind === "relay" && !input.isCurrent()) {
+        throw sessionMutationTargetChanged(request.method, target.sessionKey);
       }
+      assertTalkSessionStorageTarget(cfg, target);
     } catch {
-      throw sessionMutationTargetChanged(request.method, target.sessionKey);
-    }
-    if (
-      current.agentId !== target.agentId ||
-      current.sessionKey !== target.sessionKey ||
-      current.canonicalKey !== target.canonicalKey ||
-      current.storePath !== target.storePath
-    ) {
       throw sessionMutationTargetChanged(request.method, target.sessionKey);
     }
     if (authorizesAgentRun) {
       const policyConfig = request.context.getCommittedRuntimeConfig?.() ?? cfg;
       const policy = preparedPolicy(policyConfig);
       const error = authorizeGatewaySessionCreation(
-        { cfg: policyConfig, client: request.client, agentId: current.agentId },
+        { cfg: policyConfig, client: request.client, agentId: target.agentId },
         policy ? { policy: policy.policy } : undefined,
       );
       if (error) {
         throw new SessionMutationAuthorizationChangedError(error);
       }
     }
-    return current;
+    return target;
   };
 }
 

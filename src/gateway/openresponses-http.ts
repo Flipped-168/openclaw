@@ -270,9 +270,9 @@ export async function handleOpenResponsesHttpRequest(
     sendInvalidRequest(res, "invalid tool configuration");
     return true;
   }
-  let resolved: ReturnType<typeof resolveGatewayRequestContext>;
+  let resolved: Awaited<ReturnType<typeof resolveGatewayRequestContext>>;
   try {
-    resolved = resolveGatewayRequestContext({
+    resolved = await resolveGatewayRequestContext({
       req,
       model,
       user,

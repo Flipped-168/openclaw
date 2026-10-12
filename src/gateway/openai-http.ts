@@ -438,7 +438,7 @@ export async function handleOpenAiHttpRequest(
   let sessionKey: string;
   let messageChannel: string;
   try {
-    ({ agentId, sessionKey, messageChannel } = resolveGatewayRequestContext({
+    ({ agentId, sessionKey, messageChannel } = await resolveGatewayRequestContext({
       req,
       model,
       user,

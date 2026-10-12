@@ -33,7 +33,7 @@ import { resolveSessionMutationAuthorizationAsync } from "./session-sharing-auth
 import { SessionMutationAuthorizationChangedError } from "./session-sharing.js";
 import {
   resolveCanonicalSessionEntryFromStoreKeys,
-  resolveGatewaySessionStoreTargetWithStoreAsync,
+  resolveGatewaySessionStoreTargetInWorker,
 } from "./session-utils.js";
 import { testState, writeSessionStore } from "./test-helpers.js";
 import {
@@ -221,7 +221,7 @@ test("sessions.recover settles its active placement before archiving a real sess
     loadSessionRuntime: async () => ({
       managedWorktrees,
       resolveCanonicalSessionEntryFromStoreKeys,
-      resolveGatewaySessionStoreTargetWithStoreAsync,
+      resolveGatewaySessionStoreTargetInWorker,
     }),
     revokeSessionAuthority: vi.fn(),
   });
@@ -379,7 +379,7 @@ test.each(["before-interrupt", "before-drain"] as const)(
         return {
           managedWorktrees,
           resolveCanonicalSessionEntryFromStoreKeys,
-          resolveGatewaySessionStoreTargetWithStoreAsync,
+          resolveGatewaySessionStoreTargetInWorker,
         };
       },
       revokeSessionAuthority: vi.fn(),

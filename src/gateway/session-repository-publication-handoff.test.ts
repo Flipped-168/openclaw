@@ -360,7 +360,8 @@ it.each([
         return;
       }
       await move();
-      using receiptWorkspace = await prepareReceiptOwner(row);
+      const receiptWorkspace = await prepareReceiptOwner(row);
+      using _ = { [Symbol.dispose]: () => receiptWorkspace.release() };
       expect(() => assertReceiptOwner(row, receiptWorkspace)).toThrow();
       expect(readRepositoryGitHubPublication(row.request_id)?.pushed_head_commit).toBe(
         publishedHead,

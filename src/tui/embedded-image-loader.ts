@@ -5,7 +5,7 @@ import {
   readManagedOutgoingImageThumbnail,
 } from "../gateway/managed-image-attachments.js";
 import { resolveRequestedSessionAgentId } from "../gateway/session-request-agent.js";
-import { loadGatewaySessionEntryReadOnlyAsync } from "../gateway/session-utils.js";
+import { loadGatewaySessionEntryReadOnlyInWorker } from "../gateway/session-utils-store-worker.js";
 import { parseInboundMediaUri } from "../media/media-reference.js";
 import { readMediaBuffer } from "../media/store.js";
 import type { TuiImageData, TuiImageRequest } from "./tui-backend.js";
@@ -26,12 +26,11 @@ export async function loadEmbeddedImage(request: TuiImageRequest): Promise<TuiIm
   if (!owner.ok) {
     throw new Error(owner.error.message);
   }
-  const { canonicalKey, agentId, entry } = await loadGatewaySessionEntryReadOnlyAsync(
-    request.sessionKey,
-    {
-      agentId: owner.agentId,
-    },
-  );
+  const { canonicalKey, agentId, entry } = await loadGatewaySessionEntryReadOnlyInWorker({
+    cfg: getRuntimeConfig(),
+    key: request.sessionKey,
+    agentId: owner.agentId,
+  });
   if (!entry?.sessionId) {
     throw new Error("Image session is unavailable");
   }

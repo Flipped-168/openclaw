@@ -79,7 +79,6 @@ export function startChatDispatch(params: StartChatDispatchParams): void {
     skillLibrary,
     cronCreatorAuthority,
     assertDashboardReadCurrent,
-    prepareDashboardRead,
     externalAuthorityAdmission,
     injection,
     request,
@@ -237,7 +236,6 @@ export function startChatDispatch(params: StartChatDispatchParams): void {
         get sessionId() {
           return sessionBinding.sessionId;
         },
-        prepare: prepareDashboardRead,
         assertCurrent: assertDashboardReadCurrent,
       }
     : undefined;
@@ -411,6 +409,8 @@ export function startChatDispatch(params: StartChatDispatchParams): void {
                   : {}),
                 expectedActiveReplyOperation: admission.expectedActiveReplyOperation,
                 ...userTurn.getSessionInitializationOptions(),
+                bindSessionCreation: params.bindSessionCreation,
+                onSessionCreated: params.onSessionCreated,
                 onSessionPrepared: (binding) => {
                   phase?.mark("preparation");
                   admission.onSessionPrepared(binding);

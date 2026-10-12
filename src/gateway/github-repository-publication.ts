@@ -175,7 +175,7 @@ export function createRepositoryGitHubPublicationCoordinator(params: {
       agentId: input.agentId,
       assertCurrent: params.assertCurrent,
     });
-    const loaded = selectedSession.initial;
+    const loaded = selectedSession.loaded;
     requester.assertCurrent();
     if (!loaded.entry?.sessionId) {
       throw new Error("GitHub publication session changed.");
@@ -186,7 +186,9 @@ export function createRepositoryGitHubPublicationCoordinator(params: {
       sessionKey: loaded.canonicalKey,
       agentId: input.agentId,
     };
-    using currentOwner = await prepareRepositoryOwner(session);
+    const currentOwner = await prepareRepositoryOwner(session);
+    using _ = { [Symbol.dispose]: () => currentOwner.release() };
+
     const initial = currentOwner();
     const assertCurrent = () => {
       requester.assertCurrent();
@@ -307,7 +309,7 @@ export function createRepositoryGitHubPublicationCoordinator(params: {
         agentId: input.agentId,
         assertCurrent: params.assertCurrent,
       });
-      const loaded = selectedSession.initial;
+      const loaded = selectedSession.loaded;
       const placement = loaded.entry?.sessionId
         ? await placements.getAsync(loaded.entry.sessionId)
         : undefined;
@@ -356,7 +358,8 @@ export function createRepositoryGitHubPublicationCoordinator(params: {
       action.assertCurrent();
       if (existing) {
         assertPersonalGitHubPublicationReplay(existing, input, selected);
-        using prepared = await preparePersonalStatus(existing.request_id);
+        const prepared = await preparePersonalStatus(existing.request_id);
+        using _ = { [Symbol.dispose]: () => prepared?.release() };
         action.assertCurrent();
         return (await personalStatus(existing, action, action, prepared)).result;
       }
@@ -367,7 +370,9 @@ export function createRepositoryGitHubPublicationCoordinator(params: {
       return await placements.withRepositoryWorkspaceReservation(
         action,
         async (assertReservation) => {
-          using currentOwner = await prepareRepositoryOwner(action);
+          const currentOwner = await prepareRepositoryOwner(action);
+          using _ = { [Symbol.dispose]: () => currentOwner.release() };
+
           const initial = currentOwner();
           const assertCurrent = () => {
             action.assertCurrent();
@@ -474,7 +479,8 @@ export function createRepositoryGitHubPublicationCoordinator(params: {
         action.assertCurrent();
         return null;
       }
-      using prepared = await preparePersonalStatus(row.request_id);
+      const prepared = await preparePersonalStatus(row.request_id);
+      using _ = { [Symbol.dispose]: () => prepared?.release() };
       action.assertCurrent();
       return await personalStatus(row, action, session, prepared);
     },

@@ -178,13 +178,13 @@ export const cronHandlers: GatewayRequestHandlers = {
     ) {
       return;
     }
-    const creatorOptions = await captureCronCreatorSession(jobCreate, callerScope, client);
+    const creatorOptions = await captureCronCreatorSession(jobCreate, callerScope, client, cfg);
     const commitGuard = () => {
       assertMutationCurrent?.();
       assertCapturedAuthorityCurrent?.();
     };
     try {
-      await assertCronDoesNotTargetAgentHarness(jobCreate);
+      await assertCronDoesNotTargetAgentHarness(jobCreate, cfg);
       await assertValidCronCreateDelivery(cfg, jobCreate);
     } catch (err) {
       respondInvalidCronParams(respond, "cron.add", formatErrorMessage(err));

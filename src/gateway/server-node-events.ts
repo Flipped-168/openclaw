@@ -66,11 +66,8 @@ import type {
   NodeEventHandleResult,
 } from "./server-node-events-types.js";
 import { resolveSessionStoreIdentity } from "./session-store-key.js";
-import {
-  loadSessionEntryAsync,
-  resolveGatewayModelSupportsImages,
-  resolveSessionModelRef,
-} from "./session-utils.js";
+import { loadGatewaySessionEntryReadOnlyInWorker } from "./session-utils-store-worker.js";
+import { resolveGatewayModelSupportsImages, resolveSessionModelRef } from "./session-utils.js";
 import { formatForLog } from "./ws-log.js";
 
 const MAX_EXEC_EVENT_OUTPUT_CHARS = 180;
@@ -352,7 +349,7 @@ function compactNodeEventText(raw: string, maxChars: number) {
   return truncateUtf16WithEllipsis(raw.replace(/\s+/g, " ").trim(), maxChars);
 }
 
-type LoadedSessionEntry = Awaited<ReturnType<typeof loadSessionEntryAsync>>;
+type LoadedSessionEntry = Awaited<ReturnType<typeof loadGatewaySessionEntryReadOnlyInWorker>>;
 
 async function touchSessionStore(params: {
   storePath: LoadedSessionEntry["storePath"];
@@ -505,7 +502,12 @@ async function handlePreparedNodeEvent(
       const rawMainKey = normalizeMainKey(cfg.session?.mainKey);
       const sessionKey = sessionKeyRaw.length > 0 ? sessionKeyRaw : rawMainKey;
       const { storePath, entry, canonicalKey } =
-        source?.loaded ?? (await loadSessionEntryAsync(sessionKey));
+        source?.loaded ??
+        (await loadGatewaySessionEntryReadOnlyInWorker({
+          cfg,
+          key: sessionKey,
+          excludeInternalEffects: true,
+        }));
       if (resolveAgentHarnessSessionContextError(canonicalKey, entry)) {
         return undefined;
       }
@@ -598,7 +600,12 @@ async function handlePreparedNodeEvent(
       const sessionKey = sessionKeyRaw.length > 0 ? sessionKeyRaw : `node-${nodeId}`;
       const cfg = getRuntimeConfig();
       const { storePath, entry, canonicalKey } =
-        source?.loaded ?? (await loadSessionEntryAsync(sessionKey));
+        source?.loaded ??
+        (await loadGatewaySessionEntryReadOnlyInWorker({
+          cfg,
+          key: sessionKey,
+          excludeInternalEffects: true,
+        }));
       if (resolveAgentHarnessSessionContextError(canonicalKey, entry)) {
         return undefined;
       }
@@ -823,8 +830,11 @@ async function handlePreparedNodeEvent(
         entry,
         agentId,
       } = source?.loaded ??
-      (await loadSessionEntryAsync(target.sessionKey, {
+      (await loadGatewaySessionEntryReadOnlyInWorker({
+        cfg: getRuntimeConfig(),
+        key: target.sessionKey,
         agentId: target.agentId,
+        excludeInternalEffects: true,
       }));
       if (resolveAgentHarnessSessionContextError(sessionKey, entry)) {
         return undefined;
@@ -851,6 +861,9 @@ async function handlePreparedNodeEvent(
         }
       }
 
+      if (!(await isNodeEventConnectionCurrent(opts))) {
+        return pairingChangedResult(evt.event);
+      }
       source?.assertCurrent();
       const queued = enqueueSystemEvent(
         summary,

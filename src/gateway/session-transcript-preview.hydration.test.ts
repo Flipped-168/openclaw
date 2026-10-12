@@ -157,7 +157,7 @@ it("restores cold Talk history through its existing owner before bounded hydrati
     await replaceSessionEntry(fixture.scope, { sessionId: fixture.scope.sessionId, updatedAt: 1 });
     expect(readSessionColdTranscript(fixture.database(), fixture.scope.sessionId)).toBeDefined();
     const items = await readTalkRealtimeInitialItems(
-      { ...fixture.scope, canonicalKey: fixture.scope.sessionKey, assertCurrent: () => {} },
+      { ...fixture.scope, canonicalKey: fixture.scope.sessionKey, assertCurrent: vi.fn() },
       () => undefined,
     );
     expect(items).toEqual(expected);

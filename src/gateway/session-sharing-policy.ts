@@ -399,6 +399,17 @@ export function isResolvedIncognitoSession(
   });
 }
 
+export async function isResolvedIncognitoSessionAsync(params: {
+  cfg: OpenClawConfig;
+  sessionKey: string;
+  agentId?: string;
+}): Promise<boolean> {
+  return isIncognitoSessionTarget({
+    sessionKey: params.sessionKey,
+    target: await resolveSessionSharingTargetAsync(params),
+  });
+}
+
 export function authorizeIncognitoSessionTarget(params: {
   client: GatewayClient | null;
   sessionKey: string;
@@ -420,27 +431,6 @@ export function authorizeIncognitoSessionTarget(params: {
   return hiddenSessionNotFound(params.sessionKey, true);
 }
 
-export function canAccessIncognitoSession(
-  params: {
-    cfg: OpenClawConfig;
-    client: GatewayClient | null;
-    sessionKey: string;
-    agentId?: string;
-  },
-  target: SessionSharingTarget | null,
-): boolean {
-  if (isGatewayAdmin(params.client)) {
-    return true;
-  }
-  return (
-    authorizeIncognitoSessionTarget({
-      client: params.client,
-      sessionKey: params.sessionKey,
-      target,
-    }) === null
-  );
-}
-
 export function authorizeResolvedSessionMutation(
   params: {
     cfg: OpenClawConfig;
@@ -453,6 +443,36 @@ export function authorizeResolvedSessionMutation(
   return authorizeSessionMutationTarget(params, () => target);
 }
 
+export async function authorizeResolvedSessionMutationAsync(params: {
+  cfg: OpenClawConfig;
+  client: GatewayClient | null;
+  sessionKey: string;
+  agentId?: string;
+}): Promise<ErrorShape | null> {
+  if (isGatewayAdmin(params.client) && !params.cfg.gateway?.roles) {
+    return null;
+  }
+  if (isGatewayClientProfilePending(params.client)) {
+    return authenticatedProfileUnavailableError();
+  }
+  const { prepareSessionSharingProfiles, prepareProjectedSessionSharing } =
+    await import("./session-sharing-read.js");
+  const profiles = await prepareSessionSharingProfiles(params.client);
+  return withSessionSharingTarget(params, ({ target, members, assertCurrent }) => {
+    assertCurrent();
+    const sharing = prepareProjectedSessionSharing({
+      ...params,
+      profiles,
+      isMember: (_target, identityId) => members.some((member) => member.identityId === identityId),
+    });
+    return authorizePreparedSessionMutation(
+      params,
+      { target, membership: new Set(members.map((member) => member.identityId)) },
+      { policy: sharing.policy, aliases: profiles.readCurrent().profile?.aliases ?? new Set() },
+    );
+  });
+}
+
 export type PreparedSessionMutationFacts = {
   target: SessionSharingTarget | null;
   membership: ReadonlySet<string>;
@@ -460,7 +480,7 @@ export type PreparedSessionMutationFacts = {
 
 /** Prepared facts carry no decision; current caller and configuration still determine access. */
 export function authorizePreparedSessionMutation(
-  params: Parameters<typeof authorizeResolvedSessionMutation>[0],
+  params: Parameters<typeof authorizeResolvedSessionMutationAsync>[0],
   facts: PreparedSessionMutationFacts,
   prepared: {
     policy: GatewayOperatorRoleDefinition | undefined;
@@ -475,7 +495,7 @@ export function authorizePreparedSessionMutation(
 }
 
 function authorizeSessionMutationTarget(
-  params: Parameters<typeof authorizeResolvedSessionMutation>[0],
+  params: Parameters<typeof authorizeResolvedSessionMutationAsync>[0],
   readTarget: () => SessionSharingTarget | null,
   prepared?: {
     policy: GatewayOperatorRoleDefinition | undefined;

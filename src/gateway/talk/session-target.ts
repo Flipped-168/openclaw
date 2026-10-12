@@ -5,7 +5,7 @@ import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { resolveTalkSessionAgentId } from "../../talk/agent-target.js";
 import { captureSessionMutationRouting } from "../session-sharing-preparation.js";
 import { resolveSessionStoreIdentity } from "../session-store-key.js";
-import { resolveGatewaySessionStoreTargetWithStoreAsync } from "../session-utils-store-lookup.js";
+import { resolveGatewaySessionStoreTargetInWorker } from "../session-utils-store-worker.js";
 import type { PreparedTalkSessionTarget } from "./session-target.types.js";
 
 export function requirePreparedTalkSessionTarget(
@@ -25,15 +25,15 @@ export async function prepareTalkSessionTarget(
   const requestedKey = normalizeOptionalString(requestedSessionKey);
   const owner = resolveTalkSessionAgentId(cfg, requestedKey ?? "main");
   const sessionKey = requestedKey ?? resolveAgentMainSessionKey({ cfg, agentId: owner });
+  const assertCurrent = captureSessionMutationRouting(
+    cfg,
+    () => new Error("Talk session storage target changed; retry the request"),
+    [{ sessionKey, agentId: owner }],
+  );
   const { agentId, canonicalKey, storePath } = await resolveTalkSessionStorageTarget(
     cfg,
     sessionKey,
     owner,
-  );
-  const assertCurrent = captureSessionMutationRouting(
-    cfg,
-    () => new Error("Talk session storage target changed; retry the request"),
-    [{ sessionKey, agentId }],
   );
   return Object.freeze({ agentId, sessionKey, canonicalKey, storePath, assertCurrent });
 }
@@ -44,14 +44,6 @@ export function assertTalkSessionStorageTarget(
   target: PreparedTalkSessionTarget,
 ): void {
   target.assertCurrent(cfg);
-  const current = resolveSessionStoreIdentity({
-    cfg,
-    sessionKey: target.sessionKey,
-    agentId: resolveConfiguredAgentId(cfg, target.agentId),
-  });
-  if (current.agentId !== target.agentId || current.canonicalKey !== target.canonicalKey) {
-    throw new Error("Talk session storage target changed; retry the request");
-  }
 }
 
 async function resolveTalkSessionStorageTarget(
@@ -64,12 +56,10 @@ async function resolveTalkSessionStorageTarget(
     sessionKey,
     agentId: resolveConfiguredAgentId(cfg, owner),
   });
-  const target = await resolveGatewaySessionStoreTargetWithStoreAsync({
+  const target = await resolveGatewaySessionStoreTargetInWorker({
     cfg,
     key: canonicalKey,
     agentId,
-    readOnly: true,
-    exactRead: true,
   });
   return { agentId, canonicalKey, storePath: target.storePath };
 }

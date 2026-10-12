@@ -5,8 +5,8 @@ import { resetProcessRegistryForTests } from "../../agents/bash-process-registry
 import { setRuntimeConfigSnapshot } from "../../config/runtime-snapshot.js";
 import { upsertSessionEntryCore } from "../../config/sessions/session-accessor.js";
 import { createDeferredCore } from "../../shared/deferred.js";
-import { openOpenClawStateDatabase } from "../../state/openclaw-state-db.js";
 import { prepareUserProfileCatalog } from "../../state/user-profile-list.js";
+import { ensureUserProfileRoleSchema } from "../../state/user-profiles-schema.js";
 import { withOpenClawTestState } from "../../test-utils/openclaw-test-state.js";
 import { handleGatewayRequest } from "../server-methods.js";
 import { roleClient, rolePolicyConfig } from "../session-sharing.test-utils.js";
@@ -45,11 +45,11 @@ it.each([
   "projects and enforces process controls for $role with $scopes (own=$own)",
   async ({ role, scopes, own, allowed }) => {
     await withOpenClawTestState({ scenario: "minimal" }, async (state) => {
+      ensureUserProfileRoleSchema({});
+      using _ = { [Symbol.dispose]: (await prepareUserProfileCatalog()).release };
       const cfg = rolePolicyConfig();
       await state.writeConfig(cfg);
       setRuntimeConfigSnapshot(cfg);
-      openOpenClawStateDatabase();
-      using _ = { [Symbol.dispose]: (await prepareUserProfileCatalog()).release };
       const owner = roleClient("write", "process-owner");
       const viewer = roleClient(role, "process-viewer");
       viewer.connect.scopes = scopes;

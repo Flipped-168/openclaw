@@ -37,12 +37,13 @@ const mocks = vi.hoisted(() => ({
     >(),
 }));
 
-vi.mock("./session-utils.js", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("./session-utils.js")>()),
-  loadSessionEntryAsync: mocks.loadSessionEntryAsync,
-}));
 // mock-isolation: Queued-owner cases use supplied session rows instead of real store discovery.
 vi.mock("./session-utils-store-worker.js", () => ({
+  loadGatewaySessionEntryReadOnlyInWorker: async (params: {
+    key: string;
+    agentId?: string;
+    env?: NodeJS.ProcessEnv;
+  }) => mocks.loadSessionEntryAsync(params.key, { agentId: params.agentId, env: params.env }),
   resolveGatewaySessionStoreTargetInWorker: mocks.resolveSessionTarget,
 }));
 

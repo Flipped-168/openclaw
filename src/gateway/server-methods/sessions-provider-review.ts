@@ -17,7 +17,7 @@ import {
   resolveSessionSharingTargetAsync,
   SessionMutationAuthorizationChangedError,
 } from "../session-sharing.js";
-import type { GatewayRequestHandlers, SessionMutationAuthorization } from "./types.js";
+import type { GatewayRequestHandlers } from "./types.js";
 import { defineValidatedGatewayHandler } from "./validation.js";
 
 export const sessionProviderReviewHandlers: GatewayRequestHandlers = {
@@ -40,8 +40,8 @@ export const sessionProviderReviewHandlers: GatewayRequestHandlers = {
         return;
       }
       let acknowledgment: ProviderReviewAcknowledgment | undefined;
-      let ownedAuthorization: SessionMutationAuthorization | undefined;
       let handedOff = false;
+      let releaseAuthorization: (() => void) | undefined;
       try {
         if (isIncognitoSessionKey(params.sessionKey)) {
           throw new Error("Provider review cannot be continued in an incognito session");
@@ -54,12 +54,12 @@ export const sessionProviderReviewHandlers: GatewayRequestHandlers = {
               requestParams: params,
               context,
             });
+        if (!options.sessionMutationAuthorization) {
+          releaseAuthorization = authorization.authorization?.release;
+        }
         if (authorization.error) {
           respond(false, undefined, authorization.error);
           return;
-        }
-        if (!options.sessionMutationAuthorization) {
-          ownedAuthorization = authorization.authorization;
         }
         const cfg = context.getRuntimeConfig();
         const requested = resolveRequestedSessionAgentId(cfg, params.sessionKey, params.agentId);
@@ -141,7 +141,7 @@ export const sessionProviderReviewHandlers: GatewayRequestHandlers = {
           );
         }
       } finally {
-        ownedAuthorization?.release?.();
+        releaseAuthorization?.();
         if (acknowledgment && !handedOff) {
           retireProviderReviewAcknowledgment(acknowledgment);
         }

@@ -235,7 +235,7 @@ async function resolveApprovalRecordForState<TPayload>(
     cfg?: OpenClawConfig;
     getCfg?: () => OpenClawConfig;
     exposeAmbiguousPrefixError?: boolean;
-    recordFilter?: (record: ExecApprovalRecord<TPayload>) => boolean;
+    recordFilter?: (record: ExecApprovalRecord<TPayload>) => boolean | Promise<boolean>;
   },
   expectedState: "pending" | "resolved",
 ): Promise<ApprovalRecordLookupResult<TPayload>> {
@@ -255,7 +255,7 @@ async function resolveApprovalRecordForState<TPayload>(
     sources: candidates.map(readApprovalRequestSource),
   });
   params.authority?.assertCurrent();
-  const visible = (record: ExecApprovalRecord<TPayload>) => {
+  const visible = async (record: ExecApprovalRecord<TPayload>) => {
     const cfg = params.getCfg?.() ?? params.cfg;
     return (
       !params.client?.invalidated &&
@@ -265,12 +265,13 @@ async function resolveApprovalRecordForState<TPayload>(
         ...(cfg ? { cfg } : {}),
         sessionAccess,
       }) &&
-      (params.recordFilter?.(record) ?? true)
+      ((await params.recordFilter?.(record)) ?? true)
     );
   };
-  const resolvedId = params.manager.lookupLocalApprovalId(params.inputId, {
+  const resolvedId = await params.manager.lookupApprovalId(params.inputId, {
     includeResolved: expectedState === "resolved",
     filter: visible,
+    authority: params.authority,
   });
   params.authority?.assertCurrent();
   if (resolvedId.kind !== "exact" && resolvedId.kind !== "prefix") {
@@ -288,7 +289,7 @@ async function resolveApprovalRecordForState<TPayload>(
   const snapshot = await params.manager.getSnapshot(resolvedId.id, params.authority);
   params.authority?.assertCurrent();
   const isResolved = snapshot?.resolvedAtMs !== undefined;
-  if (!snapshot || isResolved !== (expectedState === "resolved") || !visible(snapshot)) {
+  if (!snapshot || isResolved !== (expectedState === "resolved") || !(await visible(snapshot))) {
     return { ok: false, response: "missing" };
   }
   params.authority?.bindSource(readApprovalRequestSource(snapshot));

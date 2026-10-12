@@ -71,6 +71,7 @@ afterEach(async () => {
   vi.restoreAllMocks();
   vi.unstubAllEnvs();
   clearRuntimeAuthProfileStoreSnapshots();
+  clearRuntimeConfigSnapshot();
   clearSessionStoreCacheForTest();
   await fs.rm(root, { recursive: true, force: true });
 });

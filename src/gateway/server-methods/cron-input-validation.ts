@@ -33,7 +33,7 @@ import {
   isAgentHarnessSessionKey,
 } from "../../sessions/agent-harness-session-key.js";
 import { resolveOperatorSessionCreation } from "../session-creation-provenance.js";
-import { loadGatewaySessionEntryReadOnlyAsync } from "../session-utils.js";
+import { loadGatewaySessionEntryReadOnlyInWorker } from "../session-utils-store-worker.js";
 import type { CronCallerScope } from "./cron-caller-scope.js";
 import type { GatewayClient } from "./types.js";
 
@@ -124,7 +124,7 @@ export async function assertValidCronUpdatePatch(params: {
     "sessionTarget" in params.patch ||
     "sessionKey" in params.patch
   ) {
-    await assertCronDoesNotTargetAgentHarness(nextJob);
+    await assertCronDoesNotTargetAgentHarness(nextJob, params.cfg);
   }
   // Clearing a concrete channel (channel: null) while keeping a bare announce `to`
   // intentionally falls back to "last" in multi-channel configs. Use the same
@@ -179,11 +179,14 @@ export async function assertValidCronUpdatePatch(params: {
   return nextJob;
 }
 
-export async function assertCronDoesNotTargetAgentHarness(input: {
-  agentId?: string | null;
-  sessionTarget?: string | null;
-  sessionKey?: string | null;
-}): Promise<void> {
+export async function assertCronDoesNotTargetAgentHarness(
+  input: {
+    agentId?: string | null;
+    sessionTarget?: string | null;
+    sessionKey?: string | null;
+  },
+  cfg: OpenClawConfig,
+): Promise<void> {
   const targetSessionKey =
     resolveCronSessionTargetSessionKey(input.sessionTarget) ??
     (input.sessionTarget === "current" ? input.sessionKey?.trim() : undefined);
@@ -191,10 +194,11 @@ export async function assertCronDoesNotTargetAgentHarness(input: {
     return;
   }
 
-  const loaded = await loadGatewaySessionEntryReadOnlyAsync(
-    targetSessionKey,
-    input.agentId?.trim() ? { agentId: input.agentId.trim() } : {},
-  );
+  const loaded = await loadGatewaySessionEntryReadOnlyInWorker({
+    cfg,
+    key: targetSessionKey,
+    agentId: input.agentId?.trim() || undefined,
+  });
   const reservedKey =
     isAgentHarnessSessionKey(targetSessionKey) || isAgentHarnessSessionKey(loaded.canonicalKey);
   if (loaded.entry?.modelSelectionLocked === true) {
@@ -221,6 +225,7 @@ export async function captureCronCreatorSession(
   job: CronJobCreate,
   callerScope: CronCallerScope | undefined,
   client: GatewayClient | null,
+  cfg: OpenClawConfig,
 ) {
   const hasConversationResult =
     job.sessionTarget !== "main" &&
@@ -231,7 +236,7 @@ export async function captureCronCreatorSession(
     callerScope?.sessionKey ?? (hasConversationResult ? job.sessionKey : undefined);
   const agentId = callerScope?.agentId ?? job.agentId;
   const loaded = sessionKey
-    ? await loadGatewaySessionEntryReadOnlyAsync(sessionKey, { agentId })
+    ? await loadGatewaySessionEntryReadOnlyInWorker({ cfg, key: sessionKey, agentId })
     : undefined;
   const creatorSession = loaded?.entry;
   const sourceConversation =

@@ -70,7 +70,7 @@ async function withDemandFixture(
     const sessionRuntime =
       await vi.importActual<typeof import("../session-utils.js")>("../session-utils.js");
     dispatchTestMocks.resolveTarget.mockImplementation(
-      sessionRuntime.resolveGatewaySessionStoreTargetWithStoreAsync,
+      sessionRuntime.resolveGatewaySessionStoreTargetInWorker,
     );
     dispatchTestMocks.findLiveByOwner.mockImplementation((_kind: string, sessionKey: string) => ({
       id: sessionKey,
@@ -96,7 +96,7 @@ async function withDemandFixture(
         return {
           current: () => {
             if (released) {
-              throw new Error("Worker placement reader was released");
+              throw new Error("Worker placement observation is no longer current");
             }
             return placements.get(sessionId);
           },

@@ -237,7 +237,7 @@ export async function resolveSessionCatalogThreadVisibility(params: {
       );
       return target !== null &&
         resolveSessionSharingRole({
-          cfg: config,
+          cfg: params.context.getRuntimeConfig(),
           client: params.client,
           target,
           isMember: Boolean(

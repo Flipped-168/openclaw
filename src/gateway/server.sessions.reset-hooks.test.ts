@@ -328,12 +328,12 @@ function cliBoundSessionEntry(
 }
 
 async function resolveGatewaySessionStorePathForKey(key: string) {
-  const [{ getRuntimeConfig }, { resolveGatewaySessionStoreTargetAsync }] = await Promise.all([
+  const [{ getRuntimeConfig }, { resolveGatewaySessionStoreTargetInWorker }] = await Promise.all([
     import("../config/config.js"),
-    import("./session-utils.js"),
+    import("./session-utils-store-worker.js"),
   ]);
   return (
-    await resolveGatewaySessionStoreTargetAsync({
+    await resolveGatewaySessionStoreTargetInWorker({
       cfg: getRuntimeConfig(),
       key,
     })

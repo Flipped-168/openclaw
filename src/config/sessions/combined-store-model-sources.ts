@@ -57,7 +57,8 @@ export function createSessionModelSources(
         if (!logicalEntries.has(identity)) {
           logicalEntries.set(identity, entry);
         }
-        let read = readers.get(logicalAgentId);
+        const readerKey = logicalAgentId;
+        let read = readers.get(readerKey);
         if (!read) {
           // Capture the chosen fallback separately: it is not proof that the literal row exists.
           const selectedParents = new Map<
@@ -114,7 +115,7 @@ export function createSessionModelSources(
             readSourceEntry: (key) => select(key).value,
             resolveSourceKey: (key) => select(key).key,
           };
-          readers.set(logicalAgentId, read);
+          readers.set(readerKey, read);
         }
         return read;
       };

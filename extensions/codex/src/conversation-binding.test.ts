@@ -6,6 +6,10 @@ import {
 } from "openclaw/plugin-sdk/agent-harness-runtime";
 import type { ExecApprovalsFile } from "openclaw/plugin-sdk/exec-approvals-runtime";
 import { createTestPluginApi } from "openclaw/plugin-sdk/plugin-test-api";
+import {
+  clearRuntimeConfigSnapshot,
+  setRuntimeConfigSnapshot,
+} from "openclaw/plugin-sdk/runtime-config-snapshot";
 import { patchSessionEntry, upsertSessionEntry } from "openclaw/plugin-sdk/session-store-runtime";
 import { appendSessionTranscriptMessageByIdentity } from "openclaw/plugin-sdk/session-transcript-runtime";
 import {
@@ -386,11 +390,13 @@ describe("codex conversation binding", () => {
   afterAll(() => closeOpenClawAgentDatabasesAsync());
 
   beforeEach(() => {
+    setRuntimeConfigSnapshot({});
     resetCodexTestBindingStore();
     tempDir = sessionDirs.make();
   });
 
   afterEach(() => {
+    clearRuntimeConfigSnapshot();
     publicBindingMocks.readBinding.mockReset();
     publicBindingMocks.readBinding.mockReturnValue({ bindingId: "binding-1" });
     sharedClientMocks.getSharedCodexAppServerClient.mockReset();
@@ -1682,6 +1688,8 @@ describe("codex conversation binding", () => {
 
   it("blocks bound Codex CLI node turns when the current OpenClaw session is sandboxed", async () => {
     const resumeCodexCliSessionOnNode = vi.fn();
+    const config = { agents: { defaults: { sandbox: { mode: "all" as const } } } };
+    setRuntimeConfigSnapshot(config);
 
     const result = await handleCodexConversationInboundClaim(
       conversationMessage("continue the task", {
@@ -1701,7 +1709,7 @@ describe("codex conversation binding", () => {
         { channel: "discord", conversationId: "channel-1" },
       ),
       {
-        config: { agents: { defaults: { sandbox: { mode: "all" } } } },
+        config,
         resumeCodexCliSessionOnNode,
       },
     );

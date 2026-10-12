@@ -1,6 +1,11 @@
 /** Covers the injection-start admission fence and steer finalize audit honesty. */
 import { expectDefined } from "@openclaw/normalization-core";
 import { beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
+import {
+  awaitGateBeforeSettlement,
+  createDeferred,
+  withinTest,
+} from "../../../test/helpers/promise.js";
 import { emitInboundMessageAuditTerminal } from "../../auto-reply/reply/dispatch-from-config.audit.js";
 import type { ReplyBackendMessageInjectionV2 } from "../../auto-reply/reply/reply-run-registry.contracts.js";
 import {
@@ -20,10 +25,14 @@ import {
   recordSessionParticipant,
   updateSessionEntry,
 } from "../../config/sessions/session-accessor.js";
+import { upsertSessionEntryCore } from "../../config/sessions/session-accessor.sqlite-entry.js";
 import { logMessageProcessed } from "../../logging/diagnostic.js";
 import { prepareSessionParticipantInput } from "../../sessions/session-participant-input.js";
 import { createUserTurnTranscriptRecorder } from "../../sessions/user-turn-transcript.js";
 import { createTestUserTurnTranscriptTarget } from "../../sessions/user-turn-transcript.test-support.js";
+import { resolveOpenClawAgentSqlitePath } from "../../state/openclaw-agent-db.paths.js";
+import { observeMainThreadSql } from "../../test-utils/main-thread-sql-spies.test-support.js";
+import { withOpenClawTestState } from "../../test-utils/openclaw-test-state.js";
 import { setGatewayDedupeEntry } from "../agent-turn/agent-job.js";
 import type { ChatImageContent } from "../chat-attachments.js";
 import { broadcastChatError, broadcastChatFinal } from "./chat-broadcast.js";
@@ -78,12 +87,6 @@ vi.mock("../../auto-reply/command-auth.js", () => ({
 vi.mock("../../auto-reply/reply/reply-tool-authority.js", () => ({
   resolveInboundReplyToolAuthorityOverlay: vi.fn(() => ({})),
 }));
-// mock-isolation: This registry contract receives already-prepared steering source authority.
-vi.mock(import("../../auto-reply/reply/steering-delivery-preparation.js"), () => ({
-  prepareSteeringDelivery: ({ assertCurrent }) => ({
-    prepareCurrent: async () => assertCurrent(),
-  }),
-}));
 
 function makeParams() {
   const context = {
@@ -102,7 +105,7 @@ function makeParams() {
       clientRunId: "run-1",
       entry: undefined,
       sessionKey: "agent:main:dashboard:s",
-      storePath: "/tmp/nowhere.json",
+      storePath: "",
     },
     startedAt: Date.now(),
     target: {} as ReplyMessageInjectionTarget,
@@ -120,7 +123,7 @@ function makeFailClosedEntry() {
   } as never;
 }
 
-function makeStarterParams(params?: { entry?: unknown; loadLatest?: unknown }) {
+function makeStarterParams(params?: { entry?: unknown }) {
   return {
     target: { runId: "run-1" } as ReplyMessageInjectionTarget,
     request: {
@@ -134,7 +137,7 @@ function makeStarterParams(params?: { entry?: unknown; loadLatest?: unknown }) {
       clientRunId: "run-1",
       entry: params?.entry as never,
       sessionKey: "agent:main:dashboard:s",
-      storePath: "/tmp/nowhere.json",
+      storePath: "",
     },
     turn: {
       ctx: { Provider: "dashboard", From: "user", To: "user", Body: "steer" },
@@ -219,6 +222,126 @@ describe("finalizeAcceptedChatSendMessageInjection", () => {
 });
 
 describe("createChatSendMessageInjectionStarter admission fence", () => {
+  it.for([
+    "normal",
+    "terminal receipt",
+    "active source tombstone",
+    "unrelated tombstone",
+    "caller revoked",
+  ] as const)(
+    "rechecks terminal admission after awaited projection: %s",
+    async (change, { signal }) => {
+      await withOpenClawTestState({ scenario: "minimal" }, async (state) => {
+        const initial = { sessionId: "session-1", updatedAt: 1 };
+        const sessionKey = `agent:main:dashboard:projection-${change.replaceAll(" ", "-")}`;
+        const storePath = resolveOpenClawAgentSqlitePath({ agentId: "main", env: state.env });
+        const scope = { agentId: "main", sessionKey, storePath };
+        await upsertSessionEntryCore(scope, initial);
+        let callerCurrent = true;
+        const refusal = new Error("caller authority revoked during projection");
+        const entered = createDeferred();
+        const resume = createDeferred();
+        const params = makeStarterParams({ entry: initial });
+        params.session.sessionKey = sessionKey;
+        params.session.storePath = storePath;
+        params.assertCurrent = () => {
+          if (!callerCurrent) {
+            throw refusal;
+          }
+        };
+        const operation = createReplyOperation({
+          sessionKey: expectDefined(params.session.sessionKey, "steering session key"),
+          sessionId: initial.sessionId,
+          resetTriggered: false,
+        });
+        operation.bindToolAuthoritySnapshot({
+          fingerprint: () => "authority",
+          project: () => "authority",
+          projectAsync: async () => {
+            entered.resolve();
+            await withinTest(resume.promise, signal);
+            return "authority";
+          },
+        });
+        operation.bindToolAuthorityRoute({ provider: "test", model: "test" });
+        const queueMessage = vi.fn<ReplyBackendMessageInjectionV2["queueMessage"]>(
+          async (_text, _options, assertCurrent) => {
+            assertCurrent();
+          },
+        );
+        operation.attachBackend({
+          kind: "embedded",
+          runId: "active-run",
+          toolAuthorityFingerprint: "authority",
+          cancel() {},
+          messageInjectionV2: { version: 2, isAvailable: () => true, queueMessage },
+        });
+        operation.setPhase("running");
+        replyRunRegistry.bindSourceTurnId(operation, "source-1");
+        params.target = expectDefined(
+          replyRunRegistry.resolveCurrentMessageInjectionTarget(operation.key),
+          "active injection target",
+        );
+        vi.mocked(beginReplyMessageInjectionTarget).mockImplementationOnce(
+          beginActualReplyMessageInjectionTarget,
+        );
+        const sql = observeMainThreadSql();
+        const starting = createChatSendMessageInjectionStarter(params)();
+        const outcome = starting.then(
+          (attempt) => ({ attempt }),
+          (error: unknown) => ({ error }),
+        );
+        try {
+          await withinTest(
+            awaitGateBeforeSettlement(entered.promise, starting, "Projection did not await"),
+            signal,
+          );
+          expect(queueMessage).not.toHaveBeenCalled();
+          if (change === "terminal receipt" || change === "caller revoked") {
+            await upsertSessionEntryCore(scope, {
+              restartRecoveryDeliveryRunId: "recovery-1",
+              restartRecoveryDeliverySourceRunId: "source-1",
+              restartRecoveryDeliveryReceiptState: "delivered-terminal",
+            });
+          } else if (change === "active source tombstone" || change === "unrelated tombstone") {
+            await upsertSessionEntryCore(scope, {
+              restartRecoveryTerminalRunIds: [
+                change === "active source tombstone" ? "source-1" : "source-old",
+              ],
+            });
+          }
+          callerCurrent = change !== "caller revoked";
+          resume.resolve();
+          const result = await outcome;
+          sql.expectIdle();
+          if (change === "caller revoked") {
+            expect(result).toEqual({ error: refusal });
+            expect(queueMessage).not.toHaveBeenCalled();
+          } else if (change === "normal" || change === "unrelated tombstone") {
+            if (!("attempt" in result) || !result.attempt) {
+              throw new Error("Expected current terminal authority to admit steering", {
+                cause: result,
+              });
+            }
+            await expect(result.attempt.outcome).resolves.toMatchObject({ status: "accepted" });
+            expect(queueMessage).toHaveBeenCalledOnce();
+          } else {
+            expect(result).toEqual({ attempt: undefined });
+            expect(queueMessage).not.toHaveBeenCalled();
+          }
+        } finally {
+          resume.resolve();
+          const result = await outcome;
+          if ("attempt" in result) {
+            await result.attempt?.outcome;
+          }
+          sql.restore();
+          operation.complete();
+        }
+      });
+    },
+  );
+
   it.each(["unbound", "current", "refused"] as const)(
     "composes captured terminal admission with %s authority",
     async (authority) => {
@@ -324,6 +447,50 @@ describe("createChatSendMessageInjectionStarter admission fence", () => {
 
     expect(attempt).toBeUndefined();
     expect(params.logGateway.warn).toHaveBeenCalled();
+  });
+
+  it("reads current terminal eligibility when the captured request snapshot is stale", async () => {
+    await withOpenClawTestState({ scenario: "minimal" }, async (state) => {
+      const scope = {
+        agentId: "main",
+        sessionKey: "agent:main:dashboard:initial-steering",
+        storePath: resolveOpenClawAgentSqlitePath({ agentId: "main", env: state.env }),
+      };
+      for (const blocked of [true, false]) {
+        await upsertSessionEntryCore(scope, {
+          sessionId: "session-1",
+          updatedAt: 1,
+          restartRecoveryDeliveryReceiptState: blocked ? "terminal-pending" : undefined,
+        });
+        const params = makeStarterParams({ entry: blocked ? undefined : makeFailClosedEntry() });
+        Object.assign(params.session, scope);
+        const attempt = await createChatSendMessageInjectionStarter(params)();
+        if (blocked) {
+          expect(attempt).toBeUndefined();
+          expect(params.logGateway.warn).toHaveBeenCalled();
+        } else {
+          await expect(attempt?.outcome).resolves.toMatchObject({ status: "accepted" });
+        }
+      }
+    });
+  });
+
+  it("falls back without queuing when durable terminal metadata is unreadable", async () => {
+    await withOpenClawTestState({ scenario: "minimal" }, async (state) => {
+      const storePath = await state.writeText(
+        "agents/main/agent/openclaw-agent.sqlite",
+        "unreadable session database",
+      );
+      const params = makeStarterParams({ entry: { sessionId: "session-1", updatedAt: 1 } });
+      params.session.storePath = storePath;
+
+      await expect(createChatSendMessageInjectionStarter(params)()).resolves.toBeUndefined();
+      expect(beginReplyMessageInjectionTarget).not.toHaveBeenCalled();
+      expect(params.logGateway.warn).toHaveBeenCalledWith(
+        "chat steering rejected; falling back to follow-up dispatch",
+        expect.objectContaining({ reason: "terminal-delivery-unavailable" }),
+      );
+    });
   });
 });
 
@@ -481,7 +648,7 @@ describe("createChatSendMessageInjectionStarter", () => {
         cfg: {},
         entry: undefined,
         sessionKey,
-        storePath: "/tmp/nowhere.json",
+        storePath: "",
         clientRunId: "active-run",
       },
       turn: {

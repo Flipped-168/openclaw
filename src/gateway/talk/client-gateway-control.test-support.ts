@@ -6,7 +6,7 @@ export const sessionTarget = {
   sessionKey: "agent:main:main",
   canonicalKey: "agent:main:main",
   storePath: "/tmp/sessions",
-  assertCurrent: () => {},
+  assertCurrent: vi.fn(),
 };
 
 export function controlContext(

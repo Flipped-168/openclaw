@@ -327,6 +327,41 @@ it("prepares foreign lineage without host SQL after main-alias changes", async (
   });
 });
 
+it("refreshes foreign parent aliases after committed writes without host SQL", async () => {
+  await withOpenClawTestState({ scenario: "minimal" }, async () => {
+    const cfg: OpenClawConfig = {
+      agents: { entries: { main: {}, work: {} } },
+      session: { scope: "global" },
+    };
+    const parent = "agent:main:main";
+    const key = "agent:work:child";
+    replaceSessionEntrySync(
+      { agentId: "work", sessionKey: key },
+      { sessionId: "child", updatedAt: 1, parentSessionKey: parent, spawnedBy: parent },
+    );
+    for (const model of ["before", "after"]) {
+      replaceSessionEntrySync(
+        { agentId: "main", sessionKey: "global" },
+        { sessionId: "parent", updatedAt: 2, modelOverride: model },
+      );
+      const observed = observeHostDataSql();
+      try {
+        const result = await loadCombinedSessionStoreForGatewayCoreAsync(cfg, { agentId: "work" });
+        expect(result.store[key]).toMatchObject({
+          parentSessionKey: "global",
+          spawnedBy: "global",
+        });
+        expect(result.targetsBySessionKey.get(key)?.readSourceEntry(parent)?.modelOverride).toBe(
+          model,
+        );
+        expect(observed.queries).toEqual([]);
+      } finally {
+        observed.restore();
+      }
+    }
+  });
+});
+
 it("transfers a Windows-normalized environment through the real worker transport", async () => {
   await withOpenClawTestState({ scenario: "minimal" }, async () => {
     const cfg: OpenClawConfig = { agents: { entries: { main: {} } } };

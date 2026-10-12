@@ -48,12 +48,10 @@ function loadSessionRuntime() {
 
 async function createHandlers(identity = IDENTITY) {
   const runtime = await loadSessionRuntime();
-  const target = await runtime.resolveGatewaySessionStoreTargetWithStoreAsync({
+  const target = await runtime.resolveGatewaySessionStoreTargetInWorker({
     cfg: getRuntimeConfig(),
     key: identity.sessionKey,
     agentId: identity.agentId,
-    clone: false,
-    exactRead: true,
   });
   const entry = loadSessionEntryReadOnly({
     ...identity,
@@ -354,11 +352,10 @@ describe("worker workspace recovery transcript reporting", () => {
         const { reportFailure } = await createHandlers();
         const reportTarget = await (
           await loadSessionRuntime()
-        ).resolveGatewaySessionStoreTargetWithStoreAsync({
+        ).resolveGatewaySessionStoreTargetInWorker({
           cfg: getRuntimeConfig(),
           key: IDENTITY.sessionKey,
           agentId: IDENTITY.agentId,
-          clone: false,
         });
         let releaseWriter!: () => void;
         const { promise: writerHeld, resolve: signalWriterHeld } = createDeferred();

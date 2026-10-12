@@ -335,21 +335,35 @@ export function createApprovalHandlers(
         return;
       }
       const { guard: approvalGuard, readCurrent } = retainedApproval;
-      const custody = resolveParams?.reviewer
-        ? prepareApprovalChannelCustody({
-            cfg: context.getRuntimeConfig(),
-            approvalKind: record.kind,
-            reviewer: resolveParams.reviewer,
-          })
-        : null;
       const liveRecord =
         record.kind === "exec"
           ? params.execApprovalManager.getLiveSnapshot(record.id)
           : record.kind === "plugin"
             ? params.pluginApprovalManager.getLiveSnapshot(record.id)
             : params.systemAgentApprovalManager?.getLiveSnapshot(record.id);
-      if (resolveParams?.reviewer && (!custody || !liveRecord || !custody.authorizes(liveRecord))) {
-        respondApprovalNotFound(respond);
+      using custody = resolveParams?.reviewer
+        ? prepareApprovalChannelCustody({
+            cfg: context.getRuntimeConfig(),
+            getCfg: context.getRuntimeConfig,
+            assertCurrent: () => approvalGuard.assertCurrent(),
+            approvalKind: record.kind,
+            reviewer: resolveParams.reviewer,
+          })
+        : null;
+      try {
+        if (
+          resolveParams?.reviewer &&
+          (!custody || !liveRecord || !(await custody.authorizes(liveRecord)))
+        ) {
+          respondApprovalNotFound(respond);
+          return;
+        }
+      } catch (error) {
+        if (!authority.isCurrent()) {
+          respondApprovalNotFound(respond);
+        } else {
+          respondApprovalStorageUnavailable({ context, respond, operation: "lookup", error });
+        }
         return;
       }
       if (record.status !== "pending") {
@@ -381,14 +395,6 @@ export function createApprovalHandlers(
       const forceMalformedDeny = !validParams || !kindMatches || !decisionAllowed;
       const assertCurrent = () => {
         approvalGuard.assertCurrent();
-        const currentCfg = context.getRuntimeConfig();
-        const currentCustody = resolveParams?.reviewer
-          ? prepareApprovalChannelCustody({
-              cfg: currentCfg,
-              approvalKind: record.kind,
-              reviewer: resolveParams.reviewer,
-            })
-          : null;
         if (
           client?.invalidated ||
           !canAccessOperatorApproval({
@@ -397,7 +403,7 @@ export function createApprovalHandlers(
             binding: { reviewerDeviceIds: record.reviewerDeviceIds },
           }) ||
           (approvalGuard.family === "native-compatibility" && !readCurrent()) ||
-          (resolveParams?.reviewer && (!liveRecord || !currentCustody?.authorizes(liveRecord)))
+          (resolveParams?.reviewer && (!liveRecord || !custody?.isCurrent(liveRecord)))
         ) {
           throw new Error("approval resolver authority is no longer active");
         }

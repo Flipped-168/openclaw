@@ -49,7 +49,7 @@ function inWriterTransaction(db: DatabaseSync, check: () => void) {
 
 describe("committed session mutation authorization", () => {
   it.each(["resident", "fixed"] as const)(
-    "keeps %s worker grants current after membership changes without shared-state reads",
+    "revokes %s worker grants after committed membership changes without main-thread reads",
     async (mode) => {
       await withOpenClawTestState({ scenario: "minimal" }, async (state) => {
         ensureUserProfilesSchema({});

@@ -31,7 +31,7 @@ vi.mock("../../plugins/session-catalog-history-import.js", async (importOriginal
   ...(await importOriginal<typeof import("../../plugins/session-catalog-history-import.js")>()),
   preserveSessionCatalogHistory: mocks.preserve,
 }));
-// mock-isolation: Import orchestration injects destination grants and revocation without a real session database.
+// mock-isolation: Exercise import orchestration without loading the live sharing/admission owners.
 vi.mock("../session-sharing-authorization-async.js", () => ({
   resolveSessionMutationAuthorizationAsync: mocks.authorize,
 }));

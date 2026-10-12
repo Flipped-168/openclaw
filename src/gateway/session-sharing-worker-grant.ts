@@ -17,7 +17,6 @@ import {
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { runSqliteReadOperationSync } from "../infra/sqlite-schema-facts.js";
 import { readDatabasePathIdentitySync } from "../infra/sqlite-worker-identity.js";
-import { isIncognitoSessionKey } from "../routing/session-key.js";
 import { captureOpenClawAgentReadOnlyAdmission } from "../state/openclaw-agent-db-readonly-open.js";
 import { retainOpenClawAgentDatabaseReadOnly } from "../state/openclaw-agent-db-readonly.js";
 import { prepareOpenClawAgentDatabaseRegistrySnapshotRead } from "../state/openclaw-agent-db-registry-listing.js";
@@ -26,6 +25,7 @@ import { authorizeGatewaySessionCreation } from "./operator-role-policy.js";
 import { SessionMutationAuthorizationChangedError } from "./session-mutation-authorization-error.js";
 import {
   sessionMutationTargetChanged,
+  findPreparedSharingTarget,
   prepareAuthorizedSessionMutationFacts,
   type AuthorizedSessionMutationTarget,
   type PreparedMutationSharing,
@@ -35,7 +35,10 @@ import {
   captureSessionActorMutationFacts,
   captureSessionSharingActorBinding,
 } from "./session-sharing-incognito.js";
-import { captureSessionMutationRouting } from "./session-sharing-preparation.js";
+import {
+  captureSessionMutationRouting,
+  prepareSessionMutationFacts,
+} from "./session-sharing-preparation.js";
 import {
   prepareProjectedSessionSharing,
   prepareSessionSharingProfiles,
@@ -169,37 +172,123 @@ export async function prepareSessionSharingWorkerGrant(params: {
         });
         continue;
       }
-      if (!params.transactionFacts && !isIncognitoSessionKey(expected.sessionKey)) {
-        const readPrepared = () => {
-          const current = params.request.preparedTargetRead?.(
-            expected,
-            params.request.context.getRuntimeConfig(),
-          );
-          if (!current) {
+      const durableRoute = expected.resolved ?? expected.absentTarget;
+      if (!durableRoute) {
+        throw changed(expected.sessionKey);
+      }
+      if (typeof durableRoute.readSource?.databaseIdentity !== "symbol") {
+        const prepared = findPreparedSharingTarget(params.request, expected);
+        const retained = prepared
+          ? undefined
+          : await prepareSessionMutationFacts({
+              cfg: initialConfig,
+              sessionKey: expected.sessionKey,
+              agentId: durableRoute.agentId,
+              allowMissing: true,
+            });
+        if (retained) {
+          releases.push(retained);
+        }
+        const sourceFacts = retained?.readCurrent(initialConfig);
+        const sourcePath = sourceFacts?.sourcePath;
+        const sourceIdentity = sourcePath && readDatabasePathIdentitySync(sourcePath);
+        const fallbackSource =
+          sourcePath && sourceIdentity
+            ? {
+                agentId: sourceFacts?.sourceAgentId ?? durableRoute.agentId,
+                path: sourcePath,
+                databaseIdentity: sourceIdentity.key.slice("file:".length),
+                databaseBirthtime: sourceIdentity.birthtime,
+              }
+            : durableRoute.readSource;
+        const read = (): PreparedMutationSharing => {
+          if (prepared) {
+            return prepared.read();
+          }
+          const facts = retained!.readCurrent(params.request.context.getRuntimeConfig());
+          return {
+            target: facts.target && { ...facts.target, readSource: fallbackSource },
+            storageTarget: retained!.storageTarget,
+            members: [],
+            isMember: (id) => facts.membership.has(id),
+            assertCurrent: () => {
+              retained!.readCurrent(params.request.context.getRuntimeConfig());
+            },
+          };
+        };
+        const initial = read();
+        if (params.transactionFacts && targets.length === 1) {
+          const provided = params.transactionSource;
+          const capturedSource =
+            initial.target?.readSource ?? prepared?.readSource ?? fallbackSource;
+          const source = provided?.source ?? capturedSource;
+          if (
+            !source ||
+            (provided &&
+              (provided.agentId !== durableRoute.agentId ||
+                provided.sessionKey !== durableRoute.canonicalKey))
+          ) {
             throw changed(expected.sessionKey);
           }
-          return current;
-        };
-        const assertSource = () => {
-          readPrepared();
-        };
-        assertSource();
-        sourceChecks.push(assertSource);
-        reads.push((profiles) => {
-          const current = readPrepared();
-          params.consume(
-            expected,
-            params.request.context.getRuntimeConfig(),
-            {
-              target: current.target,
-              storageTarget: current.storageTarget,
-              members: [],
-              isMember: (id) => current.members.includes(id),
-              assertCurrent: assertSource,
+          if (
+            capturedSource &&
+            (source.agentId !== capturedSource.agentId ||
+              source.databaseIdentity !== capturedSource.databaseIdentity ||
+              source.databaseBirthtime !== capturedSource.databaseBirthtime)
+          ) {
+            throw changed(expected.sessionKey);
+          }
+          transaction = {
+            source,
+            agentId: durableRoute.agentId,
+            sessionKey: expected.resolved?.storeKey ?? durableRoute.canonicalKey,
+            assertCurrent(facts) {
+              assertLifetimeCurrent();
+              const preparedFacts = prepareAuthorizedSessionMutationFacts({
+                expected,
+                source,
+                facts,
+                targetChanged: () => changed(expected.sessionKey),
+              });
+              const cfg = params.request.context.getRuntimeConfig();
+              if (provided && params.authorizesAgentRun) {
+                const policyConfig = params.request.context.getCommittedRuntimeConfig?.() ?? cfg;
+                const sharing = prepareProjectedSessionSharing({
+                  cfg: policyConfig,
+                  client: params.request.client,
+                  profiles,
+                  isMember: (_target, id) =>
+                    facts.members.some((member) => member.identityId === id),
+                });
+                const error = authorizeGatewaySessionCreation(
+                  {
+                    cfg: policyConfig,
+                    client: params.request.client,
+                    agentId: durableRoute.agentId,
+                  },
+                  { policy: sharing.policy },
+                );
+                if (error) {
+                  throw new SessionMutationAuthorizationChangedError(error);
+                }
+              }
+              params.consume(
+                expected,
+                cfg,
+                {
+                  ...preparedFacts,
+                  members: facts.members,
+                  isMember: (id) => facts.members.some((member) => member.identityId === id),
+                  assertCurrent: assertLifetimeCurrent,
+                },
+                profiles,
+              );
             },
-            profiles,
-          );
-        });
+          };
+        }
+        reads.push((profiles) =>
+          params.consume(expected, params.request.context.getRuntimeConfig(), read(), profiles),
+        );
         continue;
       }
       // Native transaction facts and incognito retain their existing source contract.
@@ -273,54 +362,6 @@ export async function prepareSessionSharingWorkerGrant(params: {
       };
       assertSource();
       sourceChecks.push(assertSource);
-      if (
-        params.transactionFacts &&
-        targets.length === 1 &&
-        typeof source.databaseIdentity === "string"
-      ) {
-        transaction = {
-          source,
-          agentId: target.agentId,
-          sessionKey: target.storeKey,
-          assertCurrent(facts) {
-            assertLifetimeCurrent();
-            const prepared = prepareAuthorizedSessionMutationFacts({
-              expected,
-              source,
-              facts,
-              targetChanged: () => changed(expected.sessionKey),
-            });
-            const cfg = params.request.context.getRuntimeConfig();
-            if (params.transactionSource && params.authorizesAgentRun) {
-              const policyConfig = params.request.context.getCommittedRuntimeConfig?.() ?? cfg;
-              const sharing = prepareProjectedSessionSharing({
-                cfg: policyConfig,
-                client: params.request.client,
-                profiles,
-                isMember: (_target, id) => facts.members.some((member) => member.identityId === id),
-              });
-              const error = authorizeGatewaySessionCreation(
-                { cfg: policyConfig, client: params.request.client, agentId: target.agentId },
-                { policy: sharing.policy },
-              );
-              if (error) {
-                throw new SessionMutationAuthorizationChangedError(error);
-              }
-            }
-            params.consume(
-              expected,
-              cfg,
-              {
-                ...prepared,
-                members: facts.members,
-                isMember: (id) => facts.members.some((member) => member.identityId === id),
-                assertCurrent: assertSource,
-              },
-              profiles,
-            );
-          },
-        };
-      }
       reads.push((profiles) => {
         const cfg = params.request.context.getRuntimeConfig();
         assertSource();

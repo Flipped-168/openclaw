@@ -20,7 +20,7 @@ import { buildAgentSessionPatch } from "../server-methods/agent-session-patch.js
 import { prepareAgentSession } from "../server-methods/agent-session-prepare.js";
 import type { GatewayRequestHandlerOptions, RespondFn } from "../server-methods/shared-types.js";
 import { resolveAgentRunSessionCreation } from "../session-creation-provenance.js";
-import { authorizeResolvedSessionMutation } from "../session-sharing.js";
+import { authorizeResolvedSessionMutationAsync } from "../session-sharing.js";
 import { prepareSkillLibrarySessionCreation } from "../skill-library-session.js";
 import { createAgentAdmissionController } from "./agent-admission-controller.js";
 import { prepareAgentContentPhase } from "./agent-content-phase.js";
@@ -197,10 +197,9 @@ export function createAgentTurnService(
         | Pick<RestoredCronContinuation, "lifecycleRevision" | "sessionId">
         | undefined;
       let cfgForAgent: OpenClawConfig | undefined;
+      let sessionStorePath: string | undefined;
       let resolvedSessionKey = requestedSessionKey;
       let resolvedSessionAgentId: string | undefined;
-      // Admission follows prepared facts until the writer publishes the committed replacement.
-      let admissionSessionEntry: SessionEntry | undefined;
       const admissionController = createAgentAdmissionController({
         assertAdmissionCurrent,
         runId,
@@ -217,9 +216,12 @@ export function createAgentTurnService(
         getRequestedSessionKey: () => requestedSessionKey,
         getResolvedSessionKey: () => resolvedSessionKey,
         getResolvedSessionId: () => session.resolvedSessionId,
+        getSessionEntry: () => session.sessionEntry,
+        setSessionEntry: (entry) => {
+          session.sessionEntry = entry;
+        },
         getResolvedSessionAgentId: () => resolvedSessionAgentId,
         getAgentId: () => agentId,
-        getSessionEntry: () => admissionSessionEntry,
         getSessionPersisted: () => session.sessionPersistedBeforeGatewayAdmission,
         getSupersededSessionId: () => session.supersededSessionId,
         setAdmittedSessionId: (sessionId) => {
@@ -294,7 +296,7 @@ export function createAgentTurnService(
           touchInteraction,
         } = preparedSession;
         cfgForAgent = cfgLocal;
-        admissionSessionEntry = entry;
+        sessionStorePath = storePath;
         // Authorize the canonical session the run will actually target — covering
         // keyless requests whose default/effective session is resolved only here —
         // before any run side effects (admission, dispatch).
@@ -304,24 +306,12 @@ export function createAgentTurnService(
             client: principal,
             agentId: sessionAgentId,
           }) ??
-          authorizeResolvedSessionMutation(
-            {
-              cfg: cfgLocal,
-              client: principal,
-              sessionKey: canonicalSessionKey,
-              agentId: sessionAgentId,
-            },
-            entry
-              ? {
-                  agentId: sessionAgentId,
-                  canonicalKey: canonicalSessionKey,
-                  entry,
-                  storeKey: canonicalSessionKey,
-                  storeKeys,
-                  storePath,
-                }
-              : null,
-          );
+          (await authorizeResolvedSessionMutationAsync({
+            cfg: cfgLocal,
+            client: principal,
+            sessionKey: canonicalSessionKey,
+            agentId: sessionAgentId,
+          }));
         if (sessionAuthorizationError) {
           io.emitAcceptance([false, undefined, sessionAuthorizationError]);
           return;
@@ -361,8 +351,9 @@ export function createAgentTurnService(
           });
         const patchBuild = await buildSessionPatch(entry);
         assertRequestCurrent();
-        session.sessionEntry = mergeSessionEntry(entry, patchBuild.patch);
-        session.resolvedSessionId = session.sessionEntry?.sessionId ?? sessionId;
+        session.sessionEntry = entry;
+        session.resolvedSessionId =
+          mergeSessionEntry(entry, patchBuild.patch)?.sessionId ?? sessionId;
         session.admittedSessionId = session.resolvedSessionId ?? runId;
         resolvedSessionKey = canonicalSessionKey;
         resolvedSessionAgentId = sessionAgentId;
@@ -381,7 +372,7 @@ export function createAgentTurnService(
         }
         const persistedSession = await persistAgentSessionPhase({
           onSessionCommitted: (committedEntry) => {
-            admissionSessionEntry = committedEntry;
+            session.sessionEntry = committedEntry;
             dedupeLifecycle.bindSessionTarget({
               sessionKey: canonicalSessionKey,
               agentId: sessionAgentId,
@@ -473,6 +464,7 @@ export function createAgentTurnService(
       };
       const preparedDispatch = await prepareAgentRunDispatch({
         ...runParams,
+        lifecycleStorePath: sessionStorePath ?? `agent:${activeSessionAgentId}`,
         assertAdmissionCurrent: assertRequestCurrent,
         hasCurrentClientAuthority,
         promptedAt,

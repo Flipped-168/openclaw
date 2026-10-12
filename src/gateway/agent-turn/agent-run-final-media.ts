@@ -63,6 +63,12 @@ export async function finalizeAgentRunMedia(
   let releaseSource: (() => void) | undefined;
   let releasePlacement: (() => void) | undefined;
   let work: Promise<void> | undefined;
+  const release = () => {
+    active = false;
+    predicate?.release();
+    releaseSource?.();
+    releasePlacement?.();
+  };
   try {
     const state = captureOpenClawStateWorkerContext();
     const placement = await prepareSessionPlacementRead(
@@ -124,6 +130,7 @@ export async function finalizeAgentRunMedia(
           readSource: source,
           workspace: authority.workspace,
           prepareRead: predicate.prepareRead,
+          release,
           assertCurrent: () => {
             assertCurrent();
             assertExistingDatabaseIdentity(source.path, databaseIdentity, source.databaseBirthtime);
@@ -208,9 +215,6 @@ export async function finalizeAgentRunMedia(
     })();
     await work;
   } finally {
-    active = false;
-    predicate?.release();
-    releaseSource?.();
-    releasePlacement?.();
+    release();
   }
 }

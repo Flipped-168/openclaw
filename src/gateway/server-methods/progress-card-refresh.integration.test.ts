@@ -399,8 +399,8 @@ describe("registered progress refresh admission", () => {
         return { transcriptCommit: "unconfirmed", errorMessage: "Receipt still pending" };
       },
     );
-    operation.bindToolAuthoritySnapshot(prepareReplyToolAuthority(run));
-    const fingerprint = operation.bindToolAuthorityRoute(run.run);
+    await operation.bindToolAuthoritySnapshotAsync(prepareReplyToolAuthority(run));
+    const fingerprint = await operation.bindToolAuthorityRouteAsync(run.run);
     operation.setPhase("running");
     operation.attachBackend({
       kind: "embedded",

@@ -57,6 +57,10 @@ vi.mock("../config/sessions/session-entry-read-facts.js", async (importOriginal)
     })),
   }),
 }));
+// mock-isolation: Host-file tests supply the bound session identity without opening session storage.
+vi.mock("./session-utils-store-worker.js", () => ({
+  loadGatewaySessionEntryReadOnlyInWorker: async () => ({ entry: { sessionId: state.sessionId } }),
+}));
 vi.mock("../agents/agent-bundle-mcp-manager-cleanup.js", () => ({
   completeDeferredSessionMcpRuntimeRetirement: async () => false,
 }));

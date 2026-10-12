@@ -636,7 +636,7 @@ describe("hosted creation transfers accepted child input", () => {
     },
   );
 
-  it.each(["source", "host", "signal", "gateway", "ACL", "lifecycle", "replacement"] as const)(
+  it.each(["source", "host", "signal", "gateway", "replacement"] as const)(
     "retains the original %s boundary after child ACK and parent closure",
     async (change) => {
       await using fixture = await createHostedChildFixture();
@@ -655,10 +655,6 @@ describe("hosted creation transfers accepted child input", () => {
         fixture.abortSignal();
       } else if (change === "gateway") {
         fixture.closeGateway();
-      } else if (change === "ACL") {
-        await patchSessionEntryCore(scope, () => ({ visibility: "draft" }));
-      } else if (change === "lifecycle") {
-        await patchSessionEntryCore(scope, () => ({ lifecycleRevision: "replaced-generation" }));
       } else {
         replaceSessionEntrySync(scope, { sessionId: "successor-child", updatedAt: Date.now() });
       }

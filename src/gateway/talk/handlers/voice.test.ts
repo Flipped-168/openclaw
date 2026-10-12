@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createDeferred } from "../../../../test/helpers/promise.js";
+import { awaitGateBeforeSettlement, createDeferred } from "../../../../test/helpers/promise.js";
 import { setRuntimeConfigSnapshot } from "../../../config/runtime-snapshot.js";
 import {
   claimAgentRunDelegatedAuthority,
@@ -128,8 +128,12 @@ describe("Talk voice RPC ownership", () => {
     return request.respond;
   }
 
-  async function requestedChangeId(changing: ReturnType<typeof start>) {
-    await Promise.race([changeRequested.promise, changing.completed]);
+  async function requestedChangeId(completed: Promise<void>) {
+    await awaitGateBeforeSettlement(
+      changeRequested.promise,
+      completed,
+      "Voice change settled before requesting a replacement",
+    );
     const frame = broadcast.mock.calls.find(([event]) => event === "talk.voice.change");
     const payload = frame?.[1];
     if (
@@ -339,7 +343,7 @@ describe("Talk voice RPC ownership", () => {
 
   it("cancels replacement startup when the configured chat store moves after dispatch", async () => {
     const changing = start("talk.voice.set", { voice: "ember" });
-    const changeId = await requestedChangeId(changing);
+    const changeId = await requestedChangeId(changing.completed);
     context.getRuntimeConfig = () => ({
       session: { store: state.statePath("moved", "sessions.sqlite") },
     });
@@ -359,7 +363,7 @@ describe("Talk voice RPC ownership", () => {
     async (field) => {
       const changing = start("talk.voice.set", { voice: "ember" });
       const replacement = prepareTalkVoiceReplacement({
-        voiceChangeId: await requestedChangeId(changing),
+        voiceChangeId: await requestedChangeId(changing.completed),
         connId: browser.connId,
         sessionKey: sessionTarget.sessionKey,
       });
@@ -383,7 +387,7 @@ describe("Talk voice RPC ownership", () => {
   it("requires the original browser's ready acknowledgement for an agent-requested replacement", async () => {
     const runtime = await runtimeClient();
     const changing = start("talk.voice.set", { voice: "ember" }, runtime.client);
-    const changeId = await requestedChangeId(changing);
+    const changeId = await requestedChangeId(changing.completed);
     const replacementId = await replace(changeId);
     markTalkVoiceSessionReady(replacementId, browser.connId, sessionTarget.agentId);
     expect(changing.respond).not.toHaveBeenCalled();
@@ -408,7 +412,7 @@ describe("Talk voice RPC ownership", () => {
 
   it("keeps the handoff pending until the original call retires", async () => {
     const changing = start("talk.voice.set", { voice: "ember" });
-    const changeId = await requestedChangeId(changing);
+    const changeId = await requestedChangeId(changing.completed);
     const replacementId = await replace(changeId, false);
     markTalkVoiceSessionReady(replacementId, browser.connId, sessionTarget.agentId);
     const ready = start("talk.voice.complete", {
@@ -442,7 +446,7 @@ describe("Talk voice RPC ownership", () => {
     async (owner) => {
       const runtime = await runtimeClient();
       const changing = start("talk.voice.set", { voice: "ember" }, runtime.client);
-      const changeId = await requestedChangeId(changing);
+      const changeId = await requestedChangeId(changing.completed);
       if (owner === "run") {
         releaseAgentRunDelegatedAuthority(runtime.authority);
       } else {
@@ -475,7 +479,7 @@ describe("Talk voice RPC ownership", () => {
     async (ending) => {
       const runtime = await runtimeClient();
       const changing = start("talk.voice.set", { voice: "ember" }, runtime.client);
-      const changeId = await requestedChangeId(changing);
+      const changeId = await requestedChangeId(changing.completed);
       const replacementId = await replace(changeId);
       if (ending === "client-failure") {
         await invoke("talk.voice.complete", {

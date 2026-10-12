@@ -138,12 +138,16 @@ export async function importAuthorizedSessionCatalog(params: {
       creation: resolveOperatorSessionCreation(client),
       commandSource: "gateway:sessions.catalog.import",
       commitGuard,
+      bindSharingCreation: (operation) =>
+        authorization?.bindCreation?.({ sessionKey: key, agentId }, operation),
+      followSharingRegistration: authorization?.followRegistration,
       onCreatedSessionCommitted: (target) => {
         authorization?.recordCreatedSession?.({
           agentId: target.agentId,
           sessionKey: target.key,
           storePath: target.storePath,
           sessionId: target.entry.sessionId,
+          entry: target.entry,
           lifecycleRevision: target.entry.lifecycleRevision,
         });
       },

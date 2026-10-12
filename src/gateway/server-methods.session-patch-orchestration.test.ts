@@ -249,15 +249,16 @@ describe("sessions.patchMany orchestration", () => {
       );
 
       const preflightCompleted = createDeferredCore();
-      const preparePlacementCheck = sessionPatchPreflight.prepareSessionWorkerPlacementPatchCheck;
+      const preparePlacementValidation =
+        sessionPatchPreflight.prepareSessionWorkerPlacementPatchValidation;
       using _ = vi
-        .spyOn(sessionPatchPreflight, "prepareSessionWorkerPlacementPatchCheck")
+        .spyOn(sessionPatchPreflight, "prepareSessionWorkerPlacementPatchValidation")
         .mockImplementation(async (params) => {
-          const check = await preparePlacementCheck(params);
+          const validation = await preparePlacementValidation(params);
           if (params.entry?.sessionId === "session-alias-race-canonical") {
             preflightCompleted.resolve();
           }
-          return check;
+          return validation;
         });
       const respond = vi.fn();
       const request = sessionMutationHandlers["sessions.patchMany"]!({
@@ -365,15 +366,16 @@ describe("sessions.patchMany orchestration", () => {
       );
 
       const preflightCompleted = createDeferredCore();
-      const preparePlacementCheck = sessionPatchPreflight.prepareSessionWorkerPlacementPatchCheck;
+      const preparePlacementValidation =
+        sessionPatchPreflight.prepareSessionWorkerPlacementPatchValidation;
       using _ = vi
-        .spyOn(sessionPatchPreflight, "prepareSessionWorkerPlacementPatchCheck")
+        .spyOn(sessionPatchPreflight, "prepareSessionWorkerPlacementPatchValidation")
         .mockImplementation(async (params) => {
-          const check = await preparePlacementCheck(params);
+          const validation = await preparePlacementValidation(params);
           if (params.entry?.sessionId === "session-single-alias-race-canonical") {
             preflightCompleted.resolve();
           }
-          return check;
+          return validation;
         });
       const respond = vi.fn();
       const request = sessionMutationHandlers["sessions.patch"]!({
@@ -503,14 +505,15 @@ describe("sessions.patchMany orchestration", () => {
           { sessionId: `session-throw-${index}`, updatedAt: 1 },
         );
       }
-      const preparePlacementCheck = sessionPatchPreflight.prepareSessionWorkerPlacementPatchCheck;
+      const preparePlacementValidation =
+        sessionPatchPreflight.prepareSessionWorkerPlacementPatchValidation;
       using _ = vi
-        .spyOn(sessionPatchPreflight, "prepareSessionWorkerPlacementPatchCheck")
+        .spyOn(sessionPatchPreflight, "prepareSessionWorkerPlacementPatchValidation")
         .mockImplementation(async (params) => {
           if (params.entry?.sessionId === "session-throw-1") {
             throw new Error("private placement detail");
           }
-          return preparePlacementCheck(params);
+          return preparePlacementValidation(params);
         });
       const respond = vi.fn();
       await sessionMutationHandlers["sessions.patchMany"]!({

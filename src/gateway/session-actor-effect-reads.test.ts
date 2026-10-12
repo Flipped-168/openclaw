@@ -126,7 +126,7 @@ it("checks current metadata at the effect without sending memory predicates to S
     await patch({ spawnedCwd: "/synthetic/replacement" });
     expect(() => prepared.assertCurrent()).toThrow("Workspace authority changed");
     using publicationSession = await prepareGitHubPublicationSession(sessionKey);
-    expect(publicationSession.initial.entry?.spawnedCwd).toBe("/synthetic/replacement");
+    expect(publicationSession.readCurrent().entry?.spawnedCwd).toBe("/synthetic/replacement");
   });
 });
 

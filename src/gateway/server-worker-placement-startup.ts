@@ -19,6 +19,7 @@ import {
 } from "./server-worker-placement-change-events.js";
 import { createGatewayWorkerDispatchAdmission } from "./server-worker-placement-dispatch-admission.js";
 import { createGatewayWorkerPlacementLocalDispatchBarrier } from "./server-worker-placement-local-dispatch.js";
+import { prepareWorkerPlacementRepositoryManifestRefs } from "./server-worker-placement-manifest-refs.js";
 import { createGatewayWorkerPlacementMoveBarrier } from "./server-worker-placement-move-barrier.js";
 import { createGatewayWorkerPlacementMoveDestinationResolver } from "./server-worker-placement-move-destination.js";
 import { createGatewayWorkerPlacementReclaimBarriers } from "./server-worker-placement-reclaim.js";
@@ -32,7 +33,6 @@ import {
   createWorkerPlacementNodeWorkspaceBindingResolver,
   createWorkerWorkspaceRecoveryPreparer,
   loadWorkerPlacementSessionRuntimeModule,
-  prepareWorkerPlacementRepositoryManifestRefs,
   resolveWorkerPlacementSessionTarget,
   runWorkerPlacementSessionBarrier,
   WorkerDispatchTargetChangedError,
@@ -440,12 +440,7 @@ export function createGatewayWorkerPlacementRuntime(
       async () => {
         const prepared = await params.placements.prepareMaintenancePlacements();
         return {
-          capture() {
-            prepared.assertCurrent();
-            const keys = preservationKeys(prepared.placements);
-            prepared.assertCurrent();
-            return keys;
-          },
+          capture: () => preservationKeys(prepared.placements),
           dispose: prepared.release,
         };
       },

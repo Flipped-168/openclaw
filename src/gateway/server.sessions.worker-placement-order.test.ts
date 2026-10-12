@@ -86,7 +86,7 @@ test.for(["delete", "archive", "recover"] as const)(
               path: "/fixture/worktree",
             }),
           },
-          resolveGatewaySessionStoreTargetWithStoreAsync: async () => ({
+          resolveGatewaySessionStoreTargetInWorker: async () => ({
             storePath,
             canonicalKey: sessionKey,
             storeKeys: [sessionKey],
@@ -181,6 +181,9 @@ test.for(["delete", "archive", "recover"] as const)(
       // The retained worker read can finish after the next event-loop turn.
       await withinTest(moving, signal);
       acquiredBeforeCleanup = moveAcquired;
+      if (moveAcquired) {
+        await serializedReclaim;
+      }
     } finally {
       // Unwind the baseline's real queues before asserting the ordering failure.
       releaseMove.resolve();

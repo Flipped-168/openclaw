@@ -60,25 +60,29 @@ vi.mock("../session-plugin-ownership.js", () => ({
 vi.mock("../session-request-agent.js", () => ({
   resolveRequestedSessionAgentId: () => ({ ok: true, agentId: "main" }),
 }));
-// mock-isolation: Event custody uses synthetic authorization while native and worker access stay forbidden.
+// mock-isolation: Goal-event fixtures control the sharing target and its revocation during delivery.
+vi.mock("../session-sharing.js", () => ({
+  resolveSessionMutationAuthorization: () => ({
+    authorization: { assertCurrent: edge.current },
+    error: null,
+  }),
+  resolveSessionSharingTargetAsync: async () => edge.target,
+  SessionMutationAuthorizationChangedError: class extends Error {},
+}));
+// mock-isolation: Goal-event fixtures supply revocable authorization without loading sharing storage.
 vi.mock("../session-sharing-authorization-async.js", () => ({
   resolveSessionMutationAuthorizationAsync: async () => ({
-    authorization: { assertCurrent: edge.current, release: () => {} },
+    authorization: { assertCurrent: edge.current },
     error: null,
   }),
 }));
-// mock-isolation: The committed Goal fixture supplies its source facts without opening session storage.
-vi.mock("../session-sharing-preparation.js", () => ({
-  captureSessionMutationRouting: () => edge.current,
-  prepareSessionMutationFacts: async () => ({
-    readCurrent: () => ({ target: edge.target }),
-    release: () => {},
+// mock-isolation: Goal-event tests retain fixture rows and explicitly revoke their custody.
+vi.mock("../../config/sessions/session-entry-current-check.js", () => ({
+  captureSessionEntryCurrentCheckAsyncInternal: async () => ({
+    entry: edge.target.entry,
+    source: edge.current,
+    release() {},
   }),
-}));
-// mock-isolation: Event custody controls target identity independently of native session discovery.
-vi.mock("../session-sharing.js", () => ({
-  resolveSessionSharingTargetAsync: async () => edge.target,
-  SessionMutationAuthorizationChangedError: class extends Error {},
 }));
 vi.mock("./gateway-client-identity.js", () => ({
   gatewayClientSessionCreator: () => ({ type: "human", id: "operator" }),

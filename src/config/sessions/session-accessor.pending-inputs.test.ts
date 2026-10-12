@@ -120,6 +120,8 @@ describe("accepted input custody", () => {
       receipt.finish("interrupted");
     }
     await Promise.allSettled(retained.map(async (receipt) => receipt.settled?.()));
+    await closeOpenClawAgentDatabasesAsync();
+    closeOpenClawAgentDatabasesForTest();
     clearRuntimeConfigSnapshot();
   });
 
@@ -395,33 +397,37 @@ describe("accepted input custody", () => {
     await waitForSessionTranscriptIndexReconcile(databaseOptions);
     const appendCopy = createRelocation(receipt);
 
-    await runOpenClawAgentWriteAdmission(databaseOptions, () => {
-      expect(() =>
-        runOpenClawAgentWriteTransaction(() => {
-          receipt.run(() => appendCopy(receipt.inputId, "rolled-back-outer"));
-          throw new Error("outer rollback");
-        }, databaseOptions),
-      ).toThrow("outer rollback");
+    await runExclusiveSqliteSessionWrite(
+      resolveSqliteScope(scope()),
+      async () => {
+        expect(() =>
+          runOpenClawAgentWriteTransaction(() => {
+            receipt.run(() => appendCopy(receipt.inputId, "rolled-back-outer"));
+            throw new Error("outer rollback");
+          }, databaseOptions),
+        ).toThrow("outer rollback");
 
-      runOpenClawAgentWriteTransaction(() => {
-        receipt.run(() => {
-          expect(appendCopy(receipt.inputId, "first-savepoint-copy")).toMatchObject({
-            ok: true,
-            value: { appended: true, messageId: "first-savepoint-copy" },
+        runOpenClawAgentWriteTransaction(() => {
+          receipt.run(() => {
+            expect(appendCopy(receipt.inputId, "first-savepoint-copy")).toMatchObject({
+              ok: true,
+              value: { appended: true, messageId: "first-savepoint-copy" },
+            });
+            expect(() =>
+              runOpenClawAgentWriteTransaction(() => {
+                appendCopy("first-savepoint-copy", "rolled-back-savepoint");
+                throw new Error("savepoint rollback");
+              }, databaseOptions),
+            ).toThrow("savepoint rollback");
+            expect(appendCopy("first-savepoint-copy", "final-savepoint-copy")).toMatchObject({
+              ok: true,
+              value: { appended: true, messageId: "final-savepoint-copy" },
+            });
           });
-          expect(() =>
-            runOpenClawAgentWriteTransaction(() => {
-              appendCopy("first-savepoint-copy", "rolled-back-savepoint");
-              throw new Error("savepoint rollback");
-            }, databaseOptions),
-          ).toThrow("savepoint rollback");
-          expect(appendCopy("first-savepoint-copy", "final-savepoint-copy")).toMatchObject({
-            ok: true,
-            value: { appended: true, messageId: "final-savepoint-copy" },
-          });
-        });
-      }, databaseOptions);
-    });
+        }, databaseOptions);
+      },
+      "session.pending-input.stage",
+    );
 
     for (const eventId of ["rolled-back-outer", "rolled-back-savepoint"]) {
       expect(await loadTranscriptEvents(scope())).not.toContainEqual(

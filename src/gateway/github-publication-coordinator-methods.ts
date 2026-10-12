@@ -170,16 +170,18 @@ export function createGitHubPublicationCoordinatorMethods(params: {
       agentId: input.agentId,
       assertCurrent: params.assertCurrent,
     });
-    const initialLoaded = selectedSession.initial;
+    const initialLoaded = selectedSession.loaded;
     const sessionId = initialLoaded.entry?.sessionId;
     if (!sessionId) {
       throw new Error("GitHub publication session changed.");
     }
-    using initialAuthority = await readGitHubPublicationWorktreeOwner({
+    const initialAuthority = await readGitHubPublicationWorktreeOwner({
       sessionId,
       sessionKey: input.sessionKey,
       agentId: input.agentId,
     });
+    using _ = { [Symbol.dispose]: () => initialAuthority.release() };
+
     const loaded = initialAuthority.loaded;
     const lifecycleRevision = loaded.entry?.lifecycleRevision ?? null;
     const session = {

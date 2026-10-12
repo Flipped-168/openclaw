@@ -32,7 +32,7 @@ import { NodeWorkerWorkspaceTransferError } from "../../worker/node-workspace-tr
 import { createGatewayWorkerDispatchAdmission } from "../server-worker-placement-dispatch-admission.js";
 import { createGatewayWorkerPlacementMoveBarrier } from "../server-worker-placement-move-barrier.js";
 import { createGatewayWorkerPlacementReclaimBarriers } from "../server-worker-placement-reclaim.js";
-import { resolveGatewaySessionStoreTargetWithStoreAsync } from "../session-utils-store-lookup.js";
+import { resolveGatewaySessionStoreTargetInWorker } from "../session-utils-store-worker.js";
 import { resolveCanonicalSessionEntryFromStoreKeys } from "../session-utils-store.js";
 import type { WorkerConnectionIdentity } from "./connection-identity.js";
 import { hashWorkerCredential } from "./credential.js";
@@ -518,19 +518,18 @@ describe("worker turn launcher terminal results", () => {
       claimWaitEntered.resolve();
       return pending;
     });
-    const target = await resolveGatewaySessionStoreTargetWithStoreAsync({
-      cfg: { session: { store: sessionTarget.storePath } },
-      key: SESSION_KEY,
-      agentId: "main",
-      exactRead: true,
-      readOnly: true,
-      clone: false,
-    });
     const barriers = createGatewayWorkerPlacementReclaimBarriers({
       placements,
       loadSessionRuntime: async () => ({
         managedWorktrees: { findLiveByOwner: async () => undefined },
-        resolveGatewaySessionStoreTargetWithStoreAsync: async () => target,
+        resolveGatewaySessionStoreTargetInWorker: (params) =>
+          resolveGatewaySessionStoreTargetInWorker({
+            ...params,
+            cfg: {
+              ...params.cfg,
+              session: { ...params.cfg.session, store: sessionTarget.storePath },
+            },
+          }),
         resolveCanonicalSessionEntryFromStoreKeys,
       }),
       cancelSessionWork: async ({ assertCurrent }) => {
@@ -705,7 +704,7 @@ describe("worker turn launcher terminal results", () => {
       expect(placements.get(SESSION_ID)).toMatchObject({ state: "draining", turnClaim: null });
       throw new Error("fixture: Move barrier complete");
     });
-    const loadSessionRuntime = createWorkerTurnSessionRuntimeLoader();
+    const loadSessionRuntime = await createWorkerTurnSessionRuntimeLoader();
     const moveBarrier = createGatewayWorkerPlacementMoveBarrier({
       placements,
       loadSessionRuntime,

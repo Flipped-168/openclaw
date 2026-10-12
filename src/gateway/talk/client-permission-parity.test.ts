@@ -28,6 +28,7 @@ import {
   invalidateGatewayDeviceRevocation,
 } from "../device-revocation.js";
 import type { GatewayRequestContext } from "../server-methods/types.js";
+import { captureSessionMutationRouting } from "../session-sharing-routing.js";
 import { sharingPolicyClient } from "../session-sharing.test-utils.js";
 import {
   createTalkClientAgentConsultRunner,
@@ -35,6 +36,7 @@ import {
 } from "./client-agent-consult.js";
 import { resolveTalkAgentConsultAuthority } from "./client-gateway-control.js";
 import { retainTalkClientRunAuthority } from "./client-run-authority.js";
+import type { PreparedTalkSessionTarget } from "./session-target.types.js";
 
 const model = vi.hoisted(() => ({ run: vi.fn() }));
 // mock-isolation: replace inference while exercising real source guards and native effects.
@@ -46,13 +48,7 @@ describe("authenticated Talk permission parity", () => {
   let state: OpenClawTestState;
   let config: OpenClawConfig;
   const sessionKey = "agent:main:permission-parity";
-  let sessionTarget: {
-    agentId: string;
-    sessionKey: string;
-    canonicalKey: string;
-    storePath: string;
-    assertCurrent: (cfg: OpenClawConfig) => void;
-  };
+  let sessionTarget: PreparedTalkSessionTarget;
   let voiceSessionId: string;
   const client = sharingPolicyClient({ deviceId: "parity-caller", scopes: ["operator.admin"] });
 
@@ -70,7 +66,9 @@ describe("authenticated Talk permission parity", () => {
       sessionKey,
       canonicalKey: sessionKey,
       storePath,
-      assertCurrent: () => {},
+      assertCurrent: captureSessionMutationRouting(config, undefined, [
+        { agentId: "main", sessionKey },
+      ]),
     };
     await replaceSessionEntry(
       { agentId: "main", sessionKey, storePath },

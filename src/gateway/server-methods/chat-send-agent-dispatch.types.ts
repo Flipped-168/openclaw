@@ -1,3 +1,4 @@
+import type { InternalGetReplyOptions } from "../../auto-reply/reply/get-reply.types.js";
 import type { reserveReplyAdmissionTicket } from "../../auto-reply/reply/reply-admission-ticket.js";
 import type { ReplyMessageInjectionAttempt } from "../../auto-reply/reply/reply-run-registry.js";
 import type { PrepareAssistantTranscriptMessage } from "../../config/sessions/transcript-assistant-delivery.js";
@@ -28,7 +29,8 @@ export type StartChatDispatchParams = {
   skillLibrary: { owner: SkillLibraryRequestOwner; isHumanTurn: boolean; sessionKey: string };
   cronCreatorAuthority: ReturnType<ChatSendExternalAuthorityAdmission["resolve"]>;
   assertDashboardReadCurrent?: () => void;
-  prepareDashboardRead?: () => Promise<void>;
+  bindSessionCreation?: InternalGetReplyOptions["bindSessionCreation"];
+  onSessionCreated?: InternalGetReplyOptions["onSessionCreated"];
   externalAuthorityAdmission: ChatSendExternalAuthorityAdmission | undefined;
   injection: {
     beginCapturedMessageInjection: () => Promise<ReplyMessageInjectionAttempt | undefined>;
