@@ -188,6 +188,13 @@ export function installControlUiRpcDiagnostics(page: Page): void {
             "agents.files.set",
             "audit.run.inspect",
             "canvas.document.view",
+            "chat.history",
+            "chat.startup",
+            "sessions.list",
+            "sessions.subscribe",
+            "sessions.unsubscribe",
+            "sessions.messages.subscribe",
+            "sessions.messages.unsubscribe",
           ].includes(frame.method)
         ) {
           if (pending.size >= 32) {
