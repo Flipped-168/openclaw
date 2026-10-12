@@ -6,7 +6,6 @@ import {
 } from "../../../packages/gateway-protocol/src/client-info.js";
 import type { SessionsReclaimParams } from "../../../packages/gateway-protocol/src/schema/session-placement.js";
 import { managedWorktrees } from "../../agents/worktrees/service.js";
-import { getRuntimeConfig } from "../../config/io.js";
 import {
   clearRuntimeConfigSnapshot,
   setRuntimeConfigSnapshot,
@@ -37,7 +36,7 @@ beforeEach(() => {
   const readFixtureEntry: typeof sessionStore.loadGatewaySessionEntryReadOnlyAsync = async (
     key,
     opts,
-    cfg = getRuntimeConfig(),
+    cfg,
   ) => {
     const target = await dispatchTestMocks.resolveTarget({
       cfg,

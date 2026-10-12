@@ -32,6 +32,7 @@ import {
 import { onAgentEvent } from "../infra/agent-events.js";
 import { clearAgentRunContext } from "../infra/agent-run-registry.js";
 import { onSessionLifecycleEvent } from "../sessions/session-lifecycle-events.js";
+import { runOutsideAsyncWorkScope } from "../shared/async-work-scope.js";
 import { openOpenClawStateDatabase } from "../state/openclaw-state-db.js";
 import { handleChatAbortRequest } from "./server-methods/chat-abort-handler.js";
 import { handleChatSend } from "./server-methods/chat-send-handler.js";
@@ -90,7 +91,8 @@ describe("queued collector session projection", () => {
       getSessionRowProjection: () => getSessionRowProjection(context),
     });
     const unsubscribe = onSessionLifecycleEvent((event) => {
-      publications.push(publishLifecycle(event));
+      // The fixture owns publications, just as Gateway dispatch outlives the launch callback.
+      publications.push(runOutsideAsyncWorkScope(() => publishLifecycle(event)));
     });
     try {
       const results = await spawnCollectors();

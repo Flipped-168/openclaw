@@ -7,6 +7,7 @@ import {
   openOpenClawAgentDatabase,
 } from "../../state/openclaw-agent-db.js";
 import { closeOpenClawStateDatabaseForTest } from "../../state/openclaw-state-db.js";
+import { clearRuntimeConfigSnapshot, setRuntimeConfigSnapshot } from "../runtime-snapshot.js";
 import { persistSessionTranscriptTurn } from "./session-accessor.js";
 import * as reconcilePool from "./session-transcript-reconcile-pool.js";
 import {
@@ -91,6 +92,7 @@ it("gives another agent a turn at a session boundary without a priority queue", 
   let releaseAcknowledgement: (() => void) | undefined;
   let heldFirstFinish = false;
   try {
+    setRuntimeConfigSnapshot({});
     await seedPendingBacklogs(env, backlogs);
     const runOperation = reconcilePool.runSessionTranscriptReconcileOperation;
     operationSpy = vi
@@ -190,5 +192,6 @@ it("gives another agent a turn at a session boundary without a priority queue", 
     await reconcilePool.closeSessionTranscriptReconcileWorkerPool();
     await closeOpenClawAgentDatabasesAsync(stateDir);
     closeOpenClawStateDatabaseForTest();
+    clearRuntimeConfigSnapshot();
   }
 });

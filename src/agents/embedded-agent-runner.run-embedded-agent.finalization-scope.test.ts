@@ -4,6 +4,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { makeTextToolResult } from "../../test/helpers/text-tool-result.js";
+import { setRuntimeConfigSnapshot } from "../config/runtime-snapshot.js";
 import { useSessionStoreTempDirs } from "../test-utils/session-state-cleanup.js";
 import type {
   EmbeddedRunAttemptParams,
@@ -81,6 +82,7 @@ describe("nested settled-turn finalization ownership", () => {
       const databasePath = path.join(agentDir, "openclaw-agent.sqlite");
       await Promise.all([fs.mkdir(agentDir, { recursive: true }), fs.mkdir(workspaceDir)]);
       const config = createEmbeddedAgentRunnerOpenAiConfig(["mock-1"]);
+      setRuntimeConfigSnapshot(config);
       const target = {
         agentId: "test",
         sessionId: "child-session",

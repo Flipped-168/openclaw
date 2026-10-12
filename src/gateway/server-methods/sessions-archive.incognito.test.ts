@@ -8,6 +8,7 @@ import { useAutoCleanupTempDirTracker } from "../../../test/helpers/temp-dir.js"
 import { createDispatchReplyOperationCoordinator } from "../../auto-reply/reply/dispatch-from-config.lifecycle.js";
 import { createReplyDispatcher } from "../../auto-reply/reply/reply-dispatcher.js";
 import { buildTestCtx } from "../../auto-reply/reply/test-ctx.js";
+import { clearRuntimeConfigSnapshot, setRuntimeConfigSnapshot } from "../../config/config.js";
 import { patchSessionEntryCore } from "../../config/sessions/session-accessor.js";
 import { withIncognitoSessionActor } from "../../config/sessions/session-incognito-binding.js";
 import type { SessionEntry } from "../../config/sessions/types.js";
@@ -30,13 +31,18 @@ let actor: IncognitoAgentDatabaseExecution;
 let env: NodeJS.ProcessEnv;
 
 beforeAll(async () => {
+  setRuntimeConfigSnapshot(cfg);
   env = { OPENCLAW_STATE_DIR: dirs.make("archive-incognito-") };
   actor = await openIncognitoTestActor(env, authority);
   // The Gateway admits shared lifecycle state before serving an actor's human turn.
   await readAgentDeletionJournalStatusInWorker("main");
 });
 afterAll(async () => {
-  await actor?.close();
+  try {
+    await actor?.close();
+  } finally {
+    clearRuntimeConfigSnapshot();
+  }
 });
 
 function archive(key: string, entry: SessionEntry, placement: PlacementContext = {}) {

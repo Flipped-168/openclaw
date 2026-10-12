@@ -1,5 +1,6 @@
 import { expect, it } from "vitest";
 import { observeHostDataSql } from "../../test/helpers/sqlite-statement-execution-counter.js";
+import { resolveSessionStorePathCore } from "../config/sessions/paths.js";
 import { replaceSessionEntry } from "../config/sessions/session-accessor.js";
 import { addSessionMember, removeSessionMember } from "../config/sessions/session-sharing-store.js";
 import type { SessionEntry } from "../config/sessions/types.js";
@@ -26,7 +27,11 @@ it.each(["missing", "idless"] as const)(
     await withOpenClawTestState({ scenario: "minimal" }, async () => {
       const cfg = { ...rolePolicyConfig(), agents: { entries: { main: {} } } };
       const sessionKey = `agent:main:acknowledged-${kind}`;
-      const scope = { agentId: "main", sessionKey };
+      const scope = {
+        agentId: "main",
+        sessionKey,
+        storePath: resolveSessionStorePathCore(undefined, { agentId: "main" }),
+      };
       const client = roleClient("view", `creation-receipts-${kind}`);
       const identityId = client.authenticatedUserProfile!.profileId;
       const actor = { type: "human" as const, source: "profile" as const, id: identityId };

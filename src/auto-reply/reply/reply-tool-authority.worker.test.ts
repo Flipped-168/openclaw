@@ -5,6 +5,7 @@ import {
 } from "../../agents/admitted-run-context.js";
 import { acceptCompactionSuccessor } from "../../agents/embedded-agent-runner/compaction-successor.js";
 import { withPreparedEmbeddedRunToolAuthority } from "../../agents/harness/tool-authority.runtime.js";
+import { setRuntimeConfigSnapshot } from "../../config/runtime-snapshot.js";
 import { upsertSessionEntryCore } from "../../config/sessions/session-accessor.js";
 import { loadSessionEntryForAdmission } from "../../config/sessions/session-accessor.sqlite-entry-admission.js";
 import {
@@ -38,6 +39,7 @@ const policyKey = "agent:main:authority-policy";
 
 it("prepares embedded tool authority without caller-thread SQL and refuses a closing owner", async () => {
   await withOpenClawTestState({ scenario: "minimal" }, async (state) => {
+    setRuntimeConfigSnapshot({});
     await upsertSessionEntryCore(
       { agentId: "main", sessionKey: policyKey },
       { sessionId: "policy", updatedAt: 1, sandboxMode: "off" },
@@ -97,6 +99,14 @@ it.each(["main", "policy", "borrowed"] as const)(
   "retains the %s-agent source while rereading changed sandbox policy before steering",
   async (policyAgent) => {
     await withOpenClawTestState({ scenario: "minimal" }, async (state) => {
+      const config = {
+        agents: {
+          defaults: { sandbox: { mode: "all" as const } },
+          entries: { main: {}, policy: {} },
+        },
+        tools: { sandbox: { tools: { deny: ["exec"] } } },
+      };
+      setRuntimeConfigSnapshot(config);
       const policyAgentId = policyAgent === "borrowed" ? "main" : policyAgent;
       const classificationKey =
         policyAgent === "borrowed" ? executionKey : `agent:${policyAgent}:authority-policy`;
@@ -111,10 +121,7 @@ it.each(["main", "policy", "borrowed"] as const)(
         sessionKey: executionKey,
         runtimePolicySessionKey: classificationKey,
         agentId: "main",
-        config: {
-          agents: { defaults: { sandbox: { mode: "all" } }, entries: { main: {}, policy: {} } },
-          tools: { sandbox: { tools: { deny: ["exec"] } } },
-        },
+        config,
       });
       const admission =
         policyAgent === "borrowed"

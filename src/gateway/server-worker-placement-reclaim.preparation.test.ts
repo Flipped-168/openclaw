@@ -2,6 +2,10 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
+import {
+  clearRuntimeConfigSnapshot,
+  setRuntimeConfigSnapshot,
+} from "../config/runtime-snapshot.js";
 import { replaceSessionEntry } from "../config/sessions/session-accessor.js";
 import { replaceSessionEntrySync } from "../config/sessions/session-accessor.sqlite-entry.js";
 import { clearAgentRunContext } from "../infra/agent-run-registry.js";
@@ -35,14 +39,11 @@ vi.mock("./session-utils.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./session-utils.js")>()),
   loadSessionEntryAsync: async () => lookup.value,
 }));
-vi.mock("../config/config.js", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../config/config.js")>()),
-  getRuntimeConfig: () => ({}),
-}));
 const roots: string[] = [];
 afterEach(async () => {
   closeOpenClawAgentDatabasesForTest();
   await closeStateDatabaseForTest();
+  clearRuntimeConfigSnapshot();
   lookup.value = undefined;
   await Promise.all(roots.splice(0).map((root) => fs.rm(root, { recursive: true, force: true })));
 });
@@ -56,6 +57,8 @@ async function cancellationLoadFixture(
   const database = openOpenClawStateDatabase({ env: { OPENCLAW_STATE_DIR: root } });
   const placements = createWorkerSessionPlacementStore({ database });
   const storePath = path.join(root, "sessions.sqlite");
+  const cfg = { session: { store: storePath } };
+  setRuntimeConfigSnapshot(cfg);
   const entry = {
     sessionId: REQUEST.sessionId,
     lifecycleRevision: "original",
@@ -67,7 +70,7 @@ async function cancellationLoadFixture(
     entry,
   );
   const target = await resolveGatewaySessionStoreTargetWithStoreAsync({
-    cfg: { session: { store: storePath } },
+    cfg,
     key: REQUEST.sessionKey,
     agentId: REQUEST.agentId,
     exactRead: true,
@@ -93,7 +96,7 @@ async function cancellationLoadFixture(
     resolveGatewaySessionStoreTargetWithStoreAsync: async () => target,
     resolveCanonicalSessionEntryFromStoreKeys,
   };
-  lookup.value = { ...target, cfg: {}, entry, legacyKey: undefined };
+  lookup.value = { ...target, cfg, entry, legacyKey: undefined };
   const context = createWorkerStopChatContext();
   let delayCancellation = false;
   const loading = createDeferredCore();

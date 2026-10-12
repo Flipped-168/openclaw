@@ -6,6 +6,10 @@ import { setImmediate } from "node:timers/promises";
 import { asRecord } from "@openclaw/normalization-core/record-coerce";
 import { afterEach, expect, it, vi } from "vitest";
 import { awaitGateBeforeSettlement, createDeferred } from "../../test/helpers/promise.js";
+import {
+  clearRuntimeConfigSnapshot,
+  setRuntimeConfigSnapshot,
+} from "../config/runtime-snapshot.js";
 import { loadTranscriptEvents, replaceSessionEntry } from "../config/sessions/session-accessor.js";
 import { clearAgentRunContext } from "../infra/agent-run-registry.js";
 import { runCommandWithTimeout } from "../process/exec.js";
@@ -38,14 +42,11 @@ vi.mock("./session-utils.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./session-utils.js")>()),
   loadSessionEntryAsync: async () => lookup.value,
 }));
-vi.mock("../config/config.js", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../config/config.js")>()),
-  getRuntimeConfig: () => ({}),
-}));
 const roots: string[] = [];
 afterEach(async () => {
   closeOpenClawAgentDatabasesForTest();
   await closeStateDatabaseForTest();
+  clearRuntimeConfigSnapshot();
   lookup.value = undefined;
   await Promise.all(roots.splice(0).map((root) => fs.rm(root, { recursive: true, force: true })));
 });
@@ -70,6 +71,8 @@ async function scenario(
   const readProjection = placements.readProjection.bind(placements);
   const projectionReads = pendingMove ? vi.spyOn(placements, "readProjection") : undefined;
   const storePath = path.join(root, "sessions.sqlite");
+  const cfg = { session: { store: storePath } };
+  setRuntimeConfigSnapshot(cfg);
   const worktreePath = path.join(root, "workspace");
   await fs.mkdir(worktreePath);
   // Recovery reads real result refs, so this managed-worktree fixture owns its Git root.
@@ -87,14 +90,14 @@ async function scenario(
     entry,
   );
   const target = await resolveGatewaySessionStoreTargetWithStoreAsync({
-    cfg: { session: { store: storePath } },
+    cfg,
     key: REQUEST.sessionKey,
     agentId: REQUEST.agentId,
     exactRead: true,
     readOnly: true,
     clone: false,
   });
-  lookup.value = { ...target, cfg: {}, entry, legacyKey: undefined };
+  lookup.value = { ...target, cfg, entry, legacyKey: undefined };
   const barrierEntered = createDeferred();
   const releaseBarrier = createDeferred();
   const context = createWorkerStopChatContext();

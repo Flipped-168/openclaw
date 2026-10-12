@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { createDeferred } from "../../../test/helpers/promise.js";
+import { setRuntimeConfigSnapshot } from "../../config/runtime-snapshot.js";
 import { replaceSessionEntry } from "../../config/sessions/session-accessor.js";
 import { retainSessionEntryWorkerPublication } from "../../config/sessions/session-accessor.sqlite-entry-worker-publication.js";
 import type { SessionEntry } from "../../config/sessions/types.js";
@@ -32,6 +33,7 @@ let state: OpenClawTestState;
 
 beforeEach(async () => {
   state = await createOpenClawTestState({ layout: "state-only" });
+  setRuntimeConfigSnapshot({});
 });
 
 afterEach(async () => {
@@ -66,6 +68,7 @@ it.each([
       tools: { allow: ["read"], fs: { workspaceOnly: true } },
       agents: { entries: { main: { workspace } } },
     };
+    setRuntimeConfigSnapshot(cfg);
     const target = {
       sessionKey: SESSION_KEY,
       sessionId: "cross-phase-media-authority",

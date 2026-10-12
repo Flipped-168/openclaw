@@ -9,6 +9,10 @@ import {
 } from "../../../test/helpers/sqlite-statement-execution-counter.js";
 import { useAutoCleanupTempDirTracker } from "../../../test/helpers/temp-dir.js";
 import {
+  clearRuntimeConfigSnapshot,
+  setRuntimeConfigSnapshot,
+} from "../../config/runtime-snapshot.js";
+import {
   applySessionEntryLifecycleMutation,
   upsertSessionEntryCore,
 } from "../../config/sessions/session-accessor.js";
@@ -56,6 +60,7 @@ const tempDirs = useAutoCleanupTempDirTracker((cleanup) =>
     vi.restoreAllMocks();
     await closeOpenClawAgentDatabasesAsync();
     await closeOpenClawStateDatabaseAsync();
+    clearRuntimeConfigSnapshot();
     vi.unstubAllEnvs();
     cleanup();
   }),
@@ -64,6 +69,7 @@ const tempDirs = useAutoCleanupTempDirTracker((cleanup) =>
 beforeEach(() => {
   vi.clearAllMocks();
   vi.stubEnv("OPENCLAW_TEST_FAST", "0");
+  setRuntimeConfigSnapshot({});
 });
 
 function prepare(

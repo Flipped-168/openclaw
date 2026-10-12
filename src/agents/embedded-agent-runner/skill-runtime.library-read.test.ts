@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { useAutoCleanupTempDirTracker } from "../../../test/helpers/temp-dir.js";
+import { setRuntimeConfigSnapshot } from "../../config/runtime-snapshot.js";
 import {
   upsertSessionEntryCore,
   loadSessionEntry,
@@ -134,6 +135,7 @@ describe("manual library resources through embedded and host-bound reads", () =>
           exec: { applyPatch: { enabled: true, workspaceOnly: true } },
         },
       };
+      setRuntimeConfigSnapshot(config);
       const actor = (email: string): SkillLibraryAuthority => ({
         profileId: ensureProfileForEmail(email).id,
         scopes: ["operator.read", "operator.write"],
