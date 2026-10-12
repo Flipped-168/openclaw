@@ -55,8 +55,8 @@ export class GatewaySpeechPlayback {
           return;
         }
         this.finish = undefined;
-        audio.onended = null;
-        audio.onerror = null;
+        audio.removeEventListener("ended", cancel);
+        audio.removeEventListener("error", failed);
         audio.pause();
         audio.removeAttribute("src");
         audio.load();
@@ -68,9 +68,10 @@ export class GatewaySpeechPlayback {
         }
       };
       const cancel = () => finish();
+      const failed = () => finish(new Error("The browser could not play the generated speech."));
       this.finish = cancel;
-      audio.onended = cancel;
-      audio.onerror = () => finish(new Error("The browser could not play the generated speech."));
+      audio.addEventListener("ended", cancel, { once: true });
+      audio.addEventListener("error", failed, { once: true });
       void audio
         .play()
         .catch((error: unknown) =>

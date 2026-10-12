@@ -53,12 +53,13 @@ describe("chat realtime actions", () => {
   // Capture the spy instead of re-reading it off the prototype so assertions do
   // not reference an unbound method (typescript/unbound-method).
   let startSpy: MockInstance<RealtimeTalkSession["start"]>;
+  let prepareSpy: MockInstance<GatewaySpeechPlayback["prepare"]>;
 
   beforeEach(() => {
     vi.stubGlobal("localStorage", createStorageMock());
-    vi.spyOn(GatewaySpeechPlayback.prototype, "prepare").mockImplementation(() =>
-      document.createElement("audio"),
-    );
+    prepareSpy = vi
+      .spyOn(GatewaySpeechPlayback.prototype, "prepare")
+      .mockImplementation(() => document.createElement("audio"));
     startSpy = vi.spyOn(RealtimeTalkSession.prototype, "start").mockResolvedValue(undefined);
     vi.spyOn(RealtimeTalkSession.prototype, "stop").mockResolvedValue(undefined);
     vi.spyOn(RealtimeTalkSession.prototype, "switchCamera").mockResolvedValue(undefined);
@@ -74,8 +75,10 @@ describe("chat realtime actions", () => {
   it("prepares split speech before the configuration await and retains the same player", async () => {
     const state = createState();
     const configuration = createDeferred<unknown>();
-    const prepare = vi.mocked(GatewaySpeechPlayback.prototype.prepare);
-    const request = vi.mocked(state.client!.request).mockReturnValue(configuration.promise);
+    const request = vi
+      .fn<NonNullable<ChatRealtimeState["client"]>["request"]>()
+      .mockReturnValue(configuration.promise);
+    state.client!.request = request;
     attachChatRealtimeActions(
       state,
       () => true,
@@ -85,10 +88,12 @@ describe("chat realtime actions", () => {
       }),
     );
     const starting = state.toggleRealtimeTalk();
-    expect(prepare).toHaveBeenCalledOnce();
+    expect(prepareSpy).toHaveBeenCalledOnce();
     expect(request).toHaveBeenCalledWith("talk.config", {});
-    expect(prepare.mock.invocationCallOrder[0]).toBeLessThan(request.mock.invocationCallOrder[0]!);
-    const playback = prepare.mock.contexts[0];
+    expect(prepareSpy.mock.invocationCallOrder[0]).toBeLessThan(
+      request.mock.invocationCallOrder[0]!,
+    );
+    const playback = prepareSpy.mock.contexts[0];
     configuration.resolve({ config: { talk: { realtime: { mode: "stt-tts" } } } });
     await starting;
     expect(inspectSession(state).localOptions.split?.playback).toBe(playback);
@@ -100,14 +105,23 @@ describe("chat realtime actions", () => {
       const state = createState();
       const configuration = createDeferred<unknown>();
       const stop = vi.spyOn(GatewaySpeechPlayback.prototype, "stop");
-      vi.mocked(state.client!.request).mockReturnValue(configuration.promise);
+      state.client!.request = vi
+        .fn<NonNullable<ChatRealtimeState["client"]>["request"]>()
+        .mockReturnValue(configuration.promise);
       const starting = state.toggleRealtimeTalk();
-      if (outcome === "cancelled") await state.toggleRealtimeTalk();
-      if (outcome === "error") configuration.reject(new Error("configuration failed"));
-      else configuration.resolve({ config: {} });
+      if (outcome === "cancelled") {
+        await state.toggleRealtimeTalk();
+      }
+      if (outcome === "error") {
+        configuration.reject(new Error("configuration failed"));
+      } else {
+        configuration.resolve({ config: {} });
+      }
       await starting;
       expect(stop).toHaveBeenCalledOnce();
-      if (outcome !== "realtime") expect(state.realtimeTalkSession).toBeNull();
+      if (outcome !== "realtime") {
+        expect(state.realtimeTalkSession).toBeNull();
+      }
     },
   );
 

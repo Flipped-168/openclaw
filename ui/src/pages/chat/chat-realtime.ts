@@ -301,7 +301,9 @@ export function attachChatRealtimeActions(
         }
         return undefined;
       } finally {
-        if (!split) playback.stop();
+        if (!split) {
+          playback.stop();
+        }
       }
     }
     const forCurrentSession =

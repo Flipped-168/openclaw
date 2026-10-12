@@ -47,16 +47,17 @@ class FakeAudioContext {
   }
 }
 
-class FakeAudio {
-  onended: (() => void) | null = null;
-  onerror: (() => void) | null = null;
+class FakeAudio extends EventTarget {
   play = vi.fn(async () => {
-    if (this.src.startsWith("blob:")) speechStarted.resolve();
+    if (this.src.startsWith("blob:")) {
+      speechStarted.resolve();
+    }
   });
   pause = vi.fn();
   removeAttribute = vi.fn();
   load = vi.fn();
   constructor(readonly src: string) {
+    super();
     audios.push(this);
   }
 }
@@ -87,7 +88,9 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  for (const state of states.splice(0)) stopChatRealtimeTalk(state);
+  for (const state of states.splice(0)) {
+    stopChatRealtimeTalk(state);
+  }
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
   vi.useRealTimers();
@@ -101,16 +104,21 @@ function harness(provider?: string) {
   let runId = "";
   let permitted = true;
   const emit = (event: string, payload: unknown) => {
-    for (const listener of listeners) listener({ event, payload } as GatewayEventFrame);
+    for (const listener of listeners) {
+      listener({ event, payload } as GatewayEventFrame);
+    }
   };
   const request = vi.fn(async (method: string, params?: Record<string, unknown>) => {
-    if (method === "talk.config")
+    if (method === "talk.config") {
       return {
         config: { talk: { provider, realtime: { mode: "stt-tts" }, silenceTimeoutMs: 100 } },
       };
+    }
     if (method === "talk.session.create") {
       captureCount += 1;
-      if (captureCount > 1) nextCapture.resolve();
+      if (captureCount > 1) {
+        nextCapture.resolve();
+      }
       return {
         sessionId: `capture-${captureCount}`,
         audio: { inputEncoding: "g711_ulaw", inputSampleRateHz: 8000 },
@@ -134,8 +142,12 @@ function harness(provider?: string) {
       speech.resolve();
       return { audioBase64: "UklGRg==", mimeType: "audio/wav" };
     }
-    if (method === "talk.session.appendAudio" || method === "chat.abort") return { ok: true };
-    if (method === "agent.wait") return { status: "ok" };
+    if (method === "talk.session.appendAudio" || method === "chat.abort") {
+      return { ok: true };
+    }
+    if (method === "agent.wait") {
+      return { status: "ok" };
+    }
     throw new Error(`Unexpected request: ${method}`);
   });
   const state = {
@@ -155,7 +167,8 @@ function harness(provider?: string) {
   attachChatRealtimeActions(
     state,
     () => permitted,
-    (message, runId) => requestChatSend(state as ChatState, { message, runId }),
+    (message, requestedRunId) =>
+      requestChatSend(state as ChatState, { message, runId: requestedRunId }),
   );
   states.push(state);
   const utterance = () => {
@@ -191,7 +204,9 @@ it.each(["openai", undefined])(
     const impl = h.request.getMockImplementation()!;
     h.request.mockImplementation(async (method, params) => {
       const result = await impl(method, params);
-      if (method === "chat.send") sent.resolve();
+      if (method === "chat.send") {
+        sent.resolve();
+      }
       return result;
     });
     h.utterance();
@@ -225,7 +240,7 @@ it.each(["openai", undefined])(
     });
     expect(audios).toHaveLength(1);
     expect(tracks).toHaveLength(1);
-    audios[0].onended?.();
+    audios[0].dispatchEvent(new Event("ended"));
     await h.nextCapture.promise;
     expect(h.state.realtimeTalkConversationState.entries).toEqual([]);
     await h.state.toggleRealtimeTalk();
@@ -239,7 +254,9 @@ it("stopping during the model response aborts the owned run and ignores late out
   const impl = h.request.getMockImplementation()!;
   h.request.mockImplementation(async (method, params) => {
     const result = await impl(method, params);
-    if (method === "chat.send") sent.resolve();
+    if (method === "chat.send") {
+      sent.resolve();
+    }
     return result;
   });
   h.utterance();
@@ -264,7 +281,9 @@ it("keeps listening for the model answer after an empty final", async () => {
   const impl = h.request.getMockImplementation()!;
   h.request.mockImplementation(async (method, params) => {
     const result = await impl(method, params);
-    if (method === "chat.send") sent.resolve();
+    if (method === "chat.send") {
+      sent.resolve();
+    }
     return result;
   });
   await h.state.toggleRealtimeTalk();
@@ -295,7 +314,9 @@ it.each(["text before", "empty before", "text after"])(
     const impl = h.request.getMockImplementation()!;
     h.request.mockImplementation(async (method, params) => {
       const result = await impl(method, params);
-      if (method !== "chat.send") return result;
+      if (method !== "chat.send") {
+        return result;
+      }
       if (sequence !== "text after") {
         h.emit("chat", {
           runId: h.getRunId(),
@@ -342,7 +363,9 @@ it("waits for buffered local STT to finish instead of dropping a slow final tran
       await finalized.promise;
     }
     const result = await impl(method, params);
-    if (method === "chat.send") sent.resolve();
+    if (method === "chat.send") {
+      sent.resolve();
+    }
     return result;
   });
   await h.state.toggleRealtimeTalk();
@@ -388,7 +411,9 @@ it("surfaces a rejected chat admission instead of waiting forever for a model re
   const h = harness();
   const rejected = createDeferred();
   h.state.requestUpdate = () => {
-    if (h.state.realtimeTalkStatus === "error") rejected.resolve();
+    if (h.state.realtimeTalkStatus === "error") {
+      rejected.resolve();
+    }
   };
   const impl = h.request.getMockImplementation()!;
   h.request.mockImplementation(async (method, params) => {
