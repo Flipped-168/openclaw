@@ -69,7 +69,7 @@ function FrameBody(props: {
 }): JSX.Element {
   const owner = getOwner();
   const anchor = document.createComment("frame-body");
-  const [parent, setParent] = createSignal<HTMLElement | null>(null, { ownedWrite: true });
+  const [readParent, setParent] = createSignal<HTMLElement | null>(null, { ownedWrite: true });
   const ranges = new Map<string, PartRange>();
   const retire = (range: PartRange) => {
     // Lit descendants must park their widgets while the range is still connected.
@@ -82,18 +82,24 @@ function FrameBody(props: {
     }
   };
   onCleanup(() => {
-    for (const range of ranges.values()) retire(range);
+    for (const range of ranges.values()) {
+      retire(range);
+    }
     ranges.clear();
   });
   onSettled(() => {
     const committedParent = anchor.parentElement;
-    if (!committedParent) throw new Error("Run frame body anchor was not committed");
+    if (!committedParent) {
+      throw new Error("Run frame body anchor was not committed");
+    }
     setParent(committedParent);
   });
   createRenderEffect(
-    () => ({ parent: parent(), parts: props.parts }),
+    () => ({ parent: readParent(), parts: props.parts }),
     ({ parent, parts }) => {
-      if (!parent) return;
+      if (!parent) {
+        return;
+      }
       const keys = new Set(parts.map((part) => `${part.kind}:${part.key}`));
       // Park outgoing canvas views before a new range looks them up.
       for (const [key, range] of ranges) {
