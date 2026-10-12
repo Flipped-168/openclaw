@@ -1,5 +1,5 @@
 import type { JSX } from "@solidjs/web";
-import { createMemo, For, Show } from "solid-js";
+import { createMemo, For, Show, untrack } from "solid-js";
 import type { GatewaySessionRow } from "../api/types.ts";
 import type { CatalogOpenTarget } from "../app/settings.ts";
 import { readPresenceEntries, resolveCurrentSelfUser } from "../app/user-profile.ts";
@@ -111,7 +111,9 @@ function renderSessionCatalog(params: {
       requiredScope: "operator.write",
     }),
   );
-  return renderer()({
+  // One lazy module owns this catalog renderer for the mounted section's lifetime.
+  const render = untrack(renderer);
+  return render({
     get catalogs() {
       return [catalog()];
     },
@@ -253,7 +255,8 @@ function renderSessionListBody(params: {
   return (
     <For each={params.sections} keyed={(section) => section.id}>
       {(section) => {
-        if (section().id.startsWith("catalog:")) {
+        // The key fixes the section kind; its row facts remain reactive below.
+        if (untrack(section).id.startsWith("catalog:")) {
           return (
             <Show when={params.catalogRenderer && catalogsBySectionId().get(section().id)}>
               {(catalog) =>
@@ -318,7 +321,7 @@ export function renderSessionList(params: {
 }) {
   const host = createMemo(() => params.host);
   return renderSessionListFrame(
-    host(),
+    untrack(host),
     <div class="sidebar-recent-sessions">
       {renderSessionListBody(params)}
       {renderRosterLoadMore(

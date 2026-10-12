@@ -564,7 +564,7 @@ export async function createSidebarElement(): Promise<SidebarLifecycleState> {
       }
       const source = Reflect.has(target, key) ? target : owner;
       const value = source && Reflect.get(source, key);
-      return typeof value === "function" ? value.bind(source) : value;
+      return typeof value === "function" && !vi.isMockFunction(value) ? value.bind(source) : value;
     },
     set(target, key, value) {
       if (Reflect.has(target, key)) {
@@ -590,11 +590,17 @@ export async function mountSidebarContext(
   const provider = createApplicationContextProvider(context);
   const sidebar = await createSidebarElement();
   const element = sidebar.hostElement;
-  const syncMode = () => {
-    sidebar.sidebarAgentsMode = context.theme.settings.sidebarAgentsMode ?? "chip";
-  };
-  syncMode();
-  onTestFinished(context.theme.subscribe(syncMode));
+  let mode = context.theme.settings.sidebarAgentsMode ?? "chip";
+  sidebar.sidebarAgentsMode = mode;
+  onTestFinished(
+    context.theme.subscribe(() => {
+      const next = context.theme.settings.sidebarAgentsMode ?? "chip";
+      if (next !== mode) {
+        mode = next;
+        sidebar.sidebarAgentsMode = next;
+      }
+    }),
+  );
   seedSidebarEveryonePreference(context.gateway);
   if (activeRouteId) {
     sidebar.activeRouteId = activeRouteId;

@@ -59,7 +59,12 @@ export function SidebarDropdown(params: {
         event.preventDefault();
         params.onSelect(event.detail.item);
       }}
-      onKeyDown={(event: KeyboardEvent) => trackDropdownKeyboardDismissal(event, params.onTabAway)}
+      ref={(dropdown) => {
+        // Track dismissal before Web Awesome's document listener restores its hidden trigger.
+        dropdown.addEventListener("keydown", (event) =>
+          trackDropdownKeyboardDismissal(event, params.onTabAway),
+        );
+      }}
       onWa-after-hide={(event: Event) => params.onClose(consumeDropdownKeyboardDismissal(event))}
     >
       {renderMenuTrigger(params.position, params.label)} {params.content}

@@ -13,6 +13,7 @@ import type { CatalogProjectGrouping } from "../lib/sessions/catalog-project-gro
 import type { SidebarSessionsGrouping } from "../lib/sessions/grouping.ts";
 import type { SolidBridgeElement } from "../lit/solid-bridge.ts";
 import type { NewSessionTarget } from "../pages/new-session/location.ts";
+import type { ContributionsElement } from "../plugins/control-ui-contributions.solid.tsx";
 import type {
   CatalogBackingSessionDisplay,
   CatalogSessionMenuRequest,
@@ -249,12 +250,10 @@ declare module "@solidjs/web" {
         Partial<Pick<HTMLElementTagNameMap["openclaw-mcp-app-catalog"], "surface">>;
       "openclaw-menu-surface": HTMLAttributes<HTMLElementTagNameMap["openclaw-menu-surface"]> &
         Properties<HTMLElementTagNameMap["openclaw-menu-surface"]>;
-      "openclaw-plugin-contributions": HTMLAttributes<
-        HTMLElementTagNameMap["openclaw-plugin-contributions"]
-      > &
-        Properties<HTMLElementTagNameMap["openclaw-plugin-contributions"]> & {
-          "prop:agentId"?: HTMLElementTagNameMap["openclaw-plugin-contributions"]["agentId"];
-          "prop:navigationMenus"?: HTMLElementTagNameMap["openclaw-plugin-contributions"]["navigationMenus"];
+      "openclaw-plugin-contributions": HTMLAttributes<ContributionsElement> &
+        Properties<ContributionsElement> & {
+          "prop:agentId"?: ContributionsElement["agentId"];
+          "prop:navigationMenus"?: ContributionsElement["navigationMenus"];
         };
       "openclaw-plugin-view": HTMLAttributes<HTMLElementTagNameMap["openclaw-plugin-view"]> &
         Properties<HTMLElementTagNameMap["openclaw-plugin-view"]> & {

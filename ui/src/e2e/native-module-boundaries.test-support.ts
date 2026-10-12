@@ -92,10 +92,12 @@ export function defineNativeModuleBoundaryTests(
         const moduleUrl = await held.request;
         expect(await dialog.count()).toBe(0);
         if (action === "reconnection") {
-          await attention!.evaluate((element) => {
+          await attention!.evaluate(async (element) => {
             const parent = element.parentNode!;
             const next = element.nextSibling;
             element.remove();
+            // Cross the bridge's move-preserving turn before reconnecting.
+            await Promise.resolve();
             parent.insertBefore(element, next);
           });
         } else if (action === "outside pointer") {

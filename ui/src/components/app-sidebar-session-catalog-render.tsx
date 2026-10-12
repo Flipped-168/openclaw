@@ -1,4 +1,4 @@
-import { createMemo, For, Show } from "solid-js";
+import { createMemo, For, Show, untrack } from "solid-js";
 import type {
   SessionCatalog,
   SessionCatalogHost,
@@ -66,6 +66,7 @@ function renderCatalogHostGroup(
   readLiveRowsByKey: () => ReadonlyMap<string, GatewaySessionRow>,
   params: SessionCatalogGroupsParams,
 ) {
+  const identity = untrack(() => ({ catalogId: readCatalog().id, hostId: readHost().hostId }));
   const errorHelp = createMemo(() => {
     const readHostValue = readHost();
     return readHostValue.error
@@ -85,6 +86,7 @@ function renderCatalogHostGroup(
     sectionId: string;
     projectChild?: boolean;
   }) {
+    const projectChild = untrack(() => rowProps.projectChild === true);
     const expanded = () =>
       (params.visibleSessionLimits.get(rowProps.sectionId) ?? CATALOG_SESSION_GROUP_LIMIT) >
       CATALOG_SESSION_GROUP_LIMIT;
@@ -95,8 +97,8 @@ function renderCatalogHostGroup(
         }
         keyed={(session) =>
           buildCatalogSessionKey({
-            catalogId: readCatalog().id,
-            hostId: readHost().hostId,
+            catalogId: identity.catalogId,
+            hostId: identity.hostId,
             threadId: session.threadId,
             ...(session.sourceHomeId ? { sourceHomeId: session.sourceHomeId } : {}),
           })
@@ -109,7 +111,7 @@ function renderCatalogHostGroup(
             session,
             readLiveRowsByKey,
             params,
-            rowProps.projectChild === true,
+            projectChild,
           )
         }
       </For>
@@ -180,7 +182,10 @@ function renderCatalogHostGroup(
         {projectGroups() ? (
           <For each={projectGroups()!.groups} keyed={(group) => group.key}>
             {(group) => {
-              const sectionId = `catalog-${group().kind}:${readCatalog().id}:${readHost().hostId}:${group().key}`;
+              const sectionId = untrack(
+                () =>
+                  `catalog-${group().kind}:${identity.catalogId}:${identity.hostId}:${group().key}`,
+              );
               const legacySectionId = createMemo(() =>
                 group().legacySectionKey
                   ? `catalog-project:${readCatalog().id}:${readHost().hostId}:${group().legacySectionKey}`
@@ -245,7 +250,7 @@ function renderCatalogGroup(
   readLiveRowsByKey: () => ReadonlyMap<string, GatewaySessionRow>,
   params: SessionCatalogGroupsParams,
 ) {
-  const sectionId = `catalog:${readCatalog().id}`;
+  const sectionId = untrack(() => `catalog:${readCatalog().id}`);
   const collapsed = createMemo(() => params.collapsedSections.has(sectionId));
   const rows = createMemo(() => readCatalog().visibleHosts.flatMap((host) => host.sessions));
   const liveRows = createMemo(() => {
@@ -288,21 +293,21 @@ function renderCatalogGroup(
     <div
       class={sectionClass()}
       data-session-section={sectionId}
-      onDragOver={
-        params.sectionDragDisabledReason
-          ? undefined
-          : (event: DragEvent) => params.onSectionDragOver(event, sectionId)
-      }
-      onDragLeave={
-        params.sectionDragDisabledReason
-          ? undefined
-          : (event: DragEvent) => params.onSectionDragLeave(event, sectionId)
-      }
-      onDrop={
-        params.sectionDragDisabledReason
-          ? undefined
-          : (event: DragEvent) => params.onSectionDrop(event, sectionId)
-      }
+      onDragOver={(event: DragEvent) => {
+        if (!params.sectionDragDisabledReason) {
+          params.onSectionDragOver(event, sectionId);
+        }
+      }}
+      onDragLeave={(event: DragEvent) => {
+        if (!params.sectionDragDisabledReason) {
+          params.onSectionDragLeave(event, sectionId);
+        }
+      }}
+      onDrop={(event: DragEvent) => {
+        if (!params.sectionDragDisabledReason) {
+          params.onSectionDrop(event, sectionId);
+        }
+      }}
     >
       {renderSidebarSessionSectionHeader({
         get sectionId() {

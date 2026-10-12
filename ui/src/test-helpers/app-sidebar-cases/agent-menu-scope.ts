@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { GatewayBrowserClient } from "../../api/gateway.ts";
+import { patchSettings } from "../../app/settings.ts";
 import {
   createGateway,
   createGatewayHarness,
@@ -116,7 +117,7 @@ describe("AppSidebar agent menu scope", () => {
       );
       sidebar.activeRouteId = "skills";
       sidebar.connected = true;
-      sidebar.sidebarAgentsMode = "roster";
+      patchSettings({ sidebarAgentsMode: "roster" });
       context.agentSelection.setScope(null);
       await sidebar.updateComplete;
       sidebar.querySelector<HTMLButtonElement>(".sidebar-workspace-header__main")?.click();

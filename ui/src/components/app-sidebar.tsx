@@ -114,11 +114,11 @@ function AppSidebarContent(props: AppSidebarProps, host: HTMLElement): JSX.Eleme
       Object.values(props);
       owner.prepareRender();
     },
-    () => owner.commitRender(),
+    () => untrack(() => owner.commitRender()),
   );
   onSettled(() => {
     sidebarOwners.set(host, owner);
-    if (!owner.isConnected) {
+    if (host.isConnected && !owner.isConnected) {
       owner.attach();
     }
     let frame = requestAnimationFrame(() => {
@@ -146,7 +146,8 @@ export const AppSidebar = defineSolidBridge<AppSidebarProps, AppSidebarMethods>(
   (props, host) => untrack(() => AppSidebarContent(props, host)),
   {
     properties: appSidebarProperties,
-    disconnected: (host) => queueMicrotask(() => disconnectSidebarOwner(host)),
+    connected: (host) => sidebarOwners.get(host)?.attach(),
+    disconnected: (host) => sidebarOwners.get(host)?.detach(),
     methods: {
       dismissTransientMenus: dismissSidebarTransientMenus,
       expandedAgentId: (host) => sidebarOwners.get(host)?.expandedAgentId() ?? "",

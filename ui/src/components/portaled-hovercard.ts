@@ -101,7 +101,11 @@ export class PortaledHovercardController {
   renderContents(card: HTMLDivElement, update: () => void): void {
     const focused = card.contains(document.activeElement) ? document.activeElement : null;
     update();
-    if (focused && !card.contains(document.activeElement)) {
+    // A card update can join an in-progress Solid commit; check after its DOM writes.
+    queueMicrotask(() => {
+      if (!focused || card !== this.card || card.contains(document.activeElement)) {
+        return;
+      }
       // Live session links can move between sections or disappear after a roster update.
       const replacement =
         focused instanceof HTMLAnchorElement
@@ -115,7 +119,7 @@ export class PortaledHovercardController {
         this.returnFocus(this.trigger);
         this.focusInside = document.activeElement === this.trigger;
       }
-    }
+    });
   }
 
   returnFocus(trigger: HTMLElement | null): void {

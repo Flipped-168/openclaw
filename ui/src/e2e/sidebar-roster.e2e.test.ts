@@ -1,4 +1,3 @@
-import type { LitElement } from "lit";
 import type { Locator } from "playwright";
 import { expect, it } from "vitest";
 import type {
@@ -7,7 +6,7 @@ import type {
   GatewaySessionRow,
   SessionsListResult,
 } from "../api/types.ts";
-import type { AppSidebarSessionNavigationElement } from "../components/app-sidebar-session-navigation.ts";
+import type { ApplicationContext } from "../app/context.ts";
 import { finishElementAnimations } from "../test-helpers/animations.ts";
 import {
   controlUiBundledSettingsStorageKey,
@@ -580,24 +579,41 @@ suite.define(() => {
           const action = headerLocator.locator('button[slot="trigger"]');
           await action.focus();
           await expectSignals();
-          const boxes = await sidebar.evaluate(async (sidebarElement, key) => {
-            const host = sidebarElement as AppSidebarSessionNavigationElement;
-            // Feed the shell-owned outbox summary, not a replacement row projection.
-            host.storedOutboxes = {
-              total: 2,
-              attentionCountForSession: (sessionKey) => (sessionKey === key ? 2 : 0),
-              hasSessionDraft: (sessionKey) => sessionKey === key,
+          await page.locator("openclaw-app-shell").evaluate((element, key) => {
+            const shell = element as HTMLElement & {
+              runtime: { context: Pick<ApplicationContext, "sessions"> };
+              requestUpdate(): void;
             };
-            host.sessionDataContext!.sessions.setPullRequestSummary(key, {
+            const storedOutboxes = {
+              total: 2,
+              attentionCountForSession: (sessionKey: string) => (sessionKey === key ? 2 : 0),
+              hasSessionDraft: (sessionKey: string) => sessionKey === key,
+            };
+            Object.defineProperty(shell, "storedOutboxes", {
+              configurable: true,
+              get: () => storedOutboxes,
+              set: () => undefined,
+            });
+            shell.runtime.context.sessions.setPullRequestSummary(key, {
               numbers: [103],
               state: "open",
             });
-            await host.updateComplete;
-            const roster = host.querySelector<LitElement>("openclaw-sidebar-agent-roster")!;
-            await roster.updateComplete;
-            const header = roster.querySelector(
-              '[data-agent-group="forge"] .sidebar-agent-roster__header',
-            )!;
+            shell.requestUpdate();
+          }, mainKey);
+          await expect
+            .poll(() =>
+              headerLocator
+                .locator(".session-row-badge, .session-owner-chip")
+                .evaluateAll((badges) => badges.map((badge) => badge.getAttribute("aria-label"))),
+            )
+            .toEqual(
+              expect.arrayContaining([
+                "#103 · Open",
+                "2 messages need attention",
+                touch ? "Incognito session" : "Unsent draft",
+              ]),
+            );
+          const boxes = await headerLocator.evaluate((header) => {
             const box = (element: Element) => {
               const rect = element.getBoundingClientRect();
               return {
@@ -621,7 +637,7 @@ suite.define(() => {
                 }),
               ),
             };
-          }, mainKey);
+          });
           expect(boxes.nameFits).toBe(true);
           expect(
             boxes.signals.right <= boxes.actions.left ||
@@ -631,13 +647,6 @@ suite.define(() => {
           ).toBe(true);
           // The agent avatar is the header identity; Home's creator never renders beside it.
           expect(boxes.badges.map((badge) => badge.label)).not.toContain("Created by Riley");
-          expect(boxes.badges.map((badge) => badge.label)).toEqual(
-            expect.arrayContaining([
-              "#103 · Open",
-              "2 messages need attention",
-              touch ? "Incognito session" : "Unsent draft",
-            ]),
-          );
           for (const badge of boxes.badges) {
             expect(badge.visible).toBe(true);
           }

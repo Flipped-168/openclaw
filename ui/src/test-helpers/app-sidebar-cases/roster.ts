@@ -43,6 +43,7 @@ describe("AppSidebar agent roster", () => {
     );
     patchSettings({ theme: theme.id });
     context.theme.refresh();
+    await vi.dynamicImportSettled();
     await vi.waitFor(() =>
       expect(sidebar.querySelector(".sidebar-workspace-header__mark--neutral svg")).not.toBeNull(),
     );

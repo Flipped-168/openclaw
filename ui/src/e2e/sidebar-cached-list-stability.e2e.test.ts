@@ -1,7 +1,7 @@
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { expect, it } from "vitest";
-import type { AppSidebarSessionNavigationElement } from "../components/app-sidebar-session-navigation.ts";
+import type { ApplicationRuntime } from "../app/bootstrap.ts";
 import { createControlUiSessionRow as sessionRow } from "../test-helpers/control-ui-session-fixtures.ts";
 import {
   captureUiProofEnabled,
@@ -107,37 +107,24 @@ suite.define(() => {
             childList
               .locator(":scope > [data-session-tree]")
               .evaluateAll((rows) => rows.map((row) => row.getAttribute("data-session-tree")));
-          // Wait for the actual newer child read, not merely the initial root rendering.
+          // Wait for the owner to publish the complete newer child page before checking its paint.
           await expect
             .poll(() =>
               page.evaluate((key) => {
-                const sidebar =
-                  document.querySelector<AppSidebarSessionNavigationElement>(
-                    "openclaw-app-sidebar",
-                  );
-                return sidebar?.sessionData.childSessionRowsByParent[key]?.length;
-              }, parentKey),
-            )
-            .toBe(12);
-          // Initial roots may be stale too: publication of the newer child page
-          // must itself surface the ninth running child, before any root replay.
-          await expect
-            .poll(() =>
-              page.evaluate((key) => {
-                const sidebar =
-                  document.querySelector<AppSidebarSessionNavigationElement>(
-                    "openclaw-app-sidebar",
-                  );
-                return sidebar?.sessionData.context?.sessions.listSnapshot({
+                const app = document.querySelector<HTMLElement & { runtime?: ApplicationRuntime }>(
+                  "openclaw-app",
+                );
+                const result = app?.runtime?.context.sessions.listSnapshot({
                   spawnedBy: key,
                   limit: 100,
                   includeGlobal: false,
                   includeUnknown: false,
                   configuredAgentsOnly: true,
-                }).result?.ts;
+                }).result;
+                return { count: result?.sessions.length, ts: result?.ts };
               }, parentKey),
             )
-            .toBe(freshChildren.ts);
+            .toEqual({ count: 12, ts: freshChildren.ts });
           if (captureUiProofEnabled) {
             // This proof annotation stays outside the sidebar and reports real DOM geometry.
             await page.evaluate(
@@ -172,15 +159,24 @@ suite.define(() => {
             initialPublicationError = error instanceof Error ? error : new Error(String(error));
           } finally {
             const initialRows = await page.evaluate((key) => {
-              const sidebar =
-                document.querySelector<AppSidebarSessionNavigationElement>("openclaw-app-sidebar");
-              const data = sidebar?.sessionData;
-              const root = data?.context?.sessions.state.result;
+              const app = document.querySelector<HTMLElement & { runtime?: ApplicationRuntime }>(
+                "openclaw-app",
+              );
+              const sessions = app?.runtime?.context.sessions;
+              const root = sessions?.state.result;
               const target = "agent:main:dashboard:jitter-8";
               return {
                 rootTs: root?.ts,
                 rootRow: root?.sessions.find((row) => row.key === target),
-                hydratedRow: data?.childSessionRowsByParent[key]?.find((row) => row.key === target),
+                childRow: sessions
+                  ?.listSnapshot({
+                    spawnedBy: key,
+                    limit: 100,
+                    includeGlobal: false,
+                    includeUnknown: false,
+                    configuredAgentsOnly: true,
+                  })
+                  .result?.sessions.find((row) => row.key === target),
               };
             }, parentKey);
             await writeFile(
@@ -271,11 +267,10 @@ suite.define(() => {
           await expect
             .poll(() =>
               page.evaluate(() => {
-                const sidebar =
-                  document.querySelector<AppSidebarSessionNavigationElement>(
-                    "openclaw-app-sidebar",
-                  );
-                return sidebar?.sessionData.context?.sessions.state.result?.ts;
+                const app = document.querySelector<HTMLElement & { runtime?: ApplicationRuntime }>(
+                  "openclaw-app",
+                );
+                return app?.runtime?.context.sessions.state.result?.ts;
               }),
             )
             .toBe(cachedRoot.ts);

@@ -191,6 +191,9 @@ export abstract class AppSidebarBase {
   }
 
   attach(): void {
+    if (this.attached) {
+      return;
+    }
     this.attached = true;
     for (const controller of this.controllers) {
       controller.hostConnected?.();
@@ -199,6 +202,9 @@ export abstract class AppSidebarBase {
     this.requestUpdate();
   }
   detach(): void {
+    if (!this.attached) {
+      return;
+    }
     this.attached = false;
     this.disconnectedCallback();
     for (const controller of this.controllers) {

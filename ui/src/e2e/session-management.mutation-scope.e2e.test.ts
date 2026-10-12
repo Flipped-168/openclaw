@@ -2,7 +2,6 @@ import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { expect, it } from "vitest";
 import { SIDEBAR_SESSION_ROSTER_LIMIT } from "../../../src/shared/session-list-limits.ts";
-import type { SessionDataController } from "../components/session-data-controller.ts";
 import { createControlUiE2eArtifactDir } from "../test-helpers/control-ui-e2e-artifacts.ts";
 import { pauseVirtualClock } from "../test-helpers/control-ui-e2e.ts";
 import { createControlUiSessionRow as sessionRow } from "../test-helpers/control-ui-session-fixtures.ts";
@@ -341,13 +340,11 @@ suite.define(() => {
           expect(refresh.params).toMatchObject({ limit: retainedLimit + 1 });
           await expect
             .poll(() =>
-              sidebar.evaluate(
-                (element) =>
-                  (element as HTMLElement & { sessionData: SessionDataController }).sessionData
-                    .sessionsLoading,
-              ),
+              sidebar
+                .locator('.sidebar-session-pagination--roster > button[aria-busy="true"]')
+                .count(),
             )
-            .toBe(false);
+            .toBe(0);
           await capture("retained-after-invalidation");
         }
         await rowFor(researchRows[2]!.key).waitFor({ state: "visible" });

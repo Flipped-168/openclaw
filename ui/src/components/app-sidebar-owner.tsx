@@ -1,5 +1,5 @@
 import { dynamic, type JSX } from "@solidjs/web";
-import { createEffect, createMemo, Show } from "solid-js";
+import { createEffect, createMemo, Show, untrack } from "solid-js";
 import type {
   FsListDirResult,
   WorktreeRepositoryStatus,
@@ -541,21 +541,22 @@ export class AppSidebarOwner extends AppSidebarSessionNavigationElement implemen
     });
     createEffect(
       () => ({
-        roster: host().sidebarAgentsMode === "roster" && !host().rosterRenderer,
+        roster:
+          host().sidebarAgentsMode === "roster" && !host().rosterRenderer
+            ? host().rosterRendererImport
+            : null,
         catalog:
           !host().catalogRenderer &&
-          (catalogs().length > 0 || host().sessionData.sessionCatalogRefreshStatus.error !== null),
+          (catalogs().length > 0 || host().sessionData.sessionCatalogRefreshStatus.error !== null)
+            ? host().catalogRendererImport
+            : null,
       }),
       ({ roster, catalog }) => {
         if (roster) {
-          void host()
-            .rosterRendererImport.load()
-            .catch(() => undefined);
+          void roster.load().catch(() => undefined);
         }
         if (catalog) {
-          void host()
-            .preloadCatalogRenderer()
-            .catch(() => undefined);
+          void catalog.load().catch(() => undefined);
         }
       },
     );
@@ -640,7 +641,7 @@ export class AppSidebarOwner extends AppSidebarSessionNavigationElement implemen
         />,
       );
       const online = renderAppSidebarOnline(this);
-      const menus = this.sidebarMenus.render();
+      const menus = untrack(() => this.sidebarMenus).render();
       return (
         <aside
           class="sidebar sidebar--rail"

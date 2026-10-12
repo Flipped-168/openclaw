@@ -74,7 +74,7 @@ describe("sidebar session feedback", () => {
     const button = () => sidebar.querySelector<HTMLButtonElement>(pagination)!;
     expect(button().disabled).toBe(false);
     button().click();
-    button().click(); // The owner is already pending before Lit applies disabled.
+    button().click(); // The owner is already pending before the renderer applies disabled.
     await sidebar.updateComplete;
     expect(button().disabled).toBe(true);
     expect(button().getAttribute("aria-busy")).toBe("true");
@@ -231,7 +231,11 @@ describe("sidebar session feedback", () => {
       if (!failure) {
         for (const status of ["active", "archived", "all"]) {
           await selectFilter(sidebar, "status:" + status);
-          expect(sidebar).toHaveProperty("sessionsStatusFilter", status);
+          expect(
+            sidebar.querySelector<HTMLInputElement>(
+              `#sidebar-sessions-status input[value="${status}"]`,
+            )?.checked,
+          ).toBe(true);
           expect(sidebar.textContent).not.toContain(hint);
         }
         await selectFilter(sidebar, "status:active");
@@ -254,7 +258,11 @@ describe("sidebar session feedback", () => {
         }
         for (const status of ["archived", "all"] as const) {
           await selectFilter(sidebar, "status:" + status);
-          expect(sidebar).toHaveProperty("sessionsStatusFilter", status);
+          expect(
+            sidebar.querySelector<HTMLInputElement>(
+              `#sidebar-sessions-status input[value="${status}"]`,
+            )?.checked,
+          ).toBe(true);
           expect(sidebar.textContent).not.toContain(hint);
         }
         await selectFilter(sidebar, "status:active");

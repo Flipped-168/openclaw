@@ -1,6 +1,8 @@
 import path from "node:path";
 import type { Locator, Page } from "playwright";
 import { expect, it } from "vitest";
+import type { ApplicationContext } from "../app/context.ts";
+import { childSessionListQuery } from "../lib/sessions/child-session-data.ts";
 import { selectChatLayoutAction } from "../test-helpers/chat-layout-menu.ts";
 import {
   chatSessionListResponse,
@@ -572,20 +574,13 @@ suite.define(() => {
       await page.getByRole("button", { name: "Runs on device" }).waitFor();
       await expect
         .poll(() =>
-          page.evaluate((parentKey) => {
-            const sidebar = document.querySelector<
-              HTMLElement & {
-                sessionData?: {
-                  childSessionRowsByParent: Record<
-                    string,
-                    Array<{ placement?: { runner?: { status?: string } } }>
-                  >;
-                };
-              }
-            >("openclaw-app-sidebar");
-            return sidebar?.sessionData?.childSessionRowsByParent[parentKey]?.[0]?.placement?.runner
-              ?.status;
-          }, parent.key),
+          page.evaluate((scope) => {
+            const app = document.querySelector<
+              HTMLElement & { runtime?: { context: ApplicationContext } }
+            >("openclaw-app");
+            return app?.runtime?.context.sessions.listSnapshot(scope).result?.sessions[0]?.placement
+              ?.runner?.status;
+          }, childSessionListQuery(parent.key)),
         )
         .toBe("available");
       await page.evaluate(() => {
@@ -642,18 +637,14 @@ suite.define(() => {
       });
       await page.getByRole("button", { name: "Device offline" }).waitFor();
       expect(
-        await page.evaluate(() => {
-          const sidebar = document.querySelector<
-            HTMLElement & {
-              sessionData?: {
-                activeSessionLineageSelectedRow?: {
-                  placement?: { runner?: { status?: string } };
-                };
-              };
-            }
-          >("openclaw-app-sidebar");
-          return sidebar?.sessionData?.activeSessionLineageSelectedRow?.placement?.runner?.status;
-        }),
+        await page.evaluate((key) => {
+          const app = document.querySelector<
+            HTMLElement & { runtime?: { context: ApplicationContext } }
+          >("openclaw-app");
+          return app?.runtime?.context.sessions.presentation.result?.sessions.find(
+            (row) => row.key === key,
+          )?.placement?.runner?.status;
+        }, available.key),
       ).toBe("offline");
       expect(await gateway.getSocketCount()).toBe(1);
 

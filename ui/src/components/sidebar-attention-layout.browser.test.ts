@@ -1,5 +1,5 @@
 import { render as renderSolid, type JSX } from "@solidjs/web";
-import { createComponent, flush } from "solid-js";
+import { createComponent, createSignal, flush } from "solid-js";
 import { afterEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import type { MentionInboxItem } from "../../../packages/gateway-protocol/src/index.js";
 import type { ApplicationContext } from "../app/context.ts";
@@ -121,24 +121,27 @@ describe.runIf("__vitest_browser__" in globalThis)("Inbox panel layout", () => {
       const shell = document.createElement("div");
       shell.className = mobile ? "shell shell--mobile-nav" : "shell";
       document.body.append(shell);
-      const renderPanel = (selectedTab: "all" | "approvals") => {
-        render(
-          renderSidebarAttentionPanel({
-            ...params,
-            selectedTab,
-          }),
-          shell,
-        );
-      };
-
-      renderPanel("all");
+      const [selectedTab, setSelectedTab] = createSignal<"all" | "approvals">("all");
+      render(
+        renderSidebarAttentionPanel({
+          ...params,
+          get selectedTab() {
+            return selectedTab();
+          },
+        }),
+        shell,
+      );
       await customElements.whenDefined("wa-tab-group");
+      await shell.querySelector<HTMLElement & { updateComplete: Promise<unknown> }>(
+        "openclaw-tooltip",
+      )?.updateComplete;
       const populatedHeader = shell.querySelector<HTMLElement>(".sidebar-issues-panel__header")!;
       const populatedTabs = shell.querySelector<HTMLElement>(".sidebar-issues-panel__tabs")!;
       const headerHeight = populatedHeader.getBoundingClientRect().height;
       const tabsTop = populatedTabs.getBoundingClientRect().top;
 
-      renderPanel("approvals");
+      setSelectedTab("approvals");
+      flush();
       const placeholder = shell.querySelector<HTMLButtonElement>(
         ".sidebar-issues-panel__dismiss-shown",
       )!;

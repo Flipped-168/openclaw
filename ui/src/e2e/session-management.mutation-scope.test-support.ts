@@ -1,7 +1,7 @@
 import { writeSync } from "node:fs";
 import { asNullableRecord } from "@openclaw/normalization-core/record-coerce";
 import type { Page } from "playwright";
-import type { SessionDataController } from "../components/session-data-controller.ts";
+import type { ApplicationRuntime } from "../app/bootstrap.ts";
 import type { ControlUiMockGateway, MockGatewayRequest } from "../test-helpers/control-ui-e2e.ts";
 
 type MutationCase = { operation: "rename" | "batch archive"; filter: "Active" | "All" };
@@ -36,15 +36,26 @@ export async function installMutationScopeDiagnostics(page: Page, scenario: Muta
                     ".sidebar-session-pagination--roster button",
                   )
                 : null;
-            const sidebar = button?.closest<
-              HTMLElement & { sessionData: SessionDataController; expandedAgentId(): string }
-            >("openclaw-app-sidebar");
+            const sidebar = button?.closest("openclaw-app-sidebar");
             if (!button || !sidebar) {
               return;
             }
             const record = (recordedPhase: string) => {
-              const data = sidebar.sessionData;
-              const result = data.sessionsResult;
+              const app = document.querySelector<HTMLElement & { runtime?: ApplicationRuntime }>(
+                "openclaw-app",
+              );
+              const owner = app?.runtime?.context;
+              const agentId = owner?.agentSelection.state.selectedId;
+              const list = owner?.sessions.listSnapshot({
+                source: "sidebar",
+                excludeDock: true,
+                agentId,
+                archivedFilter: caseInfo.filter === "All" ? "all" : "active",
+                rowMode: "compact",
+                includeDerivedTitles: true,
+                includeLastMessage: true,
+              });
+              const result = list?.result;
               const keys = new Set(result?.sessions.map((row) => row.key));
               const requests = (
                 window as Window & { openclawControlUiE2eGateway?: ControlUiMockGateway }
@@ -56,9 +67,9 @@ export async function installMutationScopeDiagnostics(page: Page, scenario: Muta
                     phase: recordedPhase,
                     trusted: event.isTrusted,
                     disabled: button.disabled,
-                    loading: data.sessionsLoading,
-                    selectedAgent: agentLabel(sidebar.expandedAgentId()),
-                    listAgent: agentLabel(data.sessionsAgentId),
+                    loading: list?.loading,
+                    selectedAgent: agentLabel(agentId ?? null),
+                    listAgent: agentLabel(list?.agentId ?? null),
                     cursor: result?.nextOffset ?? null,
                     count: result?.sessions.length ?? 0,
                     hasMore: result?.hasMore === true,

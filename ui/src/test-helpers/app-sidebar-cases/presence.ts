@@ -11,6 +11,7 @@ import {
 } from "../app-sidebar.ts";
 import { createTestGatewayClient } from "../gateway-client.ts";
 import { settleLitElement } from "../lit-settle.ts";
+import { flush } from "../solid-settle.ts";
 import "../../components/app-sidebar.tsx";
 
 await import("../../components/viewer-facepile.ts");
@@ -408,6 +409,7 @@ describe("AppSidebar viewer presence", () => {
     expect(row.dataset.presenceActivity).toBe("active");
     provider.remove();
     await Promise.resolve();
+    flush();
     expect(vi.getTimerCount()).toBe(0);
   });
 

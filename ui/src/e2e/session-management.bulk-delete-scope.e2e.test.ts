@@ -2,7 +2,7 @@ import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { expect, it } from "vitest";
 import { SIDEBAR_SESSION_ROSTER_LIMIT } from "../../../src/shared/session-list-limits.ts";
-import type { AppSidebarSessionNavigationElement } from "../components/app-sidebar-session-navigation.ts";
+import type { ApplicationRuntime } from "../app/bootstrap.ts";
 import { createControlUiE2eArtifactDir } from "../test-helpers/control-ui-e2e-artifacts.ts";
 import { pauseVirtualClock } from "../test-helpers/control-ui-e2e.ts";
 import { createControlUiSessionRow as sessionRow } from "../test-helpers/control-ui-session-fixtures.ts";
@@ -76,6 +76,16 @@ suite.define(() => {
       },
     });
     const sidebar = page.locator("openclaw-app-sidebar");
+    const researchListQuery = {
+      source: "sidebar",
+      excludeDock: true,
+      agentId: "research",
+      archivedFilter: "archived",
+      limit: pageSize,
+      rowMode: "compact",
+      includeDerivedTitles: true,
+      includeLastMessage: true,
+    } as const;
     const rowFor = (key: string) =>
       sidebar.locator(`.sidebar-recent-session[data-session-key="${key}"]`);
     const revealLastResearch = async () => {
@@ -92,32 +102,30 @@ suite.define(() => {
       await rowFor(lastResearch.key).waitFor({ state: "visible" });
     };
     const sidebarState = () =>
-      page.evaluate(() => {
-        const sidebarElement =
-          document.querySelector<AppSidebarSessionNavigationElement>("openclaw-app-sidebar");
-        const data = sidebarElement?.sessionData;
-        const sessions = data?.context?.sessions;
-        const filtered =
-          data && sessions ? sessions.listSnapshot(data.sessionListQuery("research")) : undefined;
+      page.evaluate((query) => {
+        const app = document.querySelector<HTMLElement & { runtime?: ApplicationRuntime }>(
+          "openclaw-app",
+        );
+        const application = app?.runtime?.context;
+        const sidebarElement = document.querySelector("openclaw-app-sidebar");
+        const sessions = application?.sessions;
+        const filtered = sessions?.listSnapshot(query);
         const button = sidebarElement?.querySelector<HTMLButtonElement>(
           ".sidebar-session-pagination--roster > button",
         );
         return {
-          selectedAgentId: sidebarElement?.expandedAgentId() ?? null,
+          selectedAgentId: application?.agentSelection.state.selectedId ?? null,
           canonicalAgentId: sessions?.state.agentId ?? null,
           canonicalLoading: sessions?.state.loading ?? null,
           canonicalRevision: sessions?.canonicalListRevision ?? null,
           filteredAgentId: filtered?.agentId ?? null,
           filteredLoading: filtered?.loading ?? null,
           filteredNextOffset: filtered?.result?.nextOffset ?? null,
-          sidebarAgentId: data?.sessionsAgentId ?? null,
-          sidebarLoading: data?.sessionsLoading ?? null,
-          nextOffset: data?.sessionsResult?.nextOffset ?? null,
-          hasMore: data?.sessionsResult?.hasMore ?? null,
+          hasMore: filtered?.result?.hasMore ?? null,
           disabled: button?.disabled ?? null,
           ariaBusy: button?.getAttribute("aria-busy") ?? null,
         };
-      });
+      }, researchListQuery);
     const observations: Array<{
       stage: string;
       visibleRows: string[];
@@ -141,22 +149,22 @@ suite.define(() => {
       await closeSidebarMenu(page);
     };
     const pageKeys = () =>
-      page.evaluate(() => {
-        const data =
-          document.querySelector<AppSidebarSessionNavigationElement>(
-            "openclaw-app-sidebar",
-          )?.sessionData;
+      page.evaluate((query) => {
+        const app = document.querySelector<HTMLElement & { runtime?: ApplicationRuntime }>(
+          "openclaw-app",
+        );
         return (
-          data?.context?.sessions
-            .listSnapshot(data.sessionListQuery("research"))
+          app?.runtime?.context.sessions
+            .listSnapshot(query)
             .result?.sessions.map((row) => row.key) ?? []
         );
-      });
+      }, researchListQuery);
     const settledResearchRevision = () =>
       page.evaluate(() => {
-        const sessions =
-          document.querySelector<AppSidebarSessionNavigationElement>("openclaw-app-sidebar")
-            ?.sessionData.context?.sessions;
+        const app = document.querySelector<HTMLElement & { runtime?: ApplicationRuntime }>(
+          "openclaw-app",
+        );
+        const sessions = app?.runtime?.context.sessions;
         return sessions?.state.agentId === "research" && !sessions.state.loading
           ? sessions.canonicalListRevision
           : -1;
@@ -193,9 +201,6 @@ suite.define(() => {
         filteredAgentId: "research",
         filteredLoading: false,
         filteredNextOffset: pageSize,
-        sidebarAgentId: "research",
-        sidebarLoading: false,
-        nextOffset: pageSize,
         hasMore: true,
       };
       await expect.poll(sidebarState).toMatchObject(settledResearch);
@@ -227,7 +232,6 @@ suite.define(() => {
       await expect.poll(sidebarState).toMatchObject({
         ...settledResearch,
         filteredLoading: true,
-        sidebarLoading: true,
       });
       expect((await gateway.getRequests("sessions.delete")).map(({ params }) => params)).toEqual(
         targets.map((target) =>

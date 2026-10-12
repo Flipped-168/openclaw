@@ -1,5 +1,7 @@
+import { flush } from "solid-js";
 import { afterEach, describe, expect, it, onTestFinished } from "vitest";
 import type { GatewayBrowserClient } from "../api/gateway.ts";
+import { mountSolid } from "../test-helpers/mount-solid.ts";
 import "@awesome.me/webawesome/dist/styles/themes/default.css";
 import "../test-helpers/load-styles.ts";
 
@@ -8,7 +10,6 @@ afterEach(() => document.body.replaceChildren());
 describe.runIf("__vitest_browser__" in globalThis)("sidebar agent menu layout", () => {
   it("shows the same mixed avatars in count-aware groups without a backing circle", async () => {
     await import("./app-sidebar.tsx");
-    const { render } = await import("lit");
     const { renderSidebarAgentMenuSwitcher } = await import("./sidebar-agent-menu-switcher.tsx");
     const image =
       "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jR7sAAAAASUVORK5CYII=";
@@ -24,6 +25,7 @@ describe.runIf("__vitest_browser__" in globalThis)("sidebar agent menu layout", 
     root.className = "sidebar-agent-menu";
     root.style.width = "320px";
     document.body.append(root);
+    let unmount: (() => void) | undefined;
     for (const [count, pinCount] of [
       [0, 0],
       [1, 0],
@@ -33,22 +35,25 @@ describe.runIf("__vitest_browser__" in globalThis)("sidebar agent menu layout", 
       [5, 5],
       [8, 8],
     ] as const) {
-      render(
-        renderSidebarAgentMenuSwitcher({
-          activeId: agents[0]!.id,
-          allAgentsScope: true,
-          query: "",
-          openMode: "hover",
-          agents: agents.slice(0, count),
-          identities: new Map(),
-          pinnedAgentIds: ["agent-0"],
-          onTogglePinnedAgent: async () => {},
-          resolveAvatarUrl: (url) => url,
-          avatarErrorHandler: () => () => {},
-          agentUnreadCount: () => 0,
-        }),
-        root,
-      );
+      unmount?.();
+      unmount = mountSolid(
+        () =>
+          renderSidebarAgentMenuSwitcher({
+            activeId: agents[0]!.id,
+            allAgentsScope: true,
+            query: "",
+            openMode: "hover",
+            agents: agents.slice(0, count),
+            identities: new Map(),
+            pinnedAgentIds: ["agent-0"],
+            onTogglePinnedAgent: async () => {},
+            resolveAvatarUrl: (url) => url,
+            avatarErrorHandler: () => () => {},
+            agentUnreadCount: () => 0,
+          }),
+        { container: root },
+      ).unmount;
+      flush();
       await new Promise<void>((resolve) => {
         requestAnimationFrame(() => resolve());
       });

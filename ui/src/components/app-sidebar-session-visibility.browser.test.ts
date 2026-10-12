@@ -13,6 +13,7 @@ import {
   mountSidebar,
 } from "../test-helpers/app-sidebar.ts";
 import "../test-helpers/load-styles.ts";
+import { waitForSolid } from "../test-helpers/solid-settle.ts";
 import "./app-sidebar.tsx";
 
 setupSidebarTest();
@@ -23,7 +24,6 @@ function visibilityProbe() {
   const activeObservers = new Set<IntersectionObserver>();
   const observed = new Set<Element>();
   const intersections = new Map<Element, IntersectionObserverEntry>();
-  let delivery = Promise.withResolvers<void>();
   vi.stubGlobal(
     "IntersectionObserver",
     class extends NativeObserver {
@@ -34,7 +34,6 @@ function visibilityProbe() {
             for (const entry of entries) {
               intersections.set(entry.target, entry);
             }
-            delivery.resolve();
           }
         }, options);
         if (options?.root instanceof Element && options.root.matches(".sidebar-shell__body")) {
@@ -63,12 +62,6 @@ function visibilityProbe() {
     activeObservers,
     observed,
     intersections,
-    get delivered() {
-      return delivery.promise;
-    },
-    reset() {
-      delivery = Promise.withResolvers<void>();
-    },
   };
 }
 
@@ -99,7 +92,7 @@ it("pauses offscreen session indicators and resumes them when their rows scroll 
   );
   sidebar.style.cssText =
     "display:block;position:fixed;inset:0 auto auto 0;width:280px;height:240px";
-  const scroller = sidebar.querySelector<HTMLElement>(".sidebar-shell__body")!;
+  let scroller = sidebar.querySelector<HTMLElement>(".sidebar-shell__body")!;
   scroller.style.cssText = "height:600px;flex:none;overflow:auto";
   expect(observers).toHaveLength(0);
   harness.publishList(roster);
@@ -113,7 +106,6 @@ it("pauses offscreen session indicators and resumes them when their rows scroll 
   await revealRunningRows();
   expect(observers).toHaveLength(1);
   expect(observers[0]!.root).toBe(scroller);
-  await probe.delivered;
   const rows = [...sidebar.querySelectorAll<HTMLElement>(".session-row-host")].filter((row) =>
     row.querySelector(".session-glyph__ring"),
   );
@@ -123,20 +115,21 @@ it("pauses offscreen session indicators and resumes them when their rows scroll 
   const last = rows.at(-1)!;
   const ring = (row: HTMLElement) => row.querySelector<HTMLElement>(".session-glyph__ring")!;
   const scrollTo = async (row: HTMLElement) => {
-    probe.reset();
     scroller.scrollTop += row.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
-    await probe.delivered;
+    await waitForSolid(() =>
+      expect(ring(first).classList.contains("session-run-indicator--offscreen")).toBe(true),
+    );
   };
   expect(first.getBoundingClientRect().top).toBeLessThan(scroller.getBoundingClientRect().bottom);
   expect(ring(first).classList.contains("session-run-indicator--offscreen")).toBe(false);
   expect(getComputedStyle(ring(first)).animationPlayState).toBe("running");
-  expect(ring(last).classList.contains("session-run-indicator--offscreen")).toBe(true);
+  await waitForSolid(() =>
+    expect(ring(last).classList.contains("session-run-indicator--offscreen")).toBe(true),
+  );
   expect(getComputedStyle(ring(last)).animationPlayState).toBe("paused");
 
-  probe.reset();
   scroller.scrollTop += last.getBoundingClientRect().top - scroller.getBoundingClientRect().bottom;
-  await probe.delivered;
-  expect(intersections.get(last)?.isIntersecting).toBe(true);
+  await waitForSolid(() => expect(intersections.get(last)?.isIntersecting).toBe(true));
   expect(intersections.get(last)?.intersectionRatio).toBe(0);
   expect(ring(last).classList.contains("session-run-indicator--offscreen")).toBe(false);
 
@@ -147,7 +140,6 @@ it("pauses offscreen session indicators and resumes them when their rows scroll 
   expect(getComputedStyle(ring(last)).animationPlayState).toBe("running");
 
   const updateRows = async (patch: Partial<GatewaySessionRow>) => {
-    probe.reset();
     const result = harness.sessions.state.result!;
     harness.publishList({
       result: {
@@ -160,13 +152,12 @@ it("pauses offscreen session indicators and resumes them when their rows scroll 
       },
     });
     await sidebar.updateComplete;
-    if (patch.hasActiveRun !== false) {
-      await probe.delivered;
-    }
   };
   // Queuing replaces the ring's class binding without moving its observed row.
   await updateRows({ status: "queued" });
-  expect(ring(first).classList.contains("session-run-indicator--offscreen")).toBe(true);
+  await waitForSolid(() =>
+    expect(ring(first).classList.contains("session-run-indicator--offscreen")).toBe(true),
+  );
   expect(ring(last).classList.contains("session-run-indicator--offscreen")).toBe(false);
   expect(ring(first).classList.contains("session-glyph__ring--queued")).toBe(true);
   expect(getComputedStyle(ring(first)).animationPlayState).toBe("paused");
@@ -181,7 +172,9 @@ it("pauses offscreen session indicators and resumes them when their rows scroll 
     participantCount: 1,
   });
   const trace = (row: HTMLElement) => row.querySelector<SVGElement>(".session-glyph__trace-run")!;
-  expect(trace(first).classList.contains("session-run-indicator--offscreen")).toBe(true);
+  await waitForSolid(() =>
+    expect(trace(first).classList.contains("session-run-indicator--offscreen")).toBe(true),
+  );
   expect(getComputedStyle(trace(first)).animationPlayState).toBe("paused");
   expect(trace(last).classList.contains("session-run-indicator--offscreen")).toBe(false);
   expect(getComputedStyle(trace(last)).animationPlayState).toBe("running");
@@ -194,25 +187,33 @@ it("pauses offscreen session indicators and resumes them when their rows scroll 
   expect(activeObservers.size).toBe(0);
   await updateRows({ hasActiveRun: true, status: "running" });
   expect(activeObservers.size).toBe(1);
-  expect(trace(first).classList.contains("session-run-indicator--offscreen")).toBe(true);
+  await waitForSolid(() =>
+    expect(trace(first).classList.contains("session-run-indicator--offscreen")).toBe(true),
+  );
 
   const disconnect = vi.spyOn([...activeObservers][0]!, "disconnect");
   sidebar.remove();
+  await sidebar.updateComplete;
   expect(disconnect).toHaveBeenCalledOnce();
   expect(activeObservers.size).toBe(0);
-  probe.reset();
   provider.append(sidebar.hostElement);
   await sidebar.updateComplete;
+  sidebar.style.cssText =
+    "display:block;position:fixed;inset:0 auto auto 0;width:280px;height:240px";
+  scroller = sidebar.querySelector<HTMLElement>(".sidebar-shell__body")!;
+  scroller.style.cssText = "height:600px;flex:none;overflow:auto";
   await revealRunningRows();
-  await probe.delivered;
   expect(activeObservers.size).toBe(1);
   const reconnectedRows = [...sidebar.querySelectorAll<HTMLElement>(".session-row-host")].filter(
     (row) => row.querySelector(".session-glyph__trace-run"),
   );
   expect(reconnectedRows).toHaveLength(11);
-  await scrollTo(reconnectedRows.at(-1)!);
-  expect(trace(reconnectedRows[0]!).classList.contains("session-run-indicator--offscreen")).toBe(
-    true,
+  scroller.scrollTop +=
+    reconnectedRows.at(-1)!.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
+  await waitForSolid(() =>
+    expect(trace(reconnectedRows[0]!).classList.contains("session-run-indicator--offscreen")).toBe(
+      true,
+    ),
   );
   expect(getComputedStyle(trace(reconnectedRows.at(-1)!)).animationPlayState).toBe("running");
 });
@@ -249,7 +250,6 @@ it("registers running rows rendered by the real roster child after its parent up
   sidebar.sidebarAgentsMode = "roster";
   await settleRoster(sidebar);
   for (let page = 0; page < 2; page++) {
-    probe.reset();
     sidebar.querySelector<HTMLButtonElement>(".sidebar-session-pagination__button")!.click();
     await settleRoster(sidebar);
   }
@@ -261,7 +261,6 @@ it("registers running rows rendered by the real roster child after its parent up
   expect(probe.activeObservers.size).toBe(1);
   expect(runningRows.filter((row) => probe.observed.has(row))).toHaveLength(11);
   expect(probe.observed.size).toBe(11);
-  await probe.delivered;
   const ring = (row: HTMLElement) => row.querySelector<HTMLElement>(".session-glyph__ring")!;
   const first = runningRows[0]!;
   const offscreen = runningRows.slice(1);
@@ -274,19 +273,21 @@ it("registers running rows rendered by the real roster child after its parent up
   );
   expect(ring(first).classList.contains("session-run-indicator--offscreen")).toBe(false);
   expect(getComputedStyle(ring(first)).animationPlayState).toBe("running");
-  expect(
-    offscreen.every((row) => ring(row).classList.contains("session-run-indicator--offscreen")),
-  ).toBe(true);
+  await waitForSolid(() =>
+    expect(
+      offscreen.every((row) => ring(row).classList.contains("session-run-indicator--offscreen")),
+    ).toBe(true),
+  );
   expect(offscreen.map((row) => getComputedStyle(ring(row)).animationPlayState)).toEqual(
     Array(10).fill("paused"),
   );
-  probe.reset();
   scroller.scrollTop = scroller.scrollHeight;
-  await probe.delivered;
-  expect(ring(first).classList.contains("session-run-indicator--offscreen")).toBe(true);
-  expect(
-    offscreen.every((row) => !ring(row).classList.contains("session-run-indicator--offscreen")),
-  ).toBe(true);
+  await waitForSolid(() => {
+    expect(ring(first).classList.contains("session-run-indicator--offscreen")).toBe(true);
+    expect(
+      offscreen.every((row) => !ring(row).classList.contains("session-run-indicator--offscreen")),
+    ).toBe(true);
+  });
   expect(offscreen.map((row) => getComputedStyle(ring(row)).animationPlayState)).toEqual(
     Array(10).fill("running"),
   );

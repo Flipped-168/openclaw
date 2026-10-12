@@ -297,13 +297,15 @@ describe("sidebar projection memo", () => {
   it("invalidates live attention, expiry, outbox snapshots, and store-owned PR and archive facts", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(10_000);
+    const expiresAt = 11_000;
     const target = session("attention", {
-      agentStatus: { note: "Waiting for credentials", attention: "key", expiresAt: 11_000 },
+      agentStatus: { note: "Waiting for credentials", attention: "key", expiresAt },
     });
     const { sidebar, sessions, gateway, row, publishApprovals } = await mount([target]);
     expect(row(target.key)?.querySelector('[data-session-attention="agent"]')).not.toBeNull();
     projectRows.mockClear();
-    await vi.advanceTimersByTimeAsync(1_000);
+    // Mount readiness advances fake timers; stop before the expiry invalidation turn.
+    await vi.advanceTimersByTimeAsync(expiresAt - Date.now());
     await settleLitElement(sidebar);
     expect(projectRows).not.toHaveBeenCalled();
     expect(row(target.key)?.querySelector('[data-session-attention="agent"]')).not.toBeNull();

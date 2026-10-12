@@ -324,4 +324,12 @@ export const SidebarAttention = defineSolidBridge<
     watchUpdateProgress: { default: undefined, attribute: false },
   },
   methods: { dismissPanel: (host) => panelDismissals.get(host)?.() ?? false },
+  disconnected: (host) => {
+    queueMicrotask(() => {
+      // A same-turn sidebar move retains intent; a detached Inbox retires it.
+      if (!host.isConnected) {
+        panelDismissals.get(host)?.();
+      }
+    });
+  },
 });

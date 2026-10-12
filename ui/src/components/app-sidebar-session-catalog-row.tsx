@@ -1,5 +1,5 @@
 import type { JSX } from "@solidjs/web";
-import { createMemo, createEffect, Show } from "solid-js";
+import { createMemo, createEffect, Show, untrack } from "solid-js";
 import type {
   SessionCatalog,
   SessionCatalogHost,
@@ -170,13 +170,13 @@ export function renderCatalogSessionRow(
     );
   const marqueeLabel = (
     <Show when={JSON.stringify([label(), readSession().status, readSession().pullRequest])} keyed>
-      {(_identity) => renderHoverMarquee(label(), "sidebar-recent-session__name")}
+      {(_identity) => <>{renderHoverMarquee(label(), "sidebar-recent-session__name")}</>}
     </Show>
   );
   let element: HTMLDivElement | undefined;
   createEffect(
     () => rowRef(),
-    (callback) => callback?.(element),
+    (callback) => untrack(() => callback?.(element)),
   );
   const row = (
     <div

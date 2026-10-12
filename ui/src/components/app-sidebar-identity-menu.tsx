@@ -80,9 +80,12 @@ function renderIdentityGateways(
               value={`gateway:${encodeURIComponent(gateway().id)}`}
               role="menuitemradio"
               aria-checked={selected() ? "true" : "false"}
-              ref={(element) => syncDropdownItemRadio(element, selected())}
-              onClick={openWindow}
-              onContextMenu={openWindow}
+              ref={(element) => {
+                syncDropdownItemRadio(element, selected());
+                // Intercept modifiers before Web Awesome's ancestor click listener selects the item.
+                element.addEventListener("click", openWindow);
+                element.addEventListener("contextmenu", openWindow);
+              }}
             >
               <span
                 slot="icon"
@@ -99,7 +102,7 @@ function renderIdentityGateways(
                 {!selected() && index() < 9 ? (
                   <Kbd
                     {...{
-                      className: "session-menu__shortcut",
+                      class: "session-menu__shortcut",
                       ariaHidden: true,
                     }}
                     keys={["⌘", String(index() + 1)]}
@@ -244,7 +247,7 @@ export function renderSidebarIdentityMenu(params: SidebarIdentityMenuParams): JS
             <KeyboardShortcut
               {...{
                 slot: "details",
-                className: "session-menu__shortcut",
+                class: "session-menu__shortcut",
                 ariaHidden: true,
               }}
               combo={KEYBOARD_SHORTCUT_COMBOS.appearanceSettings}
@@ -270,7 +273,7 @@ export function renderSidebarIdentityMenu(params: SidebarIdentityMenuParams): JS
             <KeyboardShortcut
               {...{
                 slot: "details",
-                className: "session-menu__shortcut",
+                class: "session-menu__shortcut",
                 ariaHidden: true,
               }}
               combo={KEYBOARD_SHORTCUT_COMBOS.debugOverlay}

@@ -24,7 +24,7 @@ import "./tooltip.ts";
 export function renderSidebarSessionIndicators(
   host: SessionListHost,
   readSession: () => SidebarRecentSession,
-  display?: CatalogBackingSessionDisplay,
+  readDisplay?: () => CatalogBackingSessionDisplay | undefined,
   readIcon?: () => JSX.Element,
   headerSummary?: Parameters<typeof renderTeamSessionSlots>,
 ) {
@@ -37,7 +37,9 @@ export function renderSidebarSessionIndicators(
       : !team() && attention.kind === "approval";
   });
   const childrenExpanded = createMemo(() => host.isSessionChildrenExpanded(readSession()));
-  const initialPullRequest = createMemo(() => readSession().pullRequest ?? display?.pullRequest);
+  const initialPullRequest = createMemo(
+    () => readSession().pullRequest ?? readDisplay?.()?.pullRequest,
+  );
   const pullRequest = createMemo(() => {
     const readSessionValue = readSession();
     const initialPullRequestValue = initialPullRequest();

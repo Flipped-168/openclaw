@@ -1,4 +1,3 @@
-import { html } from "lit";
 import { describe, expect, it, vi } from "vitest";
 import type { GatewayBrowserClient } from "../../api/gateway.ts";
 import { createGateway, createSessions, mountSidebar } from "../app-sidebar.ts";
@@ -9,11 +8,13 @@ describe("AppSidebar scroll", () => {
     vi.useFakeTimers({ toFake: ["requestAnimationFrame", "cancelAnimationFrame"] });
     const gateway = createGateway({} as GatewayBrowserClient);
     const { sidebar } = await mountSidebar(gateway, createSessions("main", ["agent:main:main"]));
+    const contextualContent = document.createElement("p");
+    contextualContent.textContent = "Gateway machine";
     sidebar.contextualSidebar = {
       key: "systems",
       data: undefined,
       loaderPending: false,
-      render: () => html`<p>Gateway machine</p>`,
+      render: () => contextualContent,
     };
     await sidebar.updateComplete;
     const scroller = sidebar.querySelector<HTMLElement>(".sidebar-shell__body");

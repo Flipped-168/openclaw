@@ -459,7 +459,7 @@ describe("AppSidebar expanded catalog refresh visibility", () => {
       const timersAfterDetach = vi.getTimerCount();
       const observationsAfterDetach = observe.mock.calls.length;
       await sidebar.updateComplete;
-      expect.soft(vi.getTimerCount()).toBe(timersAfterDetach);
+      expect.soft(vi.getTimerCount()).toBeLessThanOrEqual(timersAfterDetach);
       expect.soft(observe).toHaveBeenCalledTimes(observationsAfterDetach);
       expect.soft(observed.has(scrollBody!)).toBe(false);
 

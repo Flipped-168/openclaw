@@ -70,7 +70,8 @@ export function SidebarNotificationCard(props: {
             </span>
             {props.timestampMs == null ? null : (
               <>
-                <span aria-hidden="true">·</span>
+                {" "}
+                <span aria-hidden="true">·</span>{" "}
                 <RelativeTime class="sidebar-issues-panel__age" timestampMs={props.timestampMs} />
               </>
             )}

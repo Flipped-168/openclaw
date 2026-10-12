@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import type { AppSidebarSessionNavigationElement } from "../components/app-sidebar-session-navigation.ts";
+import type { ApplicationContext } from "../app/context.ts";
 import { createControlUiSessionRow as sessionRow } from "../test-helpers/control-ui-session-fixtures.ts";
 import { createControlUiE2eContextOptions } from "./control-ui-e2e-suite.test-support.ts";
 import {
@@ -57,9 +57,12 @@ suite.define(() => {
         sidebar.locator(`.sidebar-recent-session[data-session-key="${key}"]`);
       const readPinnedSessionState = () =>
         page.evaluate((key) => {
-          const row = document
-            .querySelector<AppSidebarSessionNavigationElement>("openclaw-app-sidebar")
-            ?.sessionData.sessionsResult?.sessions.find((session) => session.key === key);
+          const app = document.querySelector<
+            HTMLElement & { runtime?: { context: ApplicationContext } }
+          >("openclaw-app");
+          const row = app?.runtime?.context.sessions.presentation.result?.sessions.find(
+            (session) => session.key === key,
+          );
           return row
             ? { archived: row.archived, pinned: row.pinned, pinnedAt: row.pinnedAt }
             : null;

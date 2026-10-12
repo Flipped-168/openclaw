@@ -20,14 +20,16 @@ export function renderNewSessionLink(params: {
   showShortcut?: boolean;
   onOpen?: (agentId: string, target?: NewSessionTarget) => void;
 }): JSX.Element {
-  const disabled = Boolean(params.disabledReason);
-  const href = `${pathForRoute("new-session", params.basePath)}${newSessionSearch(params.agentId, params.target)}`;
-  const hint = params.showShortcut
-    ? `${params.label} (${formatKeyboardShortcutCombo(KEYBOARD_SHORTCUT_COMBOS.newSession)})`
-    : params.label;
+  const disabled = () => Boolean(params.disabledReason);
+  const href = () =>
+    `${pathForRoute("new-session", params.basePath)}${newSessionSearch(params.agentId, params.target)}`;
+  const hint = () =>
+    params.showShortcut
+      ? `${params.label} (${formatKeyboardShortcutCombo(KEYBOARD_SHORTCUT_COMBOS.newSession)})`
+      : params.label;
   return (
     <openclaw-tooltip
-      prop:content={params.disabledReason ?? hint}
+      prop:content={params.disabledReason ?? hint()}
       prop:contentTemplate={
         params.disabledReason == null && params.showShortcut
           ? renderShortcutHint(params.label, KEYBOARD_SHORTCUT_COMBOS.newSession)
@@ -37,16 +39,16 @@ export function renderNewSessionLink(params: {
       <a
         class={params.className}
         role="link"
-        href={disabled ? undefined : href}
+        href={disabled() ? undefined : href()}
         aria-label={params.label}
-        aria-disabled={disabled ? "true" : undefined}
-        tabindex={disabled ? -1 : undefined}
+        aria-disabled={disabled() ? "true" : undefined}
+        tabindex={disabled() ? -1 : undefined}
         onContextMenu={(event: MouseEvent) => {
           // Section menus must not replace the browser's Open Link in New Tab actions.
           event.stopPropagation();
         }}
         onClick={(event: MouseEvent) => {
-          if (disabled) {
+          if (disabled()) {
             event.preventDefault();
             return;
           }

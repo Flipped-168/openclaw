@@ -147,10 +147,10 @@ function renderAgentRow(
               title={pinLabel()}
               aria-pressed={pinned() ? "true" : "false"}
               tabindex="-1"
-              onClick={(event) => {
-                void (async () => {
+              ref={(button) => {
+                // Stop the click before Web Awesome's shadow menu selects the enclosing agent.
+                button.addEventListener("click", async (event) => {
                   event.stopPropagation();
-                  const button = event.currentTarget;
                   // Moving a keyed row into pinned-first order can drop native focus.
                   const focused = button === document.activeElement;
                   await params.onTogglePinnedAgent(agentId());
@@ -159,7 +159,7 @@ function renderAgentRow(
                       preventScroll: true,
                     });
                   }
-                })();
+                });
               }}
             >
               <Icon name="pin" />

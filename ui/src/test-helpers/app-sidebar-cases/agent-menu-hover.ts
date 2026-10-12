@@ -7,9 +7,7 @@ function pointerEvent(
   type: "pointerenter" | "pointerleave" | "pointermove",
   pointerType = "mouse",
 ) {
-  const event = new Event(type);
-  Object.defineProperty(event, "pointerType", { value: pointerType });
-  return event;
+  return new PointerEvent(type, { bubbles: type === "pointermove", pointerType });
 }
 
 describe("AppSidebar agent menu hover", () => {
@@ -30,12 +28,7 @@ describe("AppSidebar agent menu hover", () => {
         );
         sidebar.sidebarAgentsMode = mode;
         await sidebar.updateComplete;
-        const menus = (
-          sidebar as unknown as {
-            sidebarMenus: { preloadMenuRenderer: () => Promise<unknown> };
-          }
-        ).sidebarMenus;
-        await menus.preloadMenuRenderer();
+        await sidebar.sidebarMenus.preloadMenuRenderer();
         const input = document.createElement("input");
         document.body.append(input);
         input.focus();

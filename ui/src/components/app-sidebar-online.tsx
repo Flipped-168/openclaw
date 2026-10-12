@@ -74,9 +74,11 @@ export function renderAppSidebarOnline(host: AppSidebarRenderHost): JSX.Element 
   const counts = () => online().counts;
   const listUsers = () => online().listUsers;
   const filtered = createMemo(() => host.people.statusFilter === "running");
-  const routing = personActivityRouting(
-    { basePath: host.basePath, navigate: (route, options) => host.onNavigate?.(route, options) },
-    () => host.dismissTransientMenus(),
+  const routing = createMemo(() =>
+    personActivityRouting(
+      { basePath: host.basePath, navigate: (route, options) => host.onNavigate?.(route, options) },
+      () => host.dismissTransientMenus(),
+    ),
   );
   return (
     <section class="sidebar-online" aria-label={label()} data-session-section={sectionId}>
@@ -167,7 +169,7 @@ export function renderAppSidebarOnline(host: AppSidebarRenderHost): JSX.Element 
                       })
                     : t("presence.sessions.unavailable");
                 const activity = () =>
-                  personActivityLink(user().identity?.id, routing, presenceViewerLabel(user()));
+                  personActivityLink(user().identity?.id, routing(), presenceViewerLabel(user()));
 
                 return (
                   <div
