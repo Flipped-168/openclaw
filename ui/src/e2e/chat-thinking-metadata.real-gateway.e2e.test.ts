@@ -249,6 +249,10 @@ suite.define(() => {
         },
       );
     } finally {
+      observations.patchFailures = instance
+        .logs()
+        .split(/\r?\n/u)
+        .filter((line) => line.includes("sessions.patch: target failed"));
       const serialized = JSON.stringify({ commands, frames, observations }, null, 2)
         .replaceAll(instance.gatewayToken, "[synthetic token]")
         .replaceAll(instance.hookToken, "[synthetic token]")
