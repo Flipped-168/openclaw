@@ -10,7 +10,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { getRuntimeConfig, setRuntimeConfigSnapshot } from "../config/config.js";
-import { upsertSessionEntryCore } from "../config/sessions/session-accessor.js";
+import { upsertSessionEntryCore } from "../config/sessions/session-accessor.sqlite-entry.js";
 import * as entryReadFacts from "../config/sessions/session-entry-read-facts.js";
 import { addSessionMember } from "../config/sessions/session-sharing-store.js";
 import { ensureCanonicalUserProfileForEmail } from "../state/user-profile-writes.js";

@@ -429,7 +429,6 @@ describe("narrow session read owners", () => {
       const owner = roleClient("view", "scoped-owner");
       using _ = { [Symbol.dispose]: (await prepareUserProfileCatalog()).release };
       const cfg = rolePolicyConfig();
-      using _ = { [Symbol.dispose]: (await prepareUserProfileCatalog()).release };
       cfg.gateway!.roles!.definitions.view!.scopes.push("operator.admin");
       const context = createDirectChatContext({ getRuntimeConfig: () => cfg });
       const io = prepareRead(method, async () => {});

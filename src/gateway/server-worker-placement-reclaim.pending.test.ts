@@ -28,7 +28,11 @@ it.each(["active", "failed"] as const)(
     const entry = {
       sessionId,
       updatedAt: 1,
-      worktree: { id: "cancel-failure-worktree" },
+      worktree: {
+        id: "cancel-failure-worktree",
+        branch: "cancel-failure",
+        repoRoot: "/fixture/workspace",
+      },
     };
     await replaceSessionEntry({ agentId: "main", sessionKey, storePath: scope, env }, entry);
     const resolveTarget = () =>

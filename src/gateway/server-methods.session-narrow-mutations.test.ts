@@ -526,7 +526,6 @@ describe("invocation-owned session mutations", () => {
         using _ = { [Symbol.dispose]: (await prepareUserProfileCatalog()).release };
         client.connect.scopes = ["operator.sessions.write"];
         const cfg = rolePolicyConfig();
-        using _ = { [Symbol.dispose]: (await prepareUserProfileCatalog()).release };
         const entry = {
           ...ownedEntry(client, "original"),
           lifecycleRevision: "original",
