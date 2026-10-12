@@ -6,12 +6,12 @@ import { ensureProfileForEmail } from "../state/user-profiles.js";
 import { prepareGatewayRecipientProfile } from "./expected-profile.js";
 import type { GatewayClient } from "./server-methods/types.js";
 import type { GatewayWsClient } from "./server/ws-types.js";
+import type { resolveSessionSharingRole } from "./session-sharing-policy.js";
 import { prepareSessionMutationFacts } from "./session-sharing-preparation.js";
 import {
   canReceiveSessionEvent,
   prepareProjectedSessionSharing,
   prepareSessionSharingProfiles,
-  type resolveSessionSharingRole,
 } from "./session-sharing-read.js";
 import { resolveSessionStoreIdentity } from "./session-store-key.js";
 
