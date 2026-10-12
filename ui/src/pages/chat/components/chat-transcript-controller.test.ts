@@ -1006,6 +1006,7 @@ describe("chat transcript controller", () => {
   );
 
   it("preserves saved reader restoration when initial rows include typing", async () => {
+    const flushFrames = stubAnimationFrames();
     const paneId = "restore-initial-typing";
     saveChatSessionScrollPosition(paneId, `agent:main:${paneId}`, {
       scrollTop: 420,
@@ -1024,6 +1025,10 @@ describe("chat transcript controller", () => {
         scrollHeight: { configurable: true, value: 2000 },
       });
       renderRows(rows);
+      for (let frame = 0; frame < 3; frame += 1) {
+        flushFrames();
+        renderRows(rows);
+      }
       expect(container.scrollTop).toBe(420);
     } finally {
       transcript.hostDisconnected();

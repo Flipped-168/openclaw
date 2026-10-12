@@ -143,8 +143,8 @@ it.each([false, true])(
     const originalRead = SessionSnapshotStore.prototype.read;
     const storedRead = vi
       .spyOn(SessionSnapshotStore.prototype, "read")
-      .mockImplementation(async function (this: SessionSnapshotStore, key, onPrewarm) {
-        const snapshot = await originalRead.call(this, key, onPrewarm);
+      .mockImplementation(async function (this: SessionSnapshotStore, key) {
+        const snapshot = await originalRead.call(this, key);
         if (key === mainSnapshotKey) {
           entered.resolve();
           await release.promise;
@@ -181,7 +181,7 @@ it.each([false, true])(
       );
       expect(expectDefined(pane, "mounted pane runtime").element).toBe(paneElement);
       expect(chatHistoryRequests(pageState()).initialSnapshotHydration).toBeDefined();
-      expect(storedRead).toHaveBeenCalledWith(mainSnapshotKey, expect.any(Function));
+      expect(storedRead).toHaveBeenCalledWith(mainSnapshotKey);
       await entered.promise;
       expect(pane?.agentId).toBeUndefined();
       const state = pageState();
