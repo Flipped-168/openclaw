@@ -205,6 +205,97 @@ describe("parent-local inference context", () => {
     context.close();
   });
 
+  it.each([
+    { input: [] },
+    { input: [{ type: "function_call_output", call_id: "call", output: "result" }] },
+  ])(
+    "uses native reconstruction rather than treating a continuation delta as full input: %j",
+    ({ input }) => {
+      const { context, register } = fixture();
+      const parent = register("private");
+      context.prepare(request("root", parent.generation));
+      context.prepare({
+        ...request("root", parent.generation),
+        previous_response_id: "previous-response",
+        input,
+      });
+      parent.release();
+      const fork = context.fork({
+        sourceThreadId: "root",
+        threadId: "fork",
+        signal: new AbortController().signal,
+        assertCurrent: () => {},
+      });
+      const rebuilt = {
+        ...request("fork", fork.generation),
+        instructions: "rebuilt base",
+        input: [
+          { role: "user", content: "full native parent task" },
+          { role: "assistant", content: "full native parent answer" },
+          { role: "user", content: "side question" },
+        ],
+      };
+      try {
+        expect(context.prepare(rebuilt).body).toEqual({
+          ...rebuilt,
+          instructions: "rebuilt base\n\nprivate",
+        });
+      } finally {
+        context.close();
+      }
+    },
+  );
+
+  it("falls back to native reconstruction when the global wire-prefix LRU evicts a session", () => {
+    const contexts = Array.from({ length: 3 }, () => createCodexInferenceContext(() => {}));
+    const payload = "x".repeat(11 * 1024 * 1024);
+    const prepareParent = (index: number) => {
+      const context = contexts[index];
+      const parent = context.register({
+        threadId: "parent",
+        text: "private",
+        signal: new AbortController().signal,
+        assertCurrent: () => {},
+      });
+      context.prepare({
+        ...request("parent", parent.generation),
+        input: [{ role: "user", content: payload }],
+      });
+      parent.release();
+    };
+    const fork = (index: number) =>
+      contexts[index].fork({
+        sourceThreadId: "parent",
+        threadId: "fork",
+        signal: new AbortController().signal,
+        assertCurrent: () => {},
+      });
+    try {
+      prepareParent(0);
+      prepareParent(1);
+      fork(0).release();
+      prepareParent(2);
+      for (const index of [0, 1, 2]) {
+        const child = fork(index);
+        const rebuilt = {
+          ...request("fork", child.generation),
+          instructions: "rebuilt",
+          input: [{ role: "user", content: "side question" }],
+        };
+        const prepared = contexts[index].prepare(rebuilt).body;
+        expect(prepared.instructions).toBe(
+          index === 1 ? "rebuilt\n\nprivate" : "native base\n\nprivate",
+        );
+        expect(prepared.input).toHaveLength(index === 1 ? 1 : 2);
+        child.release();
+      }
+    } finally {
+      for (const context of contexts) {
+        context.close();
+      }
+    }
+  });
+
   it("rejects explicit non-string instructions", () => {
     const { context, register } = fixture();
     expect(() =>

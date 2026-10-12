@@ -123,6 +123,7 @@ import {
   CODEX_NATIVE_PERSONALITY_NONE,
   resolveCodexAppServerThreadModelSelection,
 } from "./thread-model-selection.js";
+import { isSameCodexAppServerThreadOwner } from "./thread-ownership.js";
 import {
   assertCodexSupervisionThreadLineage,
   CodexThreadPolicyHandoffError,
@@ -701,7 +702,12 @@ export async function runCodexAppServerSideQuestion(
               const assertCurrentBinding = () => {
                 assertCurrent();
                 runAbortController.signal.throwIfAborted();
-                if (!isDeepStrictEqual(options.bindingStore.read(bindingIdentity), binding)) {
+                const current = options.bindingStore.read(bindingIdentity);
+                if (
+                  !(denyToolCalls
+                    ? isSameCodexAppServerThreadOwner(current, binding)
+                    : isDeepStrictEqual(current, binding))
+                ) {
                   throw new Error("Codex side-question binding changed before fork");
                 }
               };

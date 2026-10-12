@@ -847,7 +847,11 @@ describe("runCodexAppServerSideQuestion", () => {
         },
       };
       const savedAppConfig = structuredClone(nativeAppConfig);
-      const client = createFakeClient({ completeTurn: rejectsReplay });
+      const turnStarted = createDeferred<void>();
+      const client = createFakeClient({
+        completeTurn: rejectsReplay,
+        onTurnStart: () => turnStarted.resolve(),
+      });
       const baseRequest = client.request.getMockImplementation()!;
       client.request.mockImplementation(async (method: string, requestParams?: unknown) => {
         if (method === "app/installed") {
@@ -944,9 +948,12 @@ describe("runCodexAppServerSideQuestion", () => {
         expect(methods).not.toContain("thread/fork");
         return;
       }
-      await vi.waitFor(() =>
-        expect(client.request.mock.calls.map(([method]) => method)).toContain("turn/start"),
-      );
+      await Promise.race([
+        turnStarted.promise,
+        run.then(() => {
+          throw new Error("Side question finished before starting its turn");
+        }),
+      ]);
       try {
         await handleClientRequestWhenReady(client, {
           id: "side-approval-policy",

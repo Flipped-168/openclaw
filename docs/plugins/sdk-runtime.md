@@ -91,10 +91,12 @@ The timeout defaults to 30 seconds.
 
 The fork uses the session's model and harness, with no model override. Codex
 inherits the conversation and tool definitions in an ephemeral thread, but denies
-local tool calls at dispatch and disables provider-hosted web search. Disabling
-search can reduce prompt-cache reuse for a search-enabled parent. It reuses the
-parent's recorded native settings and prepared inference instructions, including
-after the parent turn completes, rather than rebuilding the prompt. The fork has
+local tool calls at dispatch and disables provider-hosted web search. On managed
+inference routes, it replays the parent's last prepared instructions, tool schemas,
+and input prefix, including after parent completion, with tool choice set to `none`.
+Snapshots share a 32 MiB in-memory LRU budget; evicted or oversized snapshots
+and WebSocket continuation requests fall back to native thread reconstruction
+without guaranteed cache reuse. The fork has
 its own thread, session, and current model authority. Start a normal parent turn
 in the current runtime before requesting a fork. The native hook relay must be
 enabled and available; otherwise the request fails closed.

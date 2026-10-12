@@ -138,6 +138,79 @@ async function waitForUpstreamClose() {
 }
 
 describe("inference HTTP transport ownership", () => {
+  it("replays completed-parent prompt bytes through the HTTP serializer", async () => {
+    const received: Buffer[] = [];
+    handle = (req, res) => {
+      void readBody(req).then((bytes) => {
+        received.push(bytes);
+        res.end("answer");
+      });
+    };
+    const register = (threadId: string) =>
+      proxy.context.register({
+        threadId,
+        text: "private parent prefix",
+        signal: new AbortController().signal,
+        assertCurrent: () => {},
+      });
+    const send = async (threadId: string, generation: string, prompt: object) => {
+      const upload = post(
+        Buffer.from(
+          JSON.stringify({
+            model: "allowed",
+            ...prompt,
+            client_metadata: {
+              "x-codex-turn-metadata": JSON.stringify({
+                thread_id: threadId,
+                request_kind: "turn",
+                [CODEX_INFERENCE_GENERATION_KEY]: generation,
+              }),
+            },
+          }),
+        ),
+      );
+      const response = await upload.response;
+      expect(response.statusCode).toBe(200);
+      await readBody(response);
+      await upload.closed;
+    };
+    const parent = register("parent");
+    const input = [
+      { role: "developer", content: "exact environment λ\n".repeat(16000) },
+      { role: "user", content: "parent task" },
+      { role: "assistant", content: "previous tool call" },
+      { type: "function_call_output", call_id: "call", output: "exact result" },
+    ];
+    await send("parent", parent.generation, {
+      instructions: "native base",
+      tools: [{ type: "function", name: "read", parameters: { type: "object" } }],
+      input,
+    });
+    parent.release();
+    const fork = proxy.context.fork({
+      sourceThreadId: "parent",
+      threadId: "fork",
+      signal: new AbortController().signal,
+      assertCurrent: () => {},
+    });
+    const question = { role: "user", content: "side question" };
+    await send("fork", fork.generation, {
+      instructions: "rebuilt base",
+      previous_response_id: "child-prewarm-response",
+      tools: [],
+      input: [{ role: "developer", content: "rebuilt environment" }, question],
+    });
+    const parentWire = JSON.parse(received[0].toString());
+    const forkWire = JSON.parse(received[1].toString());
+    expect(forkWire.instructions).toBe(parentWire.instructions);
+    expect(JSON.stringify(forkWire.tools)).toBe(JSON.stringify(parentWire.tools));
+    expect(JSON.stringify(forkWire.input.slice(0, -1))).toBe(JSON.stringify(parentWire.input));
+    expect(forkWire.input.at(-1)).toEqual(question);
+    expect(forkWire.tool_choice).toBe("none");
+    expect(forkWire).not.toHaveProperty("previous_response_id");
+    fork.release();
+  });
+
   it.each([false, true])(
     "authorizes a fork after early parent cleanup=%s",
     async (earlyCleanup) => {

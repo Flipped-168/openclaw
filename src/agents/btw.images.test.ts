@@ -24,6 +24,7 @@ import {
   resolveModelAsyncMock,
   resolveModelWithRegistryMock,
 } from "./btw.test-support.js";
+import type { StreamFn } from "./runtime/index.js";
 const QUESTION_IMAGE: ImageContent = {
   type: "image",
   data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGNgYAAAAAMAASsJTYQAAAAASUVORK5CYII=",
@@ -90,10 +91,11 @@ describe("side-question provider boundaries", () => {
 
   it("preserves ordinary OpenAI BTW with provider-injected native web search", async () => {
     const payload = { input: [], tools: [{ type: "web_search" }] };
-    registerProviderStreamForModelMock.mockReturnValue(async (model, _context, options) => {
+    const stream: StreamFn = async (model, _context, options) => {
       await options?.onPayload?.(payload, model);
       return makeAsyncEvents([createDoneEvent("Search answer.")]);
-    });
+    };
+    registerProviderStreamForModelMock.mockReturnValue(stream);
 
     await expect(runSideQuestion()).resolves.toEqual({ text: "Search answer." });
     expect(payload.tools).toEqual([{ type: "web_search" }]);

@@ -27,6 +27,7 @@ const {
   createFakeClient,
   extractRelayIdFromThreadConfig,
   getSharedCodexAppServerClientMock,
+  readCodexAppServerBindingMock,
   runCodexAppServerSideQuestion,
   sideParams,
   toolExecuteMock,
@@ -200,6 +201,61 @@ describe("runCodexAppServerSideQuestion cache-parity fork", () => {
       } finally {
         client.emit(turnCompleted("side-thread", "turn-1", "Read-only review."));
         await run.catch(() => undefined);
+        client.close();
+        host.closeHost();
+        host.closeAdmission();
+      }
+    },
+  );
+
+  it.each(["settled", "thread-replaced", "client-replaced"])(
+    "checks physical parent ownership after admission: %s",
+    async (change) => {
+      const host = await createAdmittedHostCapabilityTestFixture(
+        { runId: "run-side-1" },
+        { toolCalls: "deny" },
+      );
+      const client = createFakeClient();
+      ensureCodexAppServerClientRuntime(client, { agentDir: "/tmp/agent" });
+      recordCodexThreadForkSettings(client, "parent-thread", { model: "gpt-5.5" });
+      const baseRequest = client.request.getMockImplementation()!;
+      client.request.mockImplementation(async (method, params) =>
+        method === "configRequirements/read" ? { requirements: null } : baseRequest(method, params),
+      );
+      recordCodexTurnForkSettings(client, { threadId: "parent-thread", input: [] });
+      const binding = {
+        ...readCodexAppServerBindingMock(),
+        clientId: client.getInstanceId(),
+        updatedAt: "2026-10-01T00:00:00.000Z",
+      };
+      readCodexAppServerBindingMock.mockReturnValue(binding);
+      getSharedCodexAppServerClientMock.mockImplementation(async () => {
+        readCodexAppServerBindingMock.mockReturnValue({
+          ...binding,
+          updatedAt: "2026-10-01T00:00:01.000Z",
+          ...(change === "thread-replaced" ? { threadId: "replacement-thread" } : {}),
+          ...(change === "client-replaced" ? { clientId: "replacement-client" } : {}),
+        });
+        return client;
+      });
+      try {
+        const run = runCodexAppServerSideQuestion(
+          sideParams({
+            toolCalls: "deny",
+            hostCapabilities: host.hostCapabilities,
+            opts: { runId: "run-side-1" },
+          }),
+          { nativeHookRelay: { enabled: true } },
+        );
+        if (change === "settled") {
+          await expect(run).resolves.toMatchObject({ text: "Side answer." });
+        } else {
+          await expect(run).rejects.toThrow("Codex side-question binding changed before fork");
+          expect(client.request.mock.calls.some(([method]) => method === "thread/fork")).toBe(
+            false,
+          );
+        }
+      } finally {
         client.close();
         host.closeHost();
         host.closeAdmission();

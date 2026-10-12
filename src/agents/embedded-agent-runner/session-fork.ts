@@ -44,7 +44,7 @@ function forgetSnapshot(sessionId: string): void {
   }
 }
 
-function clearEmbeddedSessionForkSnapshot(sessionId?: string): void {
+export function clearEmbeddedSessionForkSnapshot(sessionId?: string): void {
   if (sessionId === undefined) {
     for (const id of captures.keys()) {
       clearEmbeddedSessionForkSnapshot(id);

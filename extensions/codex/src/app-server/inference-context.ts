@@ -1,16 +1,58 @@
 import { randomUUID } from "node:crypto";
+import { defineCodexBuildState } from "../build-state.js";
 import { readCodexInferenceMetadata, type CodexInferenceMetadata } from "./inference-metadata.js";
-import type { JsonObject } from "./protocol-json.js";
+import { isJsonObject, type JsonObject } from "./protocol.js";
 
 export { CODEX_INFERENCE_GENERATION_KEY } from "./inference-metadata.js";
 
 const MAX_CONTEXT_BYTES = 256 * 1024;
 const MAX_ACTIVE_ROOTS = 64;
 const MAX_PREPARED_PREFIXES = 256;
+const MAX_RETAINED_REQUEST_BYTES = 32 * 1024 * 1024;
+type PreparedPrefix = { text: string };
+const retained = defineCodexBuildState("openclaw.codexPreparedRequests", () => ({
+  requests: new Map<PreparedPrefix, { body: JsonObject; bytes: number }>(),
+  bytes: 0,
+}))();
+
+function forgetRequest(prefix: PreparedPrefix | undefined) {
+  if (!prefix) {
+    return;
+  }
+  const request = retained.requests.get(prefix);
+  if (request) {
+    retained.bytes -= request.bytes;
+    retained.requests.delete(prefix);
+  }
+}
+
+function retainRequest(prefix: PreparedPrefix, body: JsonObject) {
+  forgetRequest(prefix);
+  // A continuation contains only a delta; its server-side prefix is not in this snapshot.
+  if (body.previous_response_id != null) {
+    return;
+  }
+  const snapshot: JsonObject = {};
+  for (const key of ["instructions", "tools", "input"]) {
+    if (key in body) {
+      snapshot[key] = body[key];
+    }
+  }
+  const bytes = Buffer.byteLength(JSON.stringify(snapshot));
+  if (bytes > MAX_RETAINED_REQUEST_BYTES) {
+    return;
+  }
+  while (retained.bytes + bytes > MAX_RETAINED_REQUEST_BYTES) {
+    forgetRequest(retained.requests.keys().next().value);
+  }
+  retained.requests.set(prefix, { body: snapshot, bytes });
+  retained.bytes += bytes;
+}
 
 type Registration = {
   generation: string;
   text: string;
+  forkPrefix?: JsonObject;
   controller: AbortController;
   assertCurrent: () => void;
   release: () => void;
@@ -20,7 +62,7 @@ type Registration = {
 export function createCodexInferenceContext(assertClientCurrent: () => void) {
   const roots = new Map<string, Registration>();
   // Prepared bytes survive turn settlement, but confer no execution authority.
-  const prefixes = new Map<string, string>();
+  const prefixes = new Map<string, PreparedPrefix>();
   let closed = false;
   const assertOpen = () => {
     if (closed) {
@@ -35,6 +77,7 @@ export function createCodexInferenceContext(assertClientCurrent: () => void) {
       signal: AbortSignal;
       assertCurrent: () => void;
       retainPrefix?: boolean;
+      forkPrefix?: JsonObject;
     }) {
       assertOpen();
       params.signal.throwIfAborted();
@@ -57,6 +100,7 @@ export function createCodexInferenceContext(assertClientCurrent: () => void) {
       const registration: Registration = {
         generation: randomUUID(),
         text: params.text,
+        forkPrefix: params.forkPrefix,
         controller,
         assertCurrent: () => {
           assertOpen();
@@ -78,7 +122,12 @@ export function createCodexInferenceContext(assertClientCurrent: () => void) {
       };
       roots.set(params.threadId, registration);
       if (params.retainPrefix !== false) {
-        prefixes.set(params.threadId, params.text);
+        const prefix = prefixes.get(params.threadId);
+        if (prefix) {
+          prefix.text = params.text;
+        } else {
+          prefixes.set(params.threadId, { text: params.text });
+        }
       }
       params.signal.addEventListener("abort", registration.release, { once: true });
       return { generation: registration.generation, release: registration.release };
@@ -91,19 +140,27 @@ export function createCodexInferenceContext(assertClientCurrent: () => void) {
       assertCurrent: () => void;
     }) {
       assertOpen();
-      const text = prefixes.get(params.sourceThreadId);
-      if (text === undefined) {
+      const prefix = prefixes.get(params.sourceThreadId);
+      if (!prefix) {
         throw new Error("Cache-parity fork has no prepared parent inference context.");
+      }
+      const request = retained.requests.get(prefix);
+      if (request) {
+        // LRU is global across private routes; active forks keep their admitted snapshot.
+        retained.requests.delete(prefix);
+        retained.requests.set(prefix, request);
       }
       return this.register({
         threadId: params.threadId,
-        text,
+        text: prefix.text,
+        forkPrefix: request?.body,
         retainPrefix: false,
         signal: params.signal,
         assertCurrent: params.assertCurrent,
       });
     },
     forget(threadId: string) {
+      forgetRequest(prefixes.get(threadId));
       prefixes.delete(threadId);
       roots.get(threadId)?.release();
     },
@@ -156,6 +213,29 @@ export function createCodexInferenceContext(assertClientCurrent: () => void) {
           };
         }
       }
+      if (kind === "turn") {
+        const prefix = registration.forkPrefix;
+        const question = Array.isArray(body.input)
+          ? body.input.findLast((item) => isJsonObject(item) && item.role === "user")
+          : undefined;
+        if (prefix && Array.isArray(prefix.input) && question) {
+          // Native thread/fork reconstructs persisted history and settings. Replay the
+          // last actual wire prefix instead, without normalizing any prompt or schema.
+          preparedBody = { ...body };
+          delete preparedBody.previous_response_id;
+          for (const key of ["instructions", "tools", "input"]) {
+            delete preparedBody[key];
+          }
+          Object.assign(preparedBody, prefix);
+          preparedBody.input = [...prefix.input, question];
+          // Keep hosted tool declarations cache-identical, but never execute them.
+          preparedBody.tool_choice = "none";
+        }
+        const retainedPrefix = metadata.threadId ? prefixes.get(metadata.threadId) : undefined;
+        if (retainedPrefix) {
+          retainRequest(retainedPrefix, preparedBody);
+        }
+      }
       return {
         body: preparedBody,
         assertCurrent: registration.assertCurrent,
@@ -164,6 +244,9 @@ export function createCodexInferenceContext(assertClientCurrent: () => void) {
     },
     close() {
       closed = true;
+      for (const prefix of prefixes.values()) {
+        forgetRequest(prefix);
+      }
       prefixes.clear();
       for (const registration of roots.values()) {
         registration.release();

@@ -24,15 +24,20 @@ cache writes, and every completed model call in the side thread's native tool
 loop; replayed response IDs are counted once. The visible reply still contains
 only the last answer, and the main session's usage and context snapshot stay unchanged.
 
-Tool-denied `/btw` forks reuse the parent's prepared thread and turn settings.
-On managed inference routes, the last prepared private instruction prefix stays
-in memory after the parent turn finishes: up to 256 thread prefixes per route,
-each at most 256 KiB. Closing the thread or client removes it. That snapshot is
-context only, not continuing authority from the completed parent; each fork uses
-the current side request's model authorization and cancellation lifetime.
+Read-only session forks reuse the parent's prepared thread and turn settings.
+On managed inference routes, they replay the last model request's exact
+instructions, tool schemas, and input prefix, followed by the side question.
+These request snapshots stay in process memory after parent settlement, within
+a shared 32 MiB least-recently-used budget. An evicted or oversized snapshot,
+or a WebSocket continuation that references prior server-side context, falls
+back to native thread reconstruction without guaranteed prompt-cache reuse.
+The separately retained OpenClaw instruction text is limited to 256 KiB per
+thread and 256 threads per route. Thread retirement or client shutdown removes
+the retained context. None of these snapshots extends the parent's authority:
+each fork uses the current side request's authorization and cancellation lifetime.
 Native tools are denied through the required PreToolUse relay. Hosted web search
-bypasses that relay, so these forks explicitly set Codex `web_search: "disabled"`,
-even when search is enabled on the parent.
+is disabled in Codex, and replayed requests use `tool_choice: "none"` so retaining
+the parent's exact tool schemas cannot enable hosted execution.
 
 For native connected apps, Codex also owns the final per-thread app and tool
 policy. OpenClaw caches a runtime-and-workspace-scoped `plugin/installed`

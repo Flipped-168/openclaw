@@ -4,6 +4,7 @@ import { configureAiTransportHost, getAiTransportHost } from "@openclaw/ai";
 import { cleanupSessionResources } from "@openclaw/ai/internal/runtime";
 import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { clearCommittedSessionResetRuntimeState } from "../auto-reply/reply/session-reset-cleanup.js";
 import { captureRuntimeConfigAsyncReader } from "../config/io.js";
 import { upsertSessionEntryCore } from "../config/sessions/session-accessor.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
@@ -368,16 +369,17 @@ describe("embedded cache-parity session fork", () => {
               },
               [Symbol.dispose]: () => placement.release(),
             });
+          const currentPlacement = placement.current();
           const publication = stagePlacementWorkspaceJournalWorkerPublication(
             requireOpenClawStateDatabaseIdentity({ db: database.db }),
             sessionId,
             true,
           );
           try {
-            expect(() => placement.current()).toThrow("placement authority changed");
+            expect(placement.current()).toEqual(currentPlacement);
             await expect(fork()).resolves.toEqual({ text: "Review answer" });
             expect(prepareSandbox).not.toHaveBeenCalled();
-            expect(() => placement.current()).toThrow("placement authority changed");
+            expect(placement.current()).toEqual(currentPlacement);
           } finally {
             publication.rollback();
             placement.release();
@@ -429,8 +431,16 @@ describe("embedded cache-parity session fork", () => {
           const pluginAbort = new AbortController();
           beforeProviderResponse = () => pluginAbort.abort(new Error("plugin runtime retired"));
           await expect(fork(pluginAbort.signal)).rejects.toThrow();
-          beforeProviderResponse = () => cleanupSessionResources(sessionId);
+          const onResetError = vi.fn();
+          beforeProviderResponse = () =>
+            clearCommittedSessionResetRuntimeState({
+              previousSessionEntry: { sessionId },
+              agentId: "main",
+              sessionKey,
+              onError: onResetError,
+            });
           await expect(fork()).rejects.toThrow("requires a parent turn");
+          expect(onResetError).not.toHaveBeenCalled();
           beforeProviderResponse = undefined;
           const beforeReset = payloads.length;
           await expect(fork()).rejects.toThrow("requires a parent turn");

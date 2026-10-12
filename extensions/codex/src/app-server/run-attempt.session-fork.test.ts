@@ -10,8 +10,10 @@ import { CODEX_INFERENCE_GENERATION_KEY } from "./inference-context.js";
 import { createCodexInferenceModelBinding } from "./inference-dispatch.js";
 import { getCodexInferenceThread, ownCodexInferenceClient } from "./inference-routing.js";
 import { codexNativeSubagentMonitorRuntime } from "./native-subagent-monitor.js";
-import { isJsonObject } from "./protocol.js";
+import { isJsonObject, type JsonObject } from "./protocol.js";
 import {
+  bindProductionHarnessHostCapabilitiesForTest,
+  createCodexRuntimePlanFixture,
   createStartedThreadHarness,
   createTestParams,
   runCodexAppServerAttempt,
@@ -29,7 +31,12 @@ afterAll(clearRuntimeConfigSnapshot);
 describe("parent session fork", () => {
   it.each([false, true])("forks with parent cleanup=%s", async (completeParent) => {
     let inferenceAdmitted = false;
-    let sideInstructions: unknown;
+    let sideRequest: JsonObject | undefined;
+    const question = {
+      type: "message",
+      role: "user",
+      content: [{ type: "input_text", text: "Review the active task without executing tools." }],
+    };
     const harness = createStartedThreadHarness(
       async (method, request) => {
         if (method === "account/read") {
@@ -51,8 +58,10 @@ describe("parent session fork", () => {
                   "Expected the parent's managed inference route and child admission",
                 );
               }
-              sideInstructions = route.context.prepare({
-                instructions: "native base",
+              sideRequest = route.context.prepare({
+                instructions: "rebuilt native base",
+                tools: [],
+                input: [{ role: "developer", content: "rebuilt environment" }, question],
                 client_metadata: {
                   thread_id: "fork-thread",
                   "x-codex-turn-metadata": JSON.stringify({
@@ -62,7 +71,7 @@ describe("parent session fork", () => {
                       request.responsesapiClientMetadata[CODEX_INFERENCE_GENERATION_KEY],
                   }),
                 },
-              }).body.instructions;
+              }).body;
               const execution = await createCodexInferenceModelBinding({
                 client: harness.client,
                 provider: "openai",
@@ -103,7 +112,29 @@ describe("parent session fork", () => {
     );
     ownCodexInferenceClient(harness.client);
     const params = createTestParams();
+    params.provider = "openai";
+    params.model = { ...params.model, provider: "openai", api: "openai-responses" };
+    params.resolvedApiKey = "synthetic-parent-key";
+    const authPlan = {
+      providerForAuth: "openai",
+      authProfileProviderForAuth: "openai",
+      selectedAuthMode: "api-key",
+      modelRoute: {
+        provider: "openai",
+        modelId: params.modelId,
+        api: "openai-responses",
+        baseUrl: "https://api.openai.com/v1",
+        authRequirement: "api-key",
+        requestTransportOverrides: "none",
+      },
+    } satisfies AgentHarnessSideQuestionParamsV2["preparedRuntimeAuth"]["plan"];
+    params.runtimePlan = { ...createCodexRuntimePlanFixture(), auth: authPlan };
     setRuntimeConfigSnapshot(params.config ?? {});
+    const closeParentHost = await bindProductionHarnessHostCapabilitiesForTest(params, {
+      profileId: "fork-parent-operator",
+      scopes: ["operator.write"],
+      assertCurrent: () => {},
+    });
     const parent = runCodexAppServerAttempt(params);
     await parent.waitForTurnAccepted();
     const binding = testCodexAppServerBindingStore.read(
@@ -126,6 +157,13 @@ describe("parent session fork", () => {
     }
     const parentRequest = {
       instructions: "native base",
+      tools: [{ type: "function", name: "read", parameters: { type: "object" } }],
+      input: [
+        { role: "developer", content: "exact parent environment\n".repeat(12000) },
+        { role: "user", content: "parent task" },
+        { role: "assistant", content: "tool round" },
+        { type: "function_call_output", call_id: "parent-call", output: "exact tool result" },
+      ],
       client_metadata: {
         thread_id: binding?.threadId ?? "thread-1",
         "x-codex-turn-metadata": JSON.stringify({
@@ -136,14 +174,18 @@ describe("parent session fork", () => {
         }),
       },
     };
-    const expectedInstructions = route.context.prepare(parentRequest).body.instructions;
+    route.context.prepare({ ...parentRequest, input: [] });
+    const expectedRequest = route.context.prepare(parentRequest).body;
     if (completeParent) {
       await harness.completeTurn({ threadId: binding?.threadId ?? "thread-1", turnId: "turn-1" });
       await parent;
+      closeParentHost();
+      expect(() => params.hostCapabilities.assertActive()).toThrow(
+        "agent harness host capability is no longer active",
+      );
       expect(() => route.context.prepare(parentRequest)).toThrow("current admitted");
     }
-    // The parent used native-auth fixture keys; the side request below prepares an API-key route.
-    // A fresh key-based acquisition must not replace the bound physical owner.
+    // A separately prepared side credential must not replace the bound physical owner.
     const start = vi
       .spyOn(CodexAppServerClient, "start")
       .mockClear()
@@ -171,19 +213,7 @@ describe("parent session fork", () => {
       hostCapabilities: host.hostCapabilities,
       opts: { runId: "session-fork" },
       preparedRuntimeAuth: {
-        plan: {
-          providerForAuth: "openai",
-          authProfileProviderForAuth: "openai",
-          selectedAuthMode: "api-key",
-          modelRoute: {
-            provider: "openai",
-            modelId: params.modelId,
-            api: "openai-responses",
-            baseUrl: "https://api.openai.com/v1",
-            authRequirement: "api-key",
-            requestTransportOverrides: "none",
-          },
-        },
+        plan: authPlan,
         authProfileStore: params.authProfileStore ?? { version: 1, profiles: {} },
         authStorage: params.authStorage,
         modelRegistry: params.modelRegistry,
@@ -199,7 +229,10 @@ describe("parent session fork", () => {
       ).resolves.toMatchObject({ text: "Read-only review." });
       expect(start).not.toHaveBeenCalled();
       expect(inferenceAdmitted).toBe(true);
-      expect(sideInstructions).toBe(expectedInstructions);
+      expect(sideRequest?.instructions).toBe(expectedRequest.instructions);
+      expect(sideRequest?.tools).toEqual(expectedRequest.tools);
+      expect(sideRequest?.input).toEqual([...parentRequest.input, question]);
+      expect(sideRequest?.tool_choice).toBe("none");
       expect(
         await codexNativeSubagentMonitorRuntime.captureModelSource({
           client: harness.client,
@@ -218,6 +251,7 @@ describe("parent session fork", () => {
     } finally {
       await harness.completeTurn({ threadId: binding?.threadId ?? "thread-1", turnId: "turn-1" });
       await parent;
+      closeParentHost();
       host.closeHost();
       host.closeAdmission();
     }
