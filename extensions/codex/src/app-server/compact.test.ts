@@ -242,7 +242,9 @@ describe("maybeCompactCodexAppServerSession", () => {
       await held;
     }
 
-    await expect(pending).rejects.toThrow("Codex session generation is no longer current");
+    await expect(pending).rejects.toThrow(
+      /Codex session (generation is no longer current|execution policy changed)/,
+    );
     expect(clientFactory).not.toHaveBeenCalled();
     expect(fake.request).not.toHaveBeenCalled();
     expect(bindingStore.read(current)).toEqual(binding);

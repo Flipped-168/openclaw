@@ -506,6 +506,8 @@ export type GatewayRequestOptions = {
 export type SessionMutationAuthorization = {
   /** Release the request-owned prepared session facts after its final consumer. */
   release?: () => void;
+  /** Keep the same facts through accepted work; release after that work settles. */
+  retain?: () => () => void;
   /** Consume fresh durable facts while their physical reader remains retained. */
   withCurrent?: <T>(consume: () => T) => Promise<T>;
   withPreparedCurrent?: <T>(

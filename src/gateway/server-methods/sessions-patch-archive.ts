@@ -10,7 +10,6 @@ import type { ModelCatalogSnapshot } from "../../agents/model-catalog.js";
 import { SessionWorktreeLifecycleError } from "../../agents/worktrees/errors.js";
 import type { SessionEntry } from "../../config/sessions.js";
 import type { SessionAccessScope } from "../../config/sessions/session-accessor.js";
-import { readRetainedSessionEntryFacts } from "../../config/sessions/session-entry-read-facts.js";
 import { captureSessionEntryMetadataRead } from "../../config/sessions/session-entry-source-authority.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { formatErrorMessage } from "../../infra/errors.js";
@@ -142,26 +141,7 @@ async function prepareSessionPatchArchiveFromSource(
     },
     ErrorShape
   > => {
-    const row = actor
-      ? undefined
-      : readRetainedSessionEntryFacts(
-          {
-            agentId: selected.readSource?.agentId ?? selected.agentId,
-            path: selected.readSource?.path ?? selected.storePath,
-          },
-          { sessionKeys: [selected.canonicalKey] },
-        );
-    if (!actor && !row) {
-      return err(archiveChangedError(target.key));
-    }
-    const freshResolved = actor
-      ? selected
-      : {
-          ...selected,
-          store: Object.fromEntries(
-            row!.entries.flatMap(({ sessionKey, entry }) => (entry ? [[sessionKey, entry]] : [])),
-          ),
-        };
+    const freshResolved = selected;
     if (freshResolved.storePath !== target.storePath) {
       return err(archiveChangedError(target.key));
     }

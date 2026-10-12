@@ -89,6 +89,10 @@ async function handleChatSendWithOptions(
     return;
   }
   const { request, session, admission } = setup;
+  const releaseSessionAuthorization = sessionMutationAuthorization?.retain?.();
+  if (releaseSessionAuthorization) {
+    admission.addCleanup(releaseSessionAuthorization);
+  }
   const { p, systemInputProvenance, reconnectResumeRequested } = request;
   const { clientRunId, cfg, storePath, entry, sessionKey, sessionRoutingChanged, selectedAgent } =
     session;

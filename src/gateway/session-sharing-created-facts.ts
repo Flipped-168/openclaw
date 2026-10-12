@@ -20,6 +20,8 @@ export type PreparedSessionSourceFacts = PreparedSessionMutationFacts & {
   /** Physical source retained by the same read custody as the sharing facts. */
   sourcePath?: string;
   sourceAgentId?: string;
+  /** An absent row still retains the physical source that proved its absence. */
+  readSource?: CapturedSessionEntryReadSource;
 };
 
 export type CommittedSessionMutationTarget = {
@@ -82,7 +84,11 @@ export function createSessionSharingReceiptRead({
       ) {
         throw new SessionMutationFactsUnavailableError();
       }
-      return { target: null, membership: new Set<string>() };
+      return {
+        target: null,
+        membership: new Set<string>(),
+        readSource: sourceIdentities.get(selected.storePath),
+      };
     };
   } else {
     if (!sharing) {

@@ -673,9 +673,11 @@ export function resetSessionAccessorMocks() {
       options: {
         fallbackEntry?: Record<string, unknown>;
         replaceEntry?: boolean;
+        onCommitted?: (entry: Record<string, unknown>) => void;
       } = {},
-    ) =>
-      await mocks.updateSessionStore(
+    ) => {
+      let committed: Record<string, unknown> | undefined;
+      const result = await mocks.updateSessionStore(
         scope.storePath,
         async (store: SessionStoreFixture) => {
           const existing = selectFreshestTargetFixtureEntry(store, scope.target);
@@ -698,10 +700,16 @@ export function resetSessionAccessorMocks() {
             delete store[key];
           }
           store[scope.target.canonicalKey] = next;
+          committed = next;
           return next;
         },
         options,
-      ),
+      );
+      if (committed) {
+        options.onCommitted?.(committed);
+      }
+      return result;
+    },
   );
 }
 

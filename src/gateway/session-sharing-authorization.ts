@@ -69,6 +69,7 @@ export type SessionMutationAuthorizationParams = {
     | {
         target: SessionSharingTarget | null;
         storageTarget: Pick<GatewaySessionStoreTarget, "agentId" | "canonicalKey" | "storePath">;
+        readSource?: SessionSharingTarget["readSource"];
         members: readonly string[];
       }
     | undefined;
@@ -199,6 +200,9 @@ export function resolveOwnSessionProfileAuthorization(params: {
 }
 
 export function sessionMutationTargetChanged(method: string, sessionKey: string) {
+  if (method.startsWith("talk.")) {
+    console.error(new Error("TALK_DIAGNOSTIC_TARGET_CHANGE").stack);
+  }
   return new SessionMutationAuthorizationChangedError(
     errorShape(ErrorCodes.INVALID_REQUEST, `session changed before ${method}; retry the request`, {
       details: { code: "SESSION_MUTATION_AUTHORIZATION_CHANGED", method, sessionKey },

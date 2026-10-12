@@ -208,7 +208,11 @@ export function resolveSessionMutationAuthorization(request: SessionMutationAuth
   const resolveAuthorizedTarget = (targetRef: SessionMutationTarget, targetCount: number) => {
     const prepared = params.preparedTargetRead?.(targetRef, getCfg());
     if (prepared) {
-      return { target: prepared.target, members: prepared.members };
+      return {
+        target: prepared.target,
+        members: prepared.members,
+        preparedReadSource: prepared.readSource,
+      };
     }
     return consuming.sharing
       ? { target: (consuming.sharing.assertCurrent(), consuming.sharing.target) }

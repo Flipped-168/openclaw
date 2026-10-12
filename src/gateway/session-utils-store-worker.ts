@@ -216,7 +216,10 @@ async function prepareGatewaySessionStoreReadInWorker(
     const targetDiscoveryCache: GatewaySessionStoreDiscoveryCache = new Map();
     for (const source of sources.agents) {
       if (!source.result.available && source.result.reason !== "database-missing") {
-        throw new Error(`Session stores for agent ${source.agentId} are unavailable`);
+        const detail = source.result.error
+          ? `${source.result.reason}: ${source.result.error}`
+          : source.result.reason;
+        throw new Error(`Session stores for agent ${source.agentId} are unavailable (${detail})`);
       }
       targetDiscoveryCache.set(source.agentId, {
         existing: source.result.available ? source.result.targets : [],

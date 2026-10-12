@@ -6,8 +6,10 @@ import {
   prepareSessionMutationAuthorizationRequest,
   sessionMutationTargetChanged,
 } from "./session-sharing-authorization.js";
-import { retainCreatedSessionMutationFacts } from "./session-sharing-created-facts.js";
-import type { PreparedSessionMutationFacts } from "./session-sharing-policy.js";
+import {
+  retainCreatedSessionMutationFacts,
+  type PreparedSessionSourceFacts,
+} from "./session-sharing-created-facts.js";
 import {
   prepareSessionMutationFacts,
   captureSessionMutationRouting,
@@ -87,7 +89,7 @@ export async function resolveSessionMutationAuthorizationAsync(
         requestParams: params.requestParams,
         context: params.context,
       }) ?? []);
-  const reads = new Map<string, SessionFactsRead<PreparedSessionMutationFacts>>();
+  const reads = new Map<string, SessionFactsRead<PreparedSessionSourceFacts>>();
   const identity = (target: { sessionKey: string; agentId?: string }, current = cfg) => {
     const selected = resolveSessionStoreIdentity({ cfg: current, ...target });
     return JSON.stringify([selected.agentId, selected.canonicalKey]);
@@ -150,7 +152,8 @@ export async function resolveSessionMutationAuthorizationAsync(
       preparedTalkSessionTarget,
       preparedProfiles,
       preparedTargetRead: (target, current) => {
-        params.assertInvocationCurrent?.();
+        // Accepted work retains these facts after its invoking request has completed.
+        // The consuming authority supplies the live effect and source checks.
         preparedProfiles?.readCurrent();
         if (!active) {
           throw new Error("Session authorization has been released");
@@ -164,6 +167,7 @@ export async function resolveSessionMutationAuthorizationAsync(
           return {
             target: facts.target,
             storageTarget: read.storageTarget,
+            readSource: facts.target?.readSource ?? facts.readSource,
             members: [...facts.membership],
           };
         } catch (error) {
@@ -197,9 +201,31 @@ export async function resolveSessionMutationAuthorizationAsync(
       }
     };
     const previousRelease = result.authorization.release;
-    result.authorization.release = () => {
-      previousRelease?.();
-      release();
+    let references = 1;
+    const releaseHold = () => {
+      let held = true;
+      return () => {
+        if (!held) {
+          return;
+        }
+        held = false;
+        references -= 1;
+        if (references === 0) {
+          try {
+            previousRelease?.();
+          } finally {
+            release();
+          }
+        }
+      };
+    };
+    result.authorization.release = releaseHold();
+    result.authorization.retain = () => {
+      if (!active) {
+        throw new Error("Session authorization has been released");
+      }
+      references += 1;
+      return releaseHold();
     };
     return result;
   } catch (error) {
