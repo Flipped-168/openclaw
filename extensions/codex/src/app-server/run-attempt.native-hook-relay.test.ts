@@ -14,6 +14,7 @@ import {
   createMockPluginRegistry,
   setActivePluginRegistry,
 } from "openclaw/plugin-sdk/plugin-test-runtime";
+import { setRuntimeConfigSnapshot } from "openclaw/plugin-sdk/runtime-config-snapshot";
 import { describe, expect, it, vi } from "vitest";
 import * as approvalBridge from "./approval-bridge.js";
 import { CodexAppServerRpcError } from "./client.js";
@@ -44,6 +45,7 @@ const DISABLED_CODEX_WEB_SEARCH_THREAD_CONFIG_FINGERPRINT = JSON.stringify({
 function createLoopRelayParams(sessionFile: string, workspaceDir: string) {
   const params = createParams(sessionFile, workspaceDir);
   params.config = { tools: { loopDetection: { enabled: true } } };
+  setRuntimeConfigSnapshot(params.config);
   return params;
 }
 

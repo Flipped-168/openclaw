@@ -4,6 +4,7 @@ import * as agentHarnessRuntime from "openclaw/plugin-sdk/agent-harness-runtime"
 import { createDeferred } from "openclaw/plugin-sdk/extension-shared";
 import { initializeGlobalHookRunner } from "openclaw/plugin-sdk/hook-runtime";
 import { createMockPluginRegistry } from "openclaw/plugin-sdk/plugin-test-runtime";
+import { setRuntimeConfigSnapshot } from "openclaw/plugin-sdk/runtime-config-snapshot";
 import { describe, expect, it, vi } from "vitest";
 import { readAttemptTerminal } from "./attempt-terminal.test-helper.js";
 import { createCodexTestHostCapabilities } from "./host-capability.test-support.js";
@@ -586,6 +587,7 @@ describe("Codex native hook Gateway fallback", () => {
     );
     const params = createParams(sessionFile, workspaceDir);
     params.config = { tools: { loopDetection: { enabled: true } } };
+    setRuntimeConfigSnapshot(params.config);
     const closeHost = await bindProductionHarnessHostCapabilitiesForTest(params);
     const abort = new AbortController();
     params.abortSignal = abort.signal;

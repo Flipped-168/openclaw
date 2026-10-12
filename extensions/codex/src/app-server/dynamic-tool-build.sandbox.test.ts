@@ -8,6 +8,7 @@ import {
   initializeGlobalHookRunner,
   resetGlobalHookRunner,
 } from "openclaw/plugin-sdk/plugin-test-runtime";
+import { clearRuntimeConfigSnapshot } from "openclaw/plugin-sdk/runtime-config-snapshot";
 import { createRemoteShellSandboxFsBridge } from "openclaw/plugin-sdk/sandbox";
 import { useAutoCleanupTempDirTracker } from "openclaw/plugin-sdk/test-env";
 import { createSandboxTestContext } from "openclaw/plugin-sdk/test-fixtures";
@@ -45,6 +46,7 @@ describe("Codex app-server sandbox shell tools", () => {
       close();
     }
     resetGlobalHookRunner();
+    clearRuntimeConfigSnapshot();
     vi.restoreAllMocks();
     vi.unstubAllEnvs();
   });

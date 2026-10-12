@@ -1747,6 +1747,7 @@ describe("Codex app-server dynamic tool build", () => {
       const workspaceDir = path.join(tempDir, "workspace");
       const params = createParams(path.join(tempDir, "session.jsonl"), workspaceDir);
       params.config = { agents: { defaults: { sandbox: { mode: "all" } } } };
+      setRuntimeConfigSnapshot(params.config);
       const prepared = await prepareCodexNativeExecutionPolicyForRun(params, { sandbox });
       expect(prepared.policy.effectiveExecHost).toBe(expectedExecHost);
       const nodePolicy = await prepareCodexNativeExecutionPolicyForRun(
@@ -1949,8 +1950,6 @@ describe("Codex app-server dynamic tool build", () => {
           tts: { auto: "inbound", provider: "test-speech" },
           channels: { whatsapp: { allowFrom: ["*"] } },
         };
-        // Match Gateway config ownership so earlier tool construction cannot supply TTS policy.
-        setRuntimeConfigSnapshot(params.config, params.config);
         params.messageChannel = "whatsapp";
         params.currentInboundAudio = input === "initial audio";
         const replyOperation = { acceptedSteeredInboundAudio: false };

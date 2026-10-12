@@ -31,6 +31,10 @@ import {
   createTestRegistry,
   setActivePluginRegistry,
 } from "openclaw/plugin-sdk/plugin-test-runtime";
+import {
+  clearRuntimeConfigSnapshot,
+  setRuntimeConfigSnapshot,
+} from "openclaw/plugin-sdk/runtime-config-snapshot";
 import { useAutoCleanupTempDirTracker } from "openclaw/plugin-sdk/test-env";
 import { createRequireRecord } from "openclaw/plugin-sdk/test-fixtures";
 import { createOpenClawTestState, withOpenClawTestState } from "openclaw/plugin-sdk/test-state";
@@ -316,6 +320,7 @@ function expectSchemaRejection(
 afterEach(() => {
   resetGlobalHookRunner();
   setActivePluginRegistry(createEmptyPluginRegistry());
+  clearRuntimeConfigSnapshot();
 });
 
 describe("createCodexDynamicToolBridge", () => {
@@ -1512,6 +1517,7 @@ describe("createCodexDynamicToolBridge", () => {
   it.each(["report-only", "scheduled"] as const)(
     "rejects unavailable approval in %s calls",
     async (mode) => {
+      setRuntimeConfigSnapshot({});
       const scheduled = mode === "scheduled";
       const beforeToolCall = vi.fn(async () => ({
         requireApproval: {
