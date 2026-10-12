@@ -11,6 +11,7 @@ import {
   appendTranscriptMessage,
   loadSessionEntry,
   loadTranscriptEvents,
+  replaceSessionEntry,
   replaceSessionEntrySync,
 } from "../config/sessions/session-accessor.js";
 import {
@@ -388,21 +389,30 @@ describe("Gateway creation preparation", () => {
     },
   );
 
-  it.each(["sessions.send", "sessions.create", "generated-create"])(
+  it.each(["sessions.send", "sessions.create", "generated-create", "custom-store-send"])(
     "transfers only the creation owner's exact committed row into the original %s lease",
     async (method) => {
-      await withOpenClawTestState({ scenario: "minimal" }, async () => {
+      await withOpenClawTestState({ scenario: "minimal" }, async (state) => {
         const client = roleClient("view", "creation-caller");
         using _ = { [Symbol.dispose]: (await prepareUserProfileCatalog()).release };
         client.connect.scopes = ["operator.sessions.write"];
         const profileId = client.authenticatedUserProfile!.profileId;
         const cfg = rolePolicyConfig();
-        const key = "agent:main:created-handoff";
+        const customStore = method === "custom-store-send";
+        if (customStore) {
+          cfg.agents = { entries: { main: {}, orion: {} } };
+          cfg.session = { store: state.path("sessions.json") };
+          await replaceSessionEntry(
+            { agentId: "main", sessionKey: "agent:main:existing", storePath: cfg.session.store },
+            { sessionId: "existing-main", updatedAt: 1 },
+          );
+        }
+        const key = `agent:${customStore ? "orion" : "main"}:created-handoff`;
         const generated = method === "generated-create";
         const captured = await resolveSessionMutationAuthorizationAsync({
           client,
           context: createDirectChatContext({ getRuntimeConfig: () => cfg }),
-          method: generated ? "sessions.create" : method,
+          method: generated ? "sessions.create" : customStore ? "sessions.send" : method,
           requestParams: generated ? {} : { key },
           sessionScope: "operator.sessions.write",
         });
@@ -412,7 +422,11 @@ describe("Gateway creation preparation", () => {
           NonNullable<Parameters<typeof createGatewaySession>[0]["onCreatedSessionCommitted"]>
         >((created) => {
           expect(
-            loadSessionEntry({ agentId: created.agentId, sessionKey: created.key }),
+            loadSessionEntry({
+              agentId: created.agentId,
+              sessionKey: created.key,
+              storePath: created.storePath,
+            }),
           ).toMatchObject({
             sessionId: created.entry.sessionId,
             lifecycleRevision: created.entry.lifecycleRevision,

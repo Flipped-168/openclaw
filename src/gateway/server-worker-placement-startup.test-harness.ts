@@ -101,7 +101,7 @@ vi.mock("./session-utils-read-lifetime.js", async (importOriginal) => {
     let active = true;
     return {
       ...target,
-      cfg,
+      cfg: cfg ?? moveDestinationMocks.getRuntimeConfig(),
       entry,
       store: { [target.canonicalKey]: entry },
       legacyKey: undefined,

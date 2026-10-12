@@ -135,11 +135,7 @@ export function createSessionSharingReceiptRead({
       | undefined;
     let committedCreation: CommittedSessionMutationTarget | undefined;
     captureCreatedPublication = (change) => {
-      if (
-        !("sessionKey" in change) ||
-        !change.storePath ||
-        !selectedPaths.has(path.resolve(change.storePath))
-      ) {
+      if (!("sessionKey" in change) || !change.storePath) {
         return false;
       }
       const published = readPreparedSessionEntryChange(change, canonicalKey);
@@ -150,6 +146,17 @@ export function createSessionSharingReceiptRead({
         published.source.birthtime === undefined
       ) {
         return false;
+      }
+      if (!selectedPaths.has(path.resolve(change.storePath))) {
+        if (
+          !committedCreation ||
+          published.sharing.sessionId !== committedCreation.sessionId ||
+          published.sharing.lifecycleRevision !== committedCreation.lifecycleRevision
+        ) {
+          return false;
+        }
+        // The acknowledged creator may allocate a new physical store after the absent read.
+        selectedPaths.add(path.resolve(change.storePath));
       }
       const source: CapturedSessionEntryReadSource & { databaseIdentity: string } = {
         agentId: selected.agentId,
