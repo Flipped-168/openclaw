@@ -254,6 +254,9 @@ type ScrollSample = {
     initialized: boolean;
     runId: string | null;
     streamLength: number | null;
+    lastTop: number;
+    maintenance?: boolean;
+    programmatic?: boolean;
   };
   rows: Array<{ key?: string; height: number }>;
 };
@@ -292,6 +295,9 @@ export async function startScrollProbe(page: Page) {
               initialized: state.chatHasAutoScrolled,
               runId: state.chatRunId,
               streamLength: state.chatStream?.length ?? null,
+              lastTop: state.chatLastScrollTop,
+              maintenance: state.chatIsMaintenanceScroll?.(),
+              programmatic: state.chatIsProgrammaticScroll?.(),
             }
           : undefined,
         rows: [...element.querySelectorAll<HTMLElement>(".chat-virtual-row")].map((row) => ({

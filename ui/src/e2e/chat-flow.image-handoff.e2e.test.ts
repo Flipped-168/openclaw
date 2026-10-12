@@ -291,6 +291,40 @@ suite.define(() => {
           await continuity.dispose();
           expect(frames.length).toBeGreaterThan(1);
           expect(frames.every(Boolean)).toBe(true);
+        } catch (error) {
+          const images = await page
+            .locator(".chat-group.user img.chat-message-image")
+            .evaluateAll((imageElements) =>
+              imageElements.map((image) => {
+                const ancestors = [];
+                for (let node: Element | null = image; node; node = node.parentElement) {
+                  const bounds = node.getBoundingClientRect();
+                  const style = getComputedStyle(node);
+                  ancestors.push({
+                    tag: node.tagName,
+                    className: node.getAttribute("class"),
+                    inlineStyle: node.getAttribute("style"),
+                    display: style.display,
+                    visibility: style.visibility,
+                    contentVisibility: style.contentVisibility,
+                    width: bounds.width,
+                    height: bounds.height,
+                    clientHeight: node.clientHeight,
+                    measuringRows: node.hasAttribute("data-measuring-rows"),
+                    connected: node.isConnected,
+                  });
+                }
+                return {
+                  src: image.getAttribute("src"),
+                  naturalWidth: image instanceof HTMLImageElement ? image.naturalWidth : null,
+                  naturalHeight: image instanceof HTMLImageElement ? image.naturalHeight : null,
+                  ancestors,
+                };
+              }),
+            )
+            .catch((captureError: unknown) => ({ captureError: String(captureError) }));
+          console.info("IMAGE_HANDOFF_FAILURE", JSON.stringify({ order, images }));
+          throw error;
         } finally {
           releaseMetadata();
           releaseImage();
