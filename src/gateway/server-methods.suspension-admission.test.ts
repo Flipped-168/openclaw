@@ -373,6 +373,7 @@ describe("gateway request suspension admission", () => {
         ],
       ]);
       const context = {
+        getRuntimeConfig: () => ({}),
         cron,
         logGateway: { warn: vi.fn(), info: vi.fn() },
         chatAbortControllers,
