@@ -106,6 +106,7 @@ import {
 import {
   canSteerEmbeddedRunDuringCompaction,
   isEmbeddedRunHandleAbortable,
+  isEmbeddedRunHandleInProgress,
   isEmbeddedRunHandleSupersedable,
 } from "./runs.probes.js";
 import {
@@ -1022,10 +1023,6 @@ function resolveEmbeddedRunProgressState(
   return replyInProgress ? "queued" : undefined;
 }
 
-export function isEmbeddedAgentRunInProgress(sessionId: string): boolean {
-  return resolveEmbeddedAgentRunProgressState(sessionId) !== undefined;
-}
-
 export type EmbeddedReplyActivity = Pick<ReplyOperation, "phase" | "lastActivityAtMs"> & {
   /** Terminal outcome committed; only delivery/finalization remains. */
   terminalOutcomeCommitted: boolean;
@@ -1071,17 +1068,6 @@ export function resolveActiveEmbeddedRunHandleSessionId(sessionKey: string): str
   return normalizedSessionKey
     ? ACTIVE_EMBEDDED_RUN_SESSION_IDS_BY_KEY.get(normalizedSessionKey)
     : undefined;
-}
-
-function isEmbeddedRunHandleInProgress(
-  handle: EmbeddedAgentQueueHandle | undefined,
-): handle is EmbeddedAgentQueueHandle {
-  try {
-    return handle ? !handle.isAborted?.() : false;
-  } catch {
-    // A failed optional status probe cannot prove that live work has ended.
-    return true;
-  }
 }
 
 export type ActiveEmbeddedRunOwner = {
@@ -1159,6 +1145,7 @@ export function captureEmbeddedRunDrainTarget(sessionId: string, owner: SessionP
     agentId: registration.agentId,
     sessionKey: registration.sessionKey,
     isActive,
+    isAborted: () => !isEmbeddedRunHandleInProgress(handle),
     abort: () => isActive() && abortEmbeddedAgentRun(sessionId),
     waitForEnd: async (timeoutMs: number | null) =>
       (timeoutMs === null ||
