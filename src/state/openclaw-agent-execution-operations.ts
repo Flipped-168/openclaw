@@ -645,7 +645,7 @@ export async function loadConversationRegistryOperations() {
 }
 
 export async function loadUsageCacheOperations() {
-  // All four kernels write only cache_entries, so no session actor scope changes.
+  // Usage cache and partition writes do not change resident session facts.
   const kernel = await import("../infra/session-cost-usage-cache.kernel.js");
   return {
     "usageCache.writeRollup": (

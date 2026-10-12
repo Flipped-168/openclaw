@@ -225,6 +225,7 @@ describe("gateway agent follow-up activity", () => {
           await registerSubagentRun({
             runId: previousRunId,
             childSessionKey,
+            childAgentId: "main",
             requesterSessionKey,
             requesterDisplayKey: requesterSessionKey,
             task: "Review the candidate",

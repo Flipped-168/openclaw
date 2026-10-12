@@ -180,6 +180,7 @@ export function createAgentAdmissionController(params: {
         runId: params.runId,
         stopReason,
       });
+      return { runId: params.runId };
     }
     return undefined;
   };
@@ -202,6 +203,12 @@ export function createAgentAdmissionController(params: {
       (await beginSessionWorkAdmission({
         agentId: params.getResolvedSessionAgentId() ?? params.getAgentId(),
         scope,
+        run: {
+          runId: params.runId,
+          sessionKey: params.getResolvedSessionKey(),
+          sessionId: params.getResolvedSessionId(),
+          agentId: admissionAgentId(),
+        },
         isSettling,
         getAbortReason,
         identities: [params.getResolvedSessionKey(), params.getResolvedSessionId()],
