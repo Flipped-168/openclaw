@@ -15,7 +15,7 @@ const moveDestinationMocks = vi.hoisted(() => ({
   })),
   resolveCanonicalSession: vi.fn(() => ({
     sessionId: "session-recovery",
-    worktree: { id: "worktree-recovery" },
+    worktree: { id: "worktree-recovery", branch: "fixture", repoRoot: "/gateway/workspace" },
   })),
   resolveExecutionMode: vi.fn(() => "remote-exec"),
   resolveGatewaySessionTarget: vi.fn(() => ({
@@ -93,7 +93,7 @@ vi.mock("./session-utils-read-lifetime.js", async (importOriginal) => {
     _sessionKey,
     _agentId,
     _allowMetadataChanges,
-    cfg = {},
+    cfg,
   ) => {
     const target = moveDestinationMocks.resolveGatewaySessionTarget();
     const readEntry = () => ({ updatedAt: 0, ...moveDestinationMocks.resolveCanonicalSession() });

@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { expectDefined } from "@openclaw/normalization-core";
 import { isRecord } from "@openclaw/normalization-core/record-coerce";
-import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { createDeferred } from "../../../test/helpers/promise.js";
 import * as bootstrapCache from "../../agents/bootstrap-cache.js";
 import {
@@ -11,7 +11,11 @@ import {
   retainEmbeddedSessionPromptState,
 } from "../../agents/embedded-agent-runner/session-prompt-state.js";
 import { resolveSandboxRuntimeStatus } from "../../agents/sandbox/runtime-status.js";
-import type { OpenClawConfig } from "../../config/config.js";
+import {
+  clearRuntimeConfigSnapshot,
+  setRuntimeConfigSnapshot,
+  type OpenClawConfig,
+} from "../../config/config.js";
 import type { InternalSessionEntry as SessionEntry } from "../../config/sessions.js";
 import {
   appendTranscriptMessage,
@@ -1319,6 +1323,8 @@ describe("initSessionState RawBody", () => {
     // Boundary proof: worker placement, which failed with "dispatch requires
     // a session-owned workspace" before the fix, now resolves the rolled-over
     // entry against its live worktree.
+    setRuntimeConfigSnapshot(cfg, cfg);
+    onTestFinished(clearRuntimeConfigSnapshot);
     using placement = await resolveWorkerPlacementSessionTarget({
       sessionRuntime: {
         resolveGatewaySessionStoreTargetWithStoreAsync,
