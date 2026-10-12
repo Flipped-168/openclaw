@@ -19,8 +19,7 @@ import {
   stagedAttachmentBytes,
 } from "./components/chat-attachments.ts";
 import { resolveChatCommentAnchor } from "./components/chat-comment-anchor.ts";
-import { getChatComposerState } from "./components/chat-composer-state.ts";
-import { isChatRunWorking } from "./components/chat-composer.ts";
+import { getChatComposerState, isChatRunWorking } from "./components/chat-composer-state.ts";
 import { createChatSelectionAttachment } from "./components/chat-selection-attachment.ts";
 import { showChatAnnotationEditor } from "./components/chat-selection-popup.ts";
 import { getTranscriptState, type ChatThreadProps } from "./components/chat-thread-interactions.ts";

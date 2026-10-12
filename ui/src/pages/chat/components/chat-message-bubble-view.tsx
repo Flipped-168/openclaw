@@ -70,22 +70,6 @@ type ContentProps = {
   onOpenSidebar?: (content: SidebarContent) => void;
 };
 
-export function renderSolidGroupedMessage(
-  preparation: ChatMessageRenderPreparation,
-  messageKey: string,
-  options: GroupedMessageOptions,
-  onOpenSidebar?: (content: SidebarContent) => void,
-) {
-  return (
-    <GroupedMessage
-      preparation={preparation}
-      messageKey={messageKey}
-      options={options}
-      onOpenSidebar={onOpenSidebar}
-    />
-  );
-}
-
 /** Message identity owns text/media DOM; option refreshes only publish new facts. */
 export function GroupedMessage(props: GroupedMessageProps) {
   const state = createMemo(() =>
@@ -278,6 +262,7 @@ function AssistantViews(props: ContentProps) {
                 rawText: block().rawText ?? null,
                 canvasPluginSurfaceUrl: props.options.canvasPluginSurfaceUrl,
                 boardProvider: props.options.boardProvider,
+                widgetLayout: props.options.widgetLayout,
                 embedSandboxMode: props.options.embedSandboxMode ?? "scripts",
                 allowExternalEmbedUrls: props.options.allowExternalEmbedUrls,
                 sessionKey: props.options.sessionKey,

@@ -78,12 +78,11 @@ export class ChatPaneRuntime extends ChatPaneLayoutRender {
   render() {
     const state = this.state;
     if (!state) {
-      return { layout: bootLayout };
+      return { layout: bootLayout, capabilityDialogs: undefined };
     }
     const selectionConnectionGeneration = this.connectionGeneration;
     const selectedSession = selectedChatSessionRow(state);
     const providerPaused = Boolean(selectedSession?.providerReview);
-    const readTarget = this.resolveChatReadTarget();
     const progressPresentation = this.progressCardPresentation;
     const selectedSessionArchived = this.isCurrentSessionArchived(state);
     const mutationAccess = readChatPaneMutationAccess(
@@ -531,7 +530,7 @@ export class ChatPaneRuntime extends ChatPaneLayoutRender {
               (composerState.capabilityMenuView === "skills" ||
                 composerState.capabilityMenuView.startsWith("library:")),
           ),
-      ...this.projectChildRoster(readTarget),
+      ...this.projectChildRoster(this.resolveChatReadTarget()),
       sessionHost: {
         assistantAgentId: state.assistantAgentId,
         agentsList: state.agentsList,
@@ -648,8 +647,7 @@ export class ChatPaneRuntime extends ChatPaneLayoutRender {
       fullMessageAgentId: scopedAgentParamsForSession(state, state.sessionKey).agentId,
       loadFullAssistantMessage: createSidebarFullMessageLoader(state, this.context.gateway),
       onSessionSelect: (next) => this.onPaneSessionChange?.(this.paneId, next),
-      canvasPluginSurfaceUrl: state.canvasPluginSurfaceUrl,
-      boardProvider: board.provider,
+      ...this.widgetRenderOptions(state, board.provider),
       onOpenSidebar: state.handleOpenSidebar,
       onRequestOpenImage: state.beginImageOpen,
       onOpenImage: state.handleOpenImage,
@@ -688,6 +686,12 @@ export class ChatPaneRuntime extends ChatPaneLayoutRender {
       resourceBasePath: state.resourceBasePath,
     };
     return {
+      capabilityDialogs: catalogKey
+        ? undefined
+        : {
+            read: () => this.composerCapabilities.dialogView(this.context, state, selectedSession),
+            revision: {},
+          },
       layout: this.renderChatPaneLayout({
         state,
         selectedSession,

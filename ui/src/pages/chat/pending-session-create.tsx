@@ -1,5 +1,5 @@
 import { html, nothing } from "lit";
-import { createEffect, createMemo, createSignal, onCleanup } from "solid-js";
+import { createEffect, createMemo, createSignal, onCleanup, Show } from "solid-js";
 import { isIncognitoSessionKey } from "../../../../src/shared/incognito-session-key.js";
 import type { ApplicationContext } from "../../app/context.ts";
 import { readDeletedSessionStartup } from "../../app/deleted-session-startup.ts";
@@ -11,10 +11,10 @@ import { parseAgentSessionKey } from "../../lib/sessions/session-key.ts";
 import { generateUUID } from "../../lib/uuid.ts";
 import { defineSolidBridge } from "../../lit/solid-bridge.ts";
 import { LitContent } from "../../lit/solid-content.tsx";
-import { renderCreationComposer } from "../new-session/creation-composer-render.ts";
+import { CreationComposerView } from "../new-session/creation-composer-render.tsx";
 import { renderNewSessionBody } from "../new-session/draft-body.ts";
 import { chatStartupStatusLabel } from "./chat-run-startup.ts";
-import { renderChatComposer, resetChatComposerState } from "./components/chat-composer.ts";
+import { ChatComposer, resetChatComposerState } from "./components/chat-composer.tsx";
 import { renderChatImageLightbox } from "./components/chat-image-lightbox.ts";
 import { renderChatPaneHeader } from "./components/chat-pane-header.ts";
 import { buildLocalUserMessage } from "./user-message-content.ts";
@@ -184,29 +184,29 @@ function PendingSessionCreateContent(props: PendingSessionCreateProps) {
         renderDraft: () => html`<div role="status">${t("connection.reconnecting")}</div>`,
         onOpenImage: openImage,
       }),
-      composer: composer?.canDisplay()
-        ? renderCreationComposer(composer, openImage)
-        : renderChatComposer({
-            paneId: composerId,
-            sessionKey: props.sessionKey,
-            currentAgentId: agentId,
-            assistantName: agent?.identity?.name ?? agent?.name ?? agentId,
-            connected: snapshot.phase === "connected",
-            canSend: false,
-            sessionAdmitted: false,
-            disabledReason: null,
-            sending: submitting,
-            messages: [],
-            stream: null,
-            queue: [],
-            draft: "",
-            modelCatalog: [],
-            modelSwitching: false,
-            sessions: null,
-            onDraftChange: noAction,
-            onSend: noAction,
-            onQueueRemove: noAction,
-          }),
+      creationComposer: composer?.canDisplay() ? composer : undefined,
+      renderRevision: {},
+      composer: {
+        paneId: composerId,
+        sessionKey: props.sessionKey,
+        currentAgentId: agentId,
+        assistantName: agent?.identity?.name ?? agent?.name ?? agentId,
+        connected: snapshot.phase === "connected",
+        canSend: false,
+        sessionAdmitted: false,
+        disabledReason: null,
+        sending: submitting,
+        messages: [],
+        stream: null,
+        queue: [],
+        draft: "",
+        modelCatalog: [],
+        modelSwitching: false,
+        sessions: null,
+        onDraftChange: noAction,
+        onSend: noAction,
+        onQueueRemove: noAction,
+      },
     };
   });
   return (
@@ -220,7 +220,28 @@ function PendingSessionCreateContent(props: PendingSessionCreateProps) {
             <div class="chat-main__conversation">
               <LitContent value={view()?.body} />
               <div class="chat-footer">
-                <LitContent value={view()?.composer} />
+                <Show when={view()}>
+                  {(current) => (
+                    <Show
+                      when={current().creationComposer}
+                      keyed
+                      fallback={
+                        <ChatComposer
+                          {...current().composer}
+                          renderRevision={current().renderRevision}
+                        />
+                      }
+                    >
+                      {(composer) => (
+                        <CreationComposerView
+                          composer={composer}
+                          onOpenImage={openImage}
+                          renderRevision={current().renderRevision}
+                        />
+                      )}
+                    </Show>
+                  )}
+                </Show>
               </div>
             </div>
           </div>

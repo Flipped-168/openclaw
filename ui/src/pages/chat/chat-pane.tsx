@@ -12,6 +12,7 @@ import { ShellLayoutBoundary } from "../../app/shell-layout-traits-solid.tsx";
 import { useApplication } from "../../lib/reactive/context.ts";
 import { defineSolidBridge, type SolidBridgeElement } from "../../lit/solid-bridge.ts";
 import { LitContent } from "../../lit/solid-content.tsx";
+import { ChatComposerCapabilityDialogs } from "./chat-composer-capability-host.tsx";
 import { ChatPaneRuntime } from "./chat-pane-render.ts";
 import { ChatProviderReviewDialog } from "./chat-provider-review-controller.tsx";
 import { createSolidRenderLifecycle } from "./solid-render-lifecycle.ts";
@@ -182,6 +183,9 @@ function MountedChatPaneRuntime(props: { runtime: ChatPaneRuntime }) {
     <ShellLayoutBoundary traits={{ workbench: true }}>
       <LitContent value={frame().layout} />
       <ChatProviderReviewDialog controller={runtime.providerReview} revision={frame()} />
+      <Show when={frame().capabilityDialogs}>
+        {(dialogs) => <ChatComposerCapabilityDialogs {...dialogs()} />}
+      </Show>
     </ShellLayoutBoundary>
   );
 }

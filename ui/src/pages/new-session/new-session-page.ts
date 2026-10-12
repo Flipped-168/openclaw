@@ -34,7 +34,7 @@ import { NewSessionDictationControl } from "./composer-dictation-control.ts";
 import { renderNewSessionComposer } from "./composer.ts";
 import { ConnectMachineSetupState } from "./connect-machine-dialog.ts";
 import { isWorktreeNameValid } from "./create-params.ts";
-import { renderCreationComposer } from "./creation-composer-render.ts";
+import { renderCreationComposer } from "./creation-composer-render.tsx";
 import { renderDraftError, renderNewSessionBody } from "./draft-body.ts";
 import { NewSessionDraftController } from "./draft-controller.ts";
 import type { DraftGatewayState } from "./draft-gateway-state.ts";

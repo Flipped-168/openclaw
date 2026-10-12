@@ -9,13 +9,15 @@ import {
   createGatewayHarness,
   createTestSessionCapability,
 } from "../../lib/sessions/session-capability.test-support.ts";
-import { LitContent } from "../../lit/solid-content.tsx";
 import {
   gatewayHelloForMethods,
   sessionMutationGatewayHello,
 } from "../../test-helpers/gateway-methods.ts";
 import { mountSolid } from "../../test-helpers/mount-solid.ts";
-import { ChatComposerCapabilityHost } from "./chat-composer-capability-host.tsx";
+import {
+  ChatComposerCapabilityHost,
+  ChatComposerCapabilityDialogs,
+} from "./chat-composer-capability-host.tsx";
 import type { ChatPageHost } from "./chat-state-host.ts";
 
 function createContext(configSnapshot: ConfigSnapshot | null): ApplicationContext {
@@ -135,10 +137,10 @@ function createAddServerHarness(
   });
   mountSolid(
     () =>
-      createComponent(LitContent, {
-        get value() {
-          revision();
-          return host.renderAddServerDialog(context, state, session);
+      createComponent(ChatComposerCapabilityDialogs, {
+        read: () => host.dialogView(context, state, session),
+        get revision() {
+          return { value: revision() };
         },
       }),
     { container },
@@ -310,8 +312,9 @@ describe("ChatComposerCapabilityHost", () => {
     const container = document.createElement("div");
     mountSolid(
       () =>
-        createComponent(LitContent, {
-          value: host.renderAddServerDialog(context, state, undefined),
+        createComponent(ChatComposerCapabilityDialogs, {
+          read: () => host.dialogView(context, state, undefined),
+          revision: {},
         }),
       { container },
     );

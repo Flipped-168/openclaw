@@ -42,13 +42,13 @@ import {
 } from "./chat-view-notices.tsx";
 import { ChatCommentController } from "./components/chat-comment-controller.ts";
 import {
-  renderComposerQuestionDock,
+  ComposerQuestionDock,
   resolveComposerQuestionPanel,
-} from "./components/chat-composer-question.ts";
+} from "./components/chat-composer-question.tsx";
+import { ComposerQueue } from "./components/chat-composer-regions.tsx";
 import { getChatComposerState, hasTerminalRunStatus } from "./components/chat-composer-state.ts";
 import type { ChatComposerProps } from "./components/chat-composer-types.ts";
-import { renderChatComposerQueue } from "./components/chat-composer-view.ts";
-import { renderChatComposer } from "./components/chat-composer.ts";
+import { ChatComposer } from "./components/chat-composer.tsx";
 import type { ChatDetailsProps } from "./components/chat-details-types.ts";
 import { isImageLightboxEvent, openInlineChatImage } from "./components/chat-image-lightbox.ts";
 import { renderChatPullRequests } from "./components/chat-pull-requests.ts";
@@ -155,34 +155,10 @@ type ChatViewInput = {
 };
 
 function ChatTranscript(input: ChatViewInput) {
-  return (
-    <Show
-      when={input.application}
-      keyed
-      fallback={<ChatThread props={input.frame.threadProps} transcript={input.props.transcript} />}
-    >
-      {(application) => (
-        <ApplicationProvider value={application}>
-          <ChatThread props={input.frame.threadProps} transcript={input.props.transcript} />
-        </ApplicationProvider>
-      )}
-    </Show>
-  );
+  return <ChatThread props={input.frame.threadProps} transcript={input.props.transcript} />;
 }
 
 function ChatFooterContent(input: ChatViewInput) {
-  return (
-    <Show when={input.application} keyed fallback={<ChatFooterContents {...input} />}>
-      {(application) => (
-        <ApplicationProvider value={application}>
-          <ChatFooterContents {...input} />
-        </ApplicationProvider>
-      )}
-    </Show>
-  );
-}
-
-function ChatFooterContents(input: ChatViewInput) {
   const pendingInputs = () => input.frame.pendingInputs;
   const pendingButton = (page: "earlier" | "latest") => (
     <button
@@ -283,35 +259,24 @@ function ChatFooterContents(input: ChatViewInput) {
   );
 }
 
-function ChatComposerNotices(input: { props: ChatProps }) {
-  return <ChatComposerNoticesView {...input.props} />;
-}
-
 function ChatComposerView(input: ChatViewInput) {
-  // Until the composer lane lands, its one legacy range keeps textarea identity.
   return (
-    <LitContent
-      value={renderChatComposer({
-        ...input.props,
-        progressCard: input.props.detailsEnabled ? null : input.props.progressCard,
-        progressCardInitialLoading: input.props.detailsEnabled
-          ? false
-          : input.props.progressCardInitialLoading,
-        asyncQuestions: input.frame.asyncQuestions,
-        displayQueue: input.frame.displayQueue,
-        footerContent: solidContent(ChatFooterContent, {
-          props: input.props,
-          frame: input.frame,
-          presented: input.presented,
-          application: input.application,
-        }),
-        notices: solidContent(ChatComposerNotices, { props: input.props }),
-        onRequestUpdate: input.frame.requestUpdate,
-        onToggleRealtimeTalk: input.props.suggestionComposer
-          ? undefined
-          : input.props.onToggleRealtimeTalk,
-        onOpenImage: input.frame.openImmediateImage,
-      })}
+    <ChatComposer
+      {...input.props}
+      renderRevision={input.frame}
+      progressCard={input.props.detailsEnabled ? null : input.props.progressCard}
+      progressCardInitialLoading={
+        input.props.detailsEnabled ? false : input.props.progressCardInitialLoading
+      }
+      asyncQuestions={input.frame.asyncQuestions}
+      displayQueue={input.frame.displayQueue}
+      footerContent={<ChatFooterContent {...input} />}
+      notices={<ChatComposerNoticesView {...input.props} />}
+      onRequestUpdate={input.frame.requestUpdate}
+      onToggleRealtimeTalk={
+        input.props.suggestionComposer ? undefined : input.props.onToggleRealtimeTalk
+      }
+      onOpenImage={input.frame.openImmediateImage}
     />
   );
 }
@@ -321,23 +286,21 @@ function ChatComposerCompanion(input: ChatViewInput) {
     <div class="chat-footer__context">
       <ChatFooterContent {...input} />
       <div class="agent-chat__composer-notices">
-        <ChatComposerNotices props={input.props} />
+        <ChatComposerNoticesView {...input.props} />
       </div>
-      <LitContent
-        value={renderComposerQuestionDock(
-          resolveComposerQuestionPanel(
-            { ...input.props, asyncQuestions: input.frame.asyncQuestions },
-            getChatComposerState(input.props.paneId),
-            input.frame.requestUpdate,
-          ),
+      <ComposerQuestionDock
+        panel={resolveComposerQuestionPanel(
+          { ...input.props, asyncQuestions: input.frame.asyncQuestions },
+          getChatComposerState(input.props.paneId),
+          input.frame.requestUpdate,
         )}
       />
-      <LitContent
-        value={renderChatComposerQueue(
-          { ...input.props, displayQueue: input.frame.displayQueue },
+      <ComposerQueue
+        composer={{ ...input.props, displayQueue: input.frame.displayQueue }}
+        showAbortableUi={
           Boolean(input.props.canAbort && input.props.onAbort) &&
-            !hasTerminalRunStatus(input.props.runStatus),
-        )}
+          !hasTerminalRunStatus(input.props.runStatus)
+        }
       />
       <Show when={!input.props.suggestionComposer}>
         <LitContent
@@ -346,6 +309,19 @@ function ChatComposerCompanion(input: ChatViewInput) {
       </Show>
       <LitContent value={input.props.composerRecovery ?? emptyLegacyContent} />
     </div>
+  );
+}
+
+/** Plugin mountDefault creates a separate root and must carry its application scope. */
+function ChatSurfaceContent(input: { view: Component<ChatViewInput>; viewProps: ChatViewInput }) {
+  return (
+    <Show when={input.viewProps.application} keyed fallback={<input.view {...input.viewProps} />}>
+      {(application) => (
+        <ApplicationProvider value={application}>
+          <input.view {...input.viewProps} />
+        </ApplicationProvider>
+      )}
+    </Show>
   );
 }
 
@@ -370,9 +346,17 @@ function ChatSurface<S extends "transcript" | "composer">(input: {
         props={input.surfaceProps}
         presented={input.viewProps.presented}
         data-plugin-composer={input.surface === "composer" ? "" : undefined}
-        defaultView={solidContent(input.view, input.viewProps)}
+        defaultView={solidContent(ChatSurfaceContent, {
+          view: input.view,
+          viewProps: input.viewProps,
+        })}
         replacementCompanion={
-          input.companion ? solidContent(input.companion, input.viewProps) : undefined
+          input.companion
+            ? solidContent(ChatSurfaceContent, {
+                view: input.companion,
+                viewProps: input.viewProps,
+              })
+            : undefined
         }
       />
     </Show>

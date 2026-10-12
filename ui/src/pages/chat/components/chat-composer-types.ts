@@ -1,4 +1,5 @@
 import type { ProgressCard } from "@openclaw/gateway-protocol";
+import type { JSX } from "@solidjs/web";
 import type { TemplateResult, nothing } from "lit";
 import type { GatewayBrowserClient } from "../../../api/gateway.ts";
 import type {
@@ -24,7 +25,6 @@ import type { HumanMentionInput } from "../../../lib/chat/human-mentions.ts";
 import type { ProviderUsageDisplayProps } from "../../../lib/provider-quota-summary.ts";
 import type { SessionToolOverrides } from "../../../lib/sessions/patch.ts";
 import type { PresentationBinding } from "../../../lit/presentation-binding.ts";
-import type { solidContent } from "../../../lit/solid-content.tsx";
 import type { ComposerDictationController } from "../composer-dictation.ts";
 import type { ComposerMicrophonePicker } from "../composer-microphone-picker.ts";
 import type { ChatInputHistoryKeyInput, ChatInputHistoryKeyResult } from "../input-history.ts";
@@ -35,14 +35,14 @@ import type { RealtimeTalkStatus } from "../talk/session.ts";
 import type { FallbackStatus } from "../tool-stream-contract.ts";
 import type { AsyncQuestionPresentation } from "./chat-async-question.types.ts";
 import type { ChatAttachmentControlsProps } from "./chat-attachment-controls.types.ts";
-import type { ComposerEmojiMenu } from "./chat-composer-emoji.ts";
-import type { HumanMentionDirectory, HumanMentionMenu } from "./chat-composer-mention-menu.ts";
+import type { ComposerEmojiMenu } from "./chat-composer-emoji.tsx";
+import type { HumanMentionDirectory, HumanMentionMenu } from "./chat-composer-mention-menu.tsx";
 import type {
   ChatComposerCapabilityMenuProps,
   ChatComposerPlusMenuView,
-} from "./chat-composer-plus-menu.ts";
-import type { SkillMenuState } from "./chat-composer-skill-menu.ts";
-import type { SlashMenuState } from "./chat-composer-slash-menu.ts";
+} from "./chat-composer-plus-menu.tsx";
+import type { SkillMenuState } from "./chat-composer-skill-menu.tsx";
+import type { SlashMenuState } from "./chat-composer-slash-menu.tsx";
 import type { ChatPermissionPickerProps } from "./chat-permission-picker.ts";
 
 type ChatQueuedEditProps = {
@@ -151,9 +151,9 @@ export type ChatComposerProps = ChatAttachmentControlsProps & {
   suggestionComposer?: boolean;
   onTypingChange?: (typing: boolean, preview?: string, cursor?: number) => void;
   composerControls?: TemplateResult | typeof nothing;
-  footerContent?: TemplateResult | typeof nothing | ReturnType<typeof solidContent>;
+  footerContent?: JSX.Element;
   composerRecovery?: TemplateResult | typeof nothing;
-  notices?: TemplateResult | typeof nothing | ReturnType<typeof solidContent>;
+  notices?: JSX.Element;
   permissionPicker?: ChatPermissionPickerProps;
   onDraftChange: (next: string, mentions?: readonly HumanMention[]) => void;
   onHistoryKeydown?: (input: ChatInputHistoryKeyInput) => ChatInputHistoryKeyResult;
@@ -221,7 +221,7 @@ export type ChatComposerState = SkillMenuState &
     composerInputRef: ((element?: Element) => void) | null;
     textareaRef: ((element?: Element) => void) | null;
     dictation: ComposerDictationController | null;
-    composerDraftScopeKey: string | null;
+    composerDraftScope: { key: string } | null;
     dictationError: string | null;
     dictationSelection: { start: number; end: number; value: string } | null;
   };

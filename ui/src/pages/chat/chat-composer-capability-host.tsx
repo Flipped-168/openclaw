@@ -1,12 +1,10 @@
 import { asNullableRecord as asRecord } from "@openclaw/normalization-core/record-coerce";
-import { createMemo, Show } from "solid-js";
+import { createMemo } from "solid-js";
 import type { GatewayBrowserClient } from "../../api/gateway.ts";
 import type { ConfigSnapshot, GatewaySessionRow, ToolsEffectiveResult } from "../../api/types.ts";
 import type { ApplicationContext } from "../../app/context.ts";
 import { readGatewayOperatorAccess } from "../../app/operator-access.ts";
 import type { McpServerForm } from "../../components/mcp-server-form.ts";
-import { McpServersForm } from "../../components/mcp-servers-form.tsx";
-import { SettingsSegmented } from "../../components/solid/settings-ui.tsx";
 import "../../components/modal-dialog.ts";
 import { registerMcpEnglish } from "../../i18n/locales/en-mcp.ts";
 import {
@@ -31,12 +29,13 @@ import {
 import type { SessionToolOverrides } from "../../lib/sessions/patch.ts";
 import { areUiSessionKeysEquivalent } from "../../lib/sessions/session-key.ts";
 import { nextBooleanToolOverrides } from "../../lib/sessions/tool-overrides.ts";
-import { LitContent, solidContent } from "../../lit/solid-content.tsx";
+import { LitContent } from "../../lit/solid-content.tsx";
 import { renderLibraryPinRead } from "../skills/library-detail.ts";
 import { refreshCurrentChatSessionList } from "./chat-session.ts";
 import { patchChatSessionSettings } from "./chat-settings-patches.ts";
 import type { ChatPageHost } from "./chat-state-host.ts";
-import type { ChatComposerCapabilityMenuProps } from "./components/chat-composer-plus-menu.ts";
+import { ComposerAddServerDialog } from "./components/chat-composer-add-server-dialog.tsx";
+import type { ChatComposerCapabilityMenuProps } from "./components/chat-composer-plus-menu.tsx";
 import {
   ComposerSkillCatalog,
   composerWebSearchBaseEnabled,
@@ -370,17 +369,6 @@ export class ChatComposerCapabilityHost {
     this.notify();
   }
 
-  renderAddServerDialog(
-    context: ApplicationContext,
-    state: ChatPageHost,
-    session: GatewaySessionRow | undefined,
-  ) {
-    return solidContent(ChatComposerCapabilityDialogs, {
-      read: () => this.dialogView(context, state, session),
-      revision: {},
-    });
-  }
-
   dialogView(
     context: ApplicationContext,
     state: ChatPageHost,
@@ -400,7 +388,7 @@ export class ChatComposerCapabilityHost {
         }
         this.closeAddDialog();
       },
-      onScope: (scope: ComposerMcpServerScope) => {
+      onScopeChange: (scope: ComposerMcpServerScope) => {
         this.addScope = scope;
         this.addError = null;
         this.notify();
@@ -527,7 +515,6 @@ export class ChatComposerCapabilityHost {
       mutationBlockedReason,
       canAdmin: access.canAdmin && gatewayAvailable,
       adminBlockedReason,
-      addServerDialog: this.renderAddServerDialog(context, state, session),
       library: {
         result: this.library.result,
         loading: this.library.loading,
@@ -590,67 +577,19 @@ export class ChatComposerCapabilityHost {
   }
 }
 
-function ChatComposerCapabilityDialogs(props: {
+export type ChatComposerCapabilityDialogsProps = {
   read: () => ReturnType<ChatComposerCapabilityHost["dialogView"]>;
   revision: object;
-}) {
+};
+
+export function ChatComposerCapabilityDialogs(props: ChatComposerCapabilityDialogsProps) {
   const view = createMemo(() => {
     void props.revision;
     return props.read();
   });
   return (
     <>
-      <Show when={view().open}>
-        <openclaw-modal-dialog
-          label={t("chat.composer.menu.addMcpServerTitle")}
-          description={t("chat.composer.menu.addMcpServerDescription")}
-          onModal-cancel={(event) => view().onCancel(event)}
-        >
-          <div class="exec-approval-card mcp-server-dialog">
-            <div class="exec-approval-header">
-              <div>
-                <div class="exec-approval-title">{t("chat.composer.menu.addMcpServerTitle")}</div>
-                <div class="exec-approval-sub">
-                  {t("chat.composer.menu.addMcpServerDescription")}
-                </div>
-              </div>
-            </div>
-            <div class="mcp-server-dialog__scope">
-              <span>{t("chat.composer.menu.scopeLabel")}</span>
-              <SettingsSegmented<ComposerMcpServerScope>
-                value={view().scope}
-                options={[
-                  { value: "session", label: t("chat.composer.menu.scopeSession") },
-                  { value: "everywhere", label: t("chat.composer.menu.scopeEverywhere") },
-                ]}
-                ariaLabel={t("chat.composer.menu.scopeLabel")}
-                disabled={view().busy || view().scopeBlockedReason !== null}
-                onChange={(scope) => view().onScope(scope)}
-              />
-              <span class="mcp-server-dialog__scope-hint">
-                {t(
-                  view().scope === "session"
-                    ? "chat.composer.menu.scopeSessionHint"
-                    : "chat.composer.menu.scopeEverywhereHint",
-                )}
-              </span>
-            </div>
-            <McpServersForm
-              busy={view().busy}
-              disabled={view().submitBlockedReason !== null}
-              blockedReason={view().submitBlockedReason}
-              autofocus
-              onSubmit={(form) => view().onSubmit(form)}
-              onCancel={() => view().onCancel()}
-            />
-            {view().error ? (
-              <div class="mcp-server-message mcp-server-message--error" role="alert">
-                {view().error}
-              </div>
-            ) : null}
-          </div>
-        </openclaw-modal-dialog>
-      </Show>
+      <ComposerAddServerDialog {...view()} />
       <LitContent value={view().libraryContent} />
     </>
   );

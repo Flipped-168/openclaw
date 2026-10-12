@@ -24,7 +24,7 @@ import { renderPluginTemplate } from "./control-ui-view.runtime.ts";
 import type { ViewKind } from "./control-ui-view.ts";
 
 type ViewRegistration = ControlUiRegistration<{ mount: ControlUiView<unknown> }>;
-export type PluginViewProps = {
+type PluginViewProps = {
   kind: ViewKind;
   contributionKey: string;
   surface: ControlUiSurface;

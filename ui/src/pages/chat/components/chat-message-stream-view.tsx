@@ -50,6 +50,7 @@ type StreamMessageOptions = Pick<
   | "sessionKey"
   | "presented"
   | "boardProvider"
+  | "widgetLayout"
   | "agentId"
   | "runActive"
   | "asyncQuestions"
@@ -94,14 +95,6 @@ export type StreamGroupOptions = StreamMessageOptions & {
   questionPrompts?: ReadonlyMap<string, QuestionPrompt>;
 };
 
-export function renderSolidStreamGroupParts(
-  parts: StreamGroupPart[],
-  opts: StreamGroupOptions,
-  presentation: "standalone" | "continuation",
-) {
-  return <StreamGroupParts parts={parts} options={opts} presentation={presentation} />;
-}
-
 export function StreamGroupParts(props: {
   parts: StreamGroupPart[];
   options: StreamGroupOptions;
@@ -128,15 +121,6 @@ export function StreamGroupParts(props: {
   );
 }
 
-/** A wait no loaded handoff can place: the standard working row, after the transcript. */
-export function renderSolidUnplacedSubagentWait(
-  sessionKey: string,
-  wait: ChatSubagentWait,
-  opts: StreamGroupOptions,
-) {
-  return <UnplacedSubagentWait sessionKey={sessionKey} wait={wait} options={opts} />;
-}
-
 export function UnplacedSubagentWait(props: {
   sessionKey: string;
   wait: ChatSubagentWait;
@@ -151,14 +135,6 @@ export function UnplacedSubagentWait(props: {
     },
   ]);
   return <StreamGroup parts={parts()} options={props.options} />;
-}
-
-export function renderSolidStreamGroupPart(
-  part: StreamGroupPart,
-  opts: StreamGroupOptions,
-  presentation: "standalone" | "continuation",
-) {
-  return <StreamPartView part={part} options={opts} presentation={presentation} />;
 }
 
 export function StreamPartView(props: {

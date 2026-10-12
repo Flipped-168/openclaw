@@ -17,7 +17,7 @@ import { buildPendingInputQueueItems, getChatPendingInputs } from "./chat-pendin
 import { retryQueuedChatMessage, steerQueuedChatMessage } from "./chat-send-actions.ts";
 import { buildChatItems } from "./chat-thread-build.ts";
 import { readPendingSendStatus } from "./chat-thread-items.ts";
-import { renderChatQueue } from "./components/chat-composer-queue.ts";
+import { renderChatQueue } from "./components/chat-composer-queue.tsx";
 import { ChatSendStatus } from "./components/chat-message-send-status-view.tsx";
 import { projectTranscriptChain } from "./components/chat-transcript-message-index.ts";
 import { selectChatInputDisplay } from "./history-merge.ts";
