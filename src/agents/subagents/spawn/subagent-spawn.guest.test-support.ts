@@ -3,7 +3,7 @@ import { expect, it, vi, type Mock } from "vitest";
 import { createDeferred, withinTest } from "../../../../test/helpers/promise.js";
 import {
   clearConfigCache,
-  clearRuntimeConfigSnapshot,
+  setRuntimeConfigSnapshot,
   type OpenClawConfig,
 } from "../../../config/config.js";
 import {
@@ -65,7 +65,7 @@ export async function createGuestSpawnParent(options: {
   };
   await options.writeConfig(runtimeConfig);
   clearConfigCache();
-  clearRuntimeConfigSnapshot();
+  setRuntimeConfigSnapshot(runtimeConfig);
   const modelPolicy = prepareOperatorModelPolicy({
     cfg: runtimeConfig,
     policy: { sourceAgent: "main", allow: ["custom/test-model"] },

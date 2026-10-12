@@ -931,6 +931,7 @@ describe("createGatewayKernel", () => {
         "config.auth.secrets-activate",
         "agents.github-profile-cleanup",
         "plugins.bootstrap-imports",
+        "cron.store-path",
         "plugins.bootstrap",
         "gateway.kernel-state",
         "node-desktop.runtime-import",
@@ -967,13 +968,14 @@ describe("createGatewayKernel", () => {
       } finally {
         try {
           flushDiagnosticsTimeline();
-          await state.cleanup();
-        } finally {
           if (capturedLoadedPluginRegistry) {
             restoreActivePluginRegistrySnapshot(capturedLoadedPluginRegistry);
           }
           prematureCleanupCalls = capturedRegistryCleanup.mock.calls.length;
           restoreActivePluginRegistrySnapshot(originalPluginRegistry);
+          await waitForPluginRegistryRetirement(ambientRegistry);
+        } finally {
+          await state.cleanup();
         }
       }
     }
