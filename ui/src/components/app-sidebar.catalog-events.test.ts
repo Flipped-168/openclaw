@@ -41,7 +41,7 @@ async function mountTab(
 }
 
 describe("AppSidebar catalog event refresh", () => {
-  beforeEach(() => vi.useFakeTimers());
+  beforeEach(() => vi.useFakeTimers({ shouldClearNativeTimers: true }));
   afterEach(() => {
     vi.restoreAllMocks();
     vi.useRealTimers();
