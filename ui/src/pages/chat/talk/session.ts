@@ -16,6 +16,7 @@ import type {
   RealtimeTalkStatus,
   RealtimeTalkTransport,
 } from "./shared.ts";
+import type { SplitTalkOptions } from "./split.ts";
 import {
   type ClientVoiceSessionOwner,
   ClientVoiceTranscriptQueue,
@@ -34,6 +35,7 @@ type RealtimeTalkLaunchOptions = SchemaContract<
 type RealtimeTalkLocalOptions = {
   inputDeviceId?: string;
   videoDeviceId?: string;
+  split?: SplitTalkOptions;
 };
 
 const activeRealtimeTalkSessions = new Set<RealtimeTalkSession>();
@@ -91,6 +93,40 @@ export class RealtimeTalkSession {
       const lifecycleGeneration = this.lifecycleGeneration;
       this.closed = false;
       this.callbacks.onStatus?.("connecting", t("chat.voice.preparing"));
+      if (this.localOptions.split) {
+        const { SplitTalkTransport } = await import("./split.ts");
+        if (this.closed || lifecycleGeneration !== this.lifecycleGeneration) {
+          return;
+        }
+        const transport = new SplitTalkTransport(
+          this.client,
+          this.sessionKey,
+          this.callbacks,
+          this.localOptions.split,
+          this.localOptions.inputDeviceId,
+        );
+        this.pendingStartup = transport;
+        try {
+          const result = await transport.start();
+          if (
+            result === "cancelled" ||
+            this.closed ||
+            lifecycleGeneration !== this.lifecycleGeneration
+          ) {
+            transport.stop();
+            return;
+          }
+          this.transport = transport;
+        } catch (error) {
+          transport.stop();
+          throw error;
+        } finally {
+          if (this.pendingStartup === transport) {
+            this.pendingStartup = null;
+          }
+        }
+        return;
+      }
       const [{ createRealtimeTalkTransport }, providerVideoCapable] = await Promise.all([
         import("./transport.runtime.ts"),
         this.resolveVideoCapability(),

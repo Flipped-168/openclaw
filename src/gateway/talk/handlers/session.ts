@@ -395,19 +395,20 @@ export const talkSessionHandlers: GatewayRequestHandlers = {
           params.provider,
           params.model,
         );
-        const resolution = await resolveConfiguredRealtimeTranscriptionProvider({
-          config: runtimeConfig,
-          configuredProviderId: transcriptionConfig.provider,
-          providerConfigs: transcriptionConfig.providers,
-          requestedModel: normalizeOptionalString(params.model),
-          defaultModel: transcriptionConfig.model,
-        });
+        const resolution = transcriptionConfig.file
+          ? { file: transcriptionConfig.file, assertCurrent: requester.assertCurrent }
+          : await resolveConfiguredRealtimeTranscriptionProvider({
+              config: runtimeConfig,
+              configuredProviderId: transcriptionConfig.provider,
+              providerConfigs: transcriptionConfig.providers,
+              requestedModel: normalizeOptionalString(params.model),
+              defaultModel: transcriptionConfig.model,
+            });
         requester.assertCurrent();
         const session = createTalkTranscriptionRelaySession({
           context,
           connId,
-          provider: resolution.provider,
-          providerConfig: resolution.providerConfig,
+          ...resolution,
         });
         rememberUnifiedTalkSession(session.transcriptionSessionId, {
           kind: "transcription-relay",
@@ -596,7 +597,7 @@ export const talkSessionHandlers: GatewayRequestHandlers = {
         await stopTalkRealtimeRelaySession({ relaySessionId: session.relaySessionId, connId });
       } else if (session.kind === "transcription-relay") {
         const connId = requireUnifiedTalkSessionConn(session, client?.connId);
-        stopTalkTranscriptionRelaySession({
+        await stopTalkTranscriptionRelaySession({
           transcriptionSessionId: session.transcriptionSessionId,
           connId,
         });

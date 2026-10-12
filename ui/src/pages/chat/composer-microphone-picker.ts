@@ -1,4 +1,4 @@
-import type { TalkCatalogResult } from "@openclaw/gateway-protocol";
+import type { TalkCatalogResult, TalkConfigResult } from "@openclaw/gateway-protocol";
 import type { GatewayBrowserClient } from "../../api/gateway.ts";
 import {
   discoverRealtimeTalkInputs,
@@ -127,14 +127,21 @@ export class ComposerMicrophonePicker {
     if (notify) {
       this.requestUpdate();
     }
-    void client
-      .request<TalkCatalogResult>("talk.catalog", {})
-      .then((catalog) => {
+    void Promise.all([
+      client.request<TalkCatalogResult>("talk.catalog", {}),
+      client.request<TalkConfigResult>("talk.config", {}),
+    ])
+      .then(([catalog, config]) => {
         if (request !== this.catalogRequest) {
           return;
         }
-        this.realtimeStatus = catalog.realtime?.ready === true ? "ready" : "unavailable";
         this.dictationStatus = catalog.transcription?.ready === true ? "ready" : "unavailable";
+        this.realtimeStatus =
+          config.config?.talk?.realtime?.mode === "stt-tts"
+            ? this.dictationStatus
+            : catalog.realtime?.ready === true
+              ? "ready"
+              : "unavailable";
       })
       .catch(() => {
         if (request !== this.catalogRequest) {

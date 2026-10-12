@@ -540,6 +540,7 @@ export function handleTranscriptContextMenu(event: MouseEvent, props: Transcript
     ...(group?.querySelectorAll<HTMLElement>("[data-message-actions-for]") ?? []),
   ].find((element) => element.dataset.messageActionsFor === messageId);
   const copyButton = actionOwner?.querySelector<HTMLButtonElement>(".chat-copy-btn");
+  const readAloudButton = actionOwner?.querySelector<HTMLButtonElement>(".chat-read-aloud-btn");
   const ownsRunFrame = group?.dataset.chatRowKey?.startsWith("agent-run:") === true;
   const canReply = Boolean(replyTarget && props.onSetReply && (!ownsRunFrame || actionOwner));
   const canRewind = isUserMessage && typeof props.onRewindMessage === "function";
@@ -650,6 +651,17 @@ export function handleTranscriptContextMenu(event: MouseEvent, props: Transcript
       onClick: () => {
         removeReplyContextMenu();
         copyButton?.click();
+      },
+    });
+  }
+  if (readAloudButton) {
+    const label = readAloudButton.getAttribute("aria-label") ?? t("chat.messages.readAloud");
+    appendAction({
+      label,
+      tooltip: label,
+      onClick: () => {
+        removeReplyContextMenu();
+        readAloudButton.click();
       },
     });
   }

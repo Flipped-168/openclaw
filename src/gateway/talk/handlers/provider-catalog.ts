@@ -1,0 +1,108 @@
+import { normalizeOptionalLowercaseString } from "@openclaw/normalization-core/string-coerce";
+import type { OpenClawConfig } from "../../../config/types.js";
+import { canonicalizeRealtimeTranscriptionProviderId } from "../../../realtime-transcription/provider-registry.js";
+import { getVoiceProviderConfig } from "../../../tts/voice-models.js";
+import {
+  buildTalkTranscriptionConfig,
+  configuredOrFalseAsync,
+  listTalkTranscriptionProviders,
+  resolveConfiguredRealtimeTranscriptionProvider,
+} from "../session-config.js";
+
+export async function resolveCatalogProviderSelection(
+  configuredProvider: string | undefined,
+  resolveAutomaticProvider: () => string | Promise<string>,
+): Promise<{ activeProvider?: string; ready: boolean }> {
+  // Provider priority belongs to the runtime resolver; catalog consumers must not infer it from row order.
+  try {
+    const resolvedProvider = await resolveAutomaticProvider();
+    return {
+      activeProvider: resolvedProvider,
+      ready: true,
+    };
+  } catch {
+    return {
+      ...(configuredProvider ? { activeProvider: configuredProvider } : {}),
+      ready: false,
+    };
+  }
+}
+
+export async function buildTalkTranscriptionCatalog(config: OpenClawConfig) {
+  const transcriptionConfig = await buildTalkTranscriptionConfig(config);
+  const transcriptionSelection = transcriptionConfig.file
+    ? { ready: true, activeProvider: transcriptionConfig.file.provider }
+    : await resolveCatalogProviderSelection(
+        canonicalizeRealtimeTranscriptionProviderId(transcriptionConfig.provider, config),
+        async () =>
+          (
+            await resolveConfiguredRealtimeTranscriptionProvider({
+              config,
+              configuredProviderId: transcriptionConfig.provider,
+              providerConfigs: transcriptionConfig.providers,
+              defaultModel: transcriptionConfig.model,
+            })
+          ).provider.id,
+      );
+  const activeTranscriptionProvider = transcriptionSelection.activeProvider;
+  return {
+    ready: transcriptionSelection.ready,
+    ...(activeTranscriptionProvider ? { activeProvider: activeTranscriptionProvider } : {}),
+    providers: transcriptionConfig.file
+      ? transcriptionConfig.file.providers.map((provider) => ({
+          ...provider,
+          label: provider.id,
+          configured: true,
+          modes: ["transcription"],
+          transports: ["gateway-relay"],
+          brains: ["none"],
+        }))
+      : await Promise.all(
+          listTalkTranscriptionProviders(config, [
+            transcriptionConfig.provider,
+            ...Object.keys(transcriptionConfig.providers),
+          ]).map(async (provider) => {
+            const rawConfig = getVoiceProviderConfig({
+              providerConfigs: transcriptionConfig.providers,
+              provider,
+              configuredProviderId:
+                activeTranscriptionProvider &&
+                normalizeOptionalLowercaseString(provider.id) ===
+                  normalizeOptionalLowercaseString(activeTranscriptionProvider)
+                  ? transcriptionConfig.provider
+                  : undefined,
+            });
+            const rawConfigWithModel =
+              transcriptionConfig.model && rawConfig.model === undefined
+                ? { ...rawConfig, model: transcriptionConfig.model }
+                : rawConfig;
+            const providerConfig =
+              provider.resolveConfig?.({ cfg: config, rawConfig: rawConfigWithModel }) ??
+              rawConfigWithModel;
+            const entry: Record<string, unknown> = {
+              id: provider.id,
+              label: provider.label,
+              configured: await configuredOrFalseAsync(
+                () =>
+                  provider.isConfiguredAsync?.({ cfg: config, providerConfig }) ??
+                  provider.isConfigured?.({ cfg: config, providerConfig }) ??
+                  false,
+              ),
+              modes: ["transcription"],
+              transports: ["gateway-relay"],
+              brains: ["none"],
+            };
+            if (provider.models?.length) {
+              entry.models = [...provider.models];
+            }
+            if (provider.defaultModel) {
+              entry.defaultModel = provider.defaultModel;
+            }
+            if (provider.aliases?.length) {
+              entry.aliases = [...provider.aliases];
+            }
+            return entry;
+          }),
+        ),
+  };
+}

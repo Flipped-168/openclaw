@@ -254,7 +254,11 @@ describe("ComposerDictationController", () => {
       expect(listeners.size).toBe(0);
       expect(processors[0]?.onaudioprocess).toBeNull();
       await waitForFast(() =>
-        expect(request).toHaveBeenCalledWith("talk.session.close", { sessionId: "dictation-1" }),
+        expect(request).toHaveBeenCalledWith(
+          "talk.session.close",
+          { sessionId: "dictation-1" },
+          { timeoutMs: null },
+        ),
       );
     } finally {
       controller.dispose();
@@ -290,7 +294,11 @@ describe("ComposerDictationController", () => {
       expect(stopTrack).toHaveBeenCalledOnce();
       expect(onCommit).not.toHaveBeenCalled();
       await waitForFast(() =>
-        expect(request).toHaveBeenCalledWith("talk.session.close", { sessionId: "dictation-1" }),
+        expect(request).toHaveBeenCalledWith(
+          "talk.session.close",
+          { sessionId: "dictation-1" },
+          { timeoutMs: null },
+        ),
       );
     } finally {
       controller.dispose();
@@ -326,7 +334,11 @@ describe("ComposerDictationController", () => {
     expect(controller.locksComposer).toBe(false);
     expect(onCommit).not.toHaveBeenCalled();
     await waitForFast(() =>
-      expect(request).toHaveBeenCalledWith("talk.session.close", { sessionId: "dictation-1" }),
+      expect(request).toHaveBeenCalledWith(
+        "talk.session.close",
+        { sessionId: "dictation-1" },
+        { timeoutMs: null },
+      ),
     );
     try {
       expect(controller.startDirect()).toBe(true);
@@ -483,9 +495,17 @@ describe("ComposerDictationController", () => {
     expect(controller.finalizing).toBe(false);
     expect(onCommit).toHaveBeenCalledWith("hello world");
     await waitForFast(() =>
-      expect(request).toHaveBeenCalledWith("talk.session.close", { sessionId: "dictation-1" }),
+      expect(request).toHaveBeenCalledWith(
+        "talk.session.close",
+        { sessionId: "dictation-1" },
+        { timeoutMs: null },
+      ),
     );
-    expect(request).toHaveBeenCalledWith("talk.session.close", { sessionId: "dictation-1" });
+    expect(request).toHaveBeenCalledWith(
+      "talk.session.close",
+      { sessionId: "dictation-1" },
+      { timeoutMs: null },
+    );
     expect(order.indexOf("talk.session.appendAudio")).toBeLessThan(
       order.indexOf("talk.session.close"),
     );
@@ -509,7 +529,11 @@ describe("ComposerDictationController", () => {
     await startHold(withoutTranscript.target);
     const empty = withoutTranscript.controller.finishActive();
     await waitForFast(() =>
-      expect(request).toHaveBeenCalledWith("talk.session.close", { sessionId: "dictation-1" }),
+      expect(request).toHaveBeenCalledWith(
+        "talk.session.close",
+        { sessionId: "dictation-1" },
+        { timeoutMs: null },
+      ),
     );
     await vi.advanceTimersByTimeAsync(10_000);
     await expect(empty).resolves.toBe(false);
@@ -562,7 +586,11 @@ describe("ComposerDictationController", () => {
       }),
     );
     await waitForFast(() =>
-      expect(request).toHaveBeenCalledWith("talk.session.close", { sessionId: "late-session" }),
+      expect(request).toHaveBeenCalledWith(
+        "talk.session.close",
+        { sessionId: "late-session" },
+        { timeoutMs: null },
+      ),
     );
     expect(order.indexOf("talk.session.appendAudio")).toBeLessThan(
       order.indexOf("talk.session.close"),
@@ -603,7 +631,11 @@ describe("ComposerDictationController", () => {
       audio: { inputEncoding: "g711_ulaw", inputSampleRateHz: 8000 },
     });
     await waitForFast(() =>
-      expect(request).toHaveBeenCalledWith("talk.session.close", { sessionId: "late-session" }),
+      expect(request).toHaveBeenCalledWith(
+        "talk.session.close",
+        { sessionId: "late-session" },
+        { timeoutMs: null },
+      ),
     );
     controller.dispose();
   });
@@ -638,7 +670,11 @@ describe("ComposerDictationController", () => {
     });
 
     await waitForFast(() =>
-      expect(request).toHaveBeenCalledWith("talk.session.close", { sessionId: "late-session" }),
+      expect(request).toHaveBeenCalledWith(
+        "talk.session.close",
+        { sessionId: "late-session" },
+        { timeoutMs: null },
+      ),
     );
     expect(onError).not.toHaveBeenCalled();
     controller.dispose();
@@ -662,7 +698,11 @@ describe("ComposerDictationController", () => {
     const disconnectedAt = Date.now();
     harness.controller.update({ ...harness.options, connected: false });
     await waitForFast(() =>
-      expect(request).toHaveBeenCalledWith("talk.session.close", { sessionId: "dictation-1" }),
+      expect(request).toHaveBeenCalledWith(
+        "talk.session.close",
+        { sessionId: "dictation-1" },
+        { timeoutMs: null },
+      ),
     );
     await waitForFast(() => expect(harness.onCommit).toHaveBeenCalledWith("keep this unfinished"));
     expect(Date.now() - disconnectedAt).toBeLessThan(1000);
@@ -674,7 +714,11 @@ describe("ComposerDictationController", () => {
     expect(harness.controller.finalizing).toBe(false);
     expect(harness.controller.locksComposer).toBe(false);
     expect(harness.onError).toHaveBeenCalledTimes(1);
-    expect(request).toHaveBeenCalledWith("talk.session.close", { sessionId: "dictation-1" });
+    expect(request).toHaveBeenCalledWith(
+      "talk.session.close",
+      { sessionId: "dictation-1" },
+      { timeoutMs: null },
+    );
     harness.controller.dispose();
   });
 
@@ -714,7 +758,11 @@ describe("composer microphone button", () => {
 
     target.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
     await waitForFast(() =>
-      expect(request).toHaveBeenCalledWith("talk.session.close", { sessionId: "dictation-1" }),
+      expect(request).toHaveBeenCalledWith(
+        "talk.session.close",
+        { sessionId: "dictation-1" },
+        { timeoutMs: null },
+      ),
     );
     expect(onCommit).toHaveBeenCalledWith("keep recording");
     expect(controller.active).toBe(false);

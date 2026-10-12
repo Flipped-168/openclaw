@@ -30,7 +30,10 @@ function inspectSession(state: ChatRealtimeState): InspectableRealtimeTalkSessio
 
 function createState(): ChatRealtimeState {
   const state = {
-    client: { addEventListener: vi.fn(() => () => undefined) },
+    client: {
+      request: vi.fn(async () => ({ config: {} })),
+      addEventListener: vi.fn(() => () => undefined),
+    },
     connected: true,
     settings: loadSettings(),
     sessionKey: "main",
@@ -157,7 +160,9 @@ describe("chat realtime actions", () => {
       expect(
         state.realtimeTalkConversationState.entries.every(({ isStreaming }) => !isStreaming),
       ).toBe(true);
-      expect(request.mock.calls).toEqual([]);
+      expect(request.mock.calls).toEqual(
+        Array.from({ length: useSystemDefault ? 2 : 1 }, () => ["talk.config", {}]),
+      );
       replacement.callbacks.onTalkEvent?.({
         id: "ready",
         type: "session.ready",
@@ -261,6 +266,7 @@ describe("chat realtime actions", () => {
           }),
       );
       const retry = state.realtimeTalkUseSystemDefault!();
+      await vi.waitFor(() => expect(finish).toBeTypeOf("function"));
       expect(inspectSession(state).localOptions.inputDeviceId).toBeUndefined();
       saveSettings({ ...loadSettings(), realtimeTalkInputDeviceId: "newer-mic" });
       if (outcome === "cancelled") {

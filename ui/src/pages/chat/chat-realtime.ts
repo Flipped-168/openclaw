@@ -1,4 +1,4 @@
-import type { TalkVoiceChangeEvent } from "@openclaw/gateway-protocol";
+import type { TalkConfigResult, TalkVoiceChangeEvent } from "@openclaw/gateway-protocol";
 import type { GatewayBrowserClient } from "../../api/gateway.ts";
 import { loadSettings, patchSettings, type UiSettings } from "../../app/settings.ts";
 import { t } from "../../i18n/index.ts";
@@ -17,6 +17,7 @@ import {
 } from "./talk/input.ts";
 import { RealtimeTalkLevelSignal } from "./talk/level.ts";
 import { RealtimeTalkSession, type RealtimeTalkStatus } from "./talk/session.ts";
+import type { SplitTalkOptions } from "./talk/split.ts";
 import { RealtimeTalkVoiceSelection } from "./talk/voice-selection.ts";
 
 export type ChatRealtimeState = {
@@ -106,6 +107,7 @@ export function dismissRealtimeTalkError(state: ChatRealtimeState) {
 export function attachChatRealtimeActions(
   state: ChatRealtimeState,
   canStart: () => boolean = () => true,
+  sendMessage?: SplitTalkOptions["sendMessage"],
 ) {
   let conversationGeneration = 0;
   const talkStatusIsError = () => state.realtimeTalkStatus === "error";
@@ -257,6 +259,45 @@ export function attachChatRealtimeActions(
     if (!voiceChange) {
       state.resetRealtimeTalkConversation();
     }
+    state.requestUpdate();
+    let split: SplitTalkOptions | undefined;
+    if (!voiceChange) {
+      try {
+        const result = await client.request<TalkConfigResult>("talk.config", {});
+        if (
+          state.realtimeTalkVoiceController !== voiceController ||
+          state.client !== client ||
+          !state.connected ||
+          state.sessionKey !== sessionKey ||
+          !canStart()
+        ) {
+          if (state.realtimeTalkVoiceController === voiceController) {
+            stopChatRealtimeTalk(state);
+            state.requestUpdate();
+          }
+          return undefined;
+        }
+        const talk = result.config?.talk;
+        if (talk?.realtime?.mode === "stt-tts") {
+          if (!sendMessage) {
+            throw new Error(t("chat.voice.replyFailed"));
+          }
+          split = {
+            silenceTimeoutMs: talk.silenceTimeoutMs ?? 900,
+            speechMethod: talk.provider || talk.resolved?.provider ? "talk.speak" : "tts.speak",
+            sendMessage,
+          };
+        }
+      } catch (error) {
+        if (state.realtimeTalkVoiceController === voiceController) {
+          stopChatRealtimeTalk(state);
+          state.realtimeTalkStatus = "error";
+          state.realtimeTalkDetail = formatUiError(error);
+          state.requestUpdate();
+        }
+        return undefined;
+      }
+    }
     const forCurrentSession =
       <Args extends unknown[]>(callback: (...args: Args) => void) =>
       (...args: Args) => {
@@ -366,7 +407,7 @@ export function attachChatRealtimeActions(
             transport: replacementTransport,
           }
         : {},
-      { inputDeviceId, videoDeviceId },
+      { inputDeviceId, videoDeviceId, split },
     );
     state.realtimeTalkSession = session;
     try {
