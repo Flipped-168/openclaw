@@ -12,6 +12,7 @@ vi.mock("./worker-environments/workspace-sync-preflight.js", () => ({
   preflightWorkerWorkspace: workspace.preflight,
 }));
 
+import { setRuntimeConfigSnapshot } from "../config/config.js";
 import { upsertSessionEntryCore } from "../config/sessions/session-accessor.js";
 import {
   GatewayDrainingError,
@@ -138,8 +139,11 @@ describe("dispatch Stop before provider allocation", () => {
       );
       const sessionUtils =
         await vi.importActual<typeof import("./session-utils.js")>("./session-utils.js");
+      const config = { ...support.testState.config, session: { store: storePath } };
+      setRuntimeConfigSnapshot(config, config);
+      moveDestinationMocks.getRuntimeConfig.mockReturnValue(config);
       const sessionTarget = await sessionUtils.resolveGatewaySessionStoreTargetWithStoreAsync({
-        cfg: { ...support.testState.config, session: { store: storePath } },
+        cfg: config,
         key: REQUEST.sessionKey,
         agentId: REQUEST.agentId,
         exactRead: true,

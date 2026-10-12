@@ -34,6 +34,7 @@ const moveDestinationMocks = vi.hoisted(() => ({
     ): ReturnType<
       typeof import("./server-worker-placement-session-target.js").resolveWorkerPlacementSessionTarget
     > => ({
+      [Symbol.dispose]: () => {},
       assertCurrent: () => {},
       assertBindingCurrent: () => {},
       config: {},

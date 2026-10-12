@@ -11,6 +11,7 @@ import {
   placementReader,
   workerPlacement,
 } from "./server.sessions.archive-lifecycle.test-support.js";
+import { sessionLog } from "./session-log.js";
 import { disposeSessionReadContexts } from "./session-read-contexts.test-support.js";
 import { embeddedRunMock, writeSessionStore } from "./test-helpers.js";
 import {
@@ -199,6 +200,7 @@ test.each([false, true])(
       await release.promise;
       return await destroy(environmentId);
     });
+    const archiveWarnings = vi.spyOn(sessionLog, "warn");
     const archive = directSessionReq(
       "sessions.patch",
       {
@@ -243,7 +245,12 @@ test.each([false, true])(
         return;
       }
       const outcome = await archive;
-      expect(outcome, outcome.error?.message).toMatchObject({ ok: true });
+      expect(
+        outcome,
+        [outcome.error?.message, ...archiveWarnings.mock.calls.map((args) => args.join(" "))].join(
+          "\n",
+        ),
+      ).toMatchObject({ ok: true });
       expect(placements.get(REQUEST.sessionId)?.state).toBe("local");
       expect(harness.environments.get(harness.ready.environmentId)?.state).toBe("destroyed");
       expect(loadSessionEntry({ storePath, sessionKey: REQUEST.sessionKey })?.archivedAt).toEqual(
@@ -252,6 +259,7 @@ test.each([false, true])(
     } finally {
       release.resolve();
       await archive;
+      archiveWarnings.mockRestore();
     }
   },
 );

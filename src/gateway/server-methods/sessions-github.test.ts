@@ -27,7 +27,10 @@ import type {
 
 const mocks = vi.hoisted(() => ({
   caller: vi.fn(),
-  loadSession: vi.fn(),
+  loadSession:
+    vi.fn<
+      typeof import("../session-utils-store-worker.js").loadGatewaySessionEntryReadOnlyInWorker
+    >(),
   request: vi.fn<GitHubPublicationCoordinator["requestForSessionV2"]>(),
 }));
 
@@ -108,12 +111,21 @@ describe("sessions.github.publish", () => {
       sessionKey: "agent:main:dashboard:task",
       operationalRunInstance: { runId: "run-1" },
     });
-    mocks.loadSession.mockReturnValue({
-      canonicalKey: "agent:main:dashboard:task",
-      agentId: "main",
-      entry: { sessionId: "session-1" },
+    mocks.loadSession.mockImplementation(async ({ cfg }) => {
+      const canonicalKey = "agent:main:dashboard:task";
+      const entry = { sessionId: "session-1", updatedAt: 1 };
+      return {
+        cfg,
+        canonicalKey,
+        agentId: "main",
+        storePath: "/synthetic/sessions-github.sqlite",
+        storeKeys: [canonicalKey],
+        store: { [canonicalKey]: entry },
+        entry,
+        legacyKey: undefined,
+      };
     });
-    mocks.request.mockImplementation(async ({ requester }) => {
+    mocks.request.mockReset().mockImplementation(async ({ requester }) => {
       expect(() => requester.assertCurrent()).not.toThrow();
       return {
         requestId: "publication-1",

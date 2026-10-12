@@ -414,6 +414,11 @@ export function createGatewayWorkerDispatchAdmission(
     // The requested acknowledgment can release the RPC while dispatch still owns setup.
     const releaseCaller = retainGatewayDeviceRevocation(authorize);
     try {
+      using sourceRetention = new DisposableStack();
+      const releaseSource = authorize?.retain?.();
+      if (releaseSource) {
+        sourceRetention.defer(releaseSource);
+      }
       const memory = getSessionActorStorageBinding(identity);
       const actorBinding = memory ? undefined : captureIncognitoSessionBinding(identity);
       const admit = async () => {

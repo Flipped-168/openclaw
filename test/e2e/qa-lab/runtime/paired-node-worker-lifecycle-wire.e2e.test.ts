@@ -183,6 +183,7 @@ async function readEnvironments(operator: GatewayClient): Promise<EnvironmentRea
 }
 
 async function expectPublicBundleStatus(params: {
+  gateway: WireGateway;
   operator: GatewayClient;
   nodeId: string;
   status: "installed" | "missing";
@@ -198,6 +199,8 @@ async function expectPublicBundleStatus(params: {
       const diagnostic = JSON.stringify({
         stage: params.stage,
         expectedStatus: params.status,
+        nodeState: node ? { connected: node.connected, sessionHost: node.sessionHost } : null,
+        environmentPresent: Boolean(environment),
         nodeStatus: node?.workerBundle ?? null,
         environmentStatus: environment?.workerBundle ?? null,
         invokeErrors: params.host.invokeErrors,
@@ -205,6 +208,29 @@ async function expectPublicBundleStatus(params: {
           (command) => command === NODE_WORKER_WORKSPACE_RETAIN_COMMAND,
         ).length,
         bundleInstalls: bundleInstallFrames(params.host).length,
+        retainRequests: params.host.frames
+          .filter((frame) => frame.command === NODE_WORKER_WORKSPACE_RETAIN_COMMAND)
+          .map((frame) => {
+            const input = JSON.parse(frame.paramsJSON ?? "{}") as {
+              sequence?: number;
+              bundleHashes?: string[];
+              bundleStatusHash?: string;
+              acknowledgedBundleGeneration?: number;
+            };
+            return {
+              sequence: input.sequence,
+              bundleHashes: input.bundleHashes,
+              bundleStatusHash: input.bundleStatusHash,
+              acknowledgedBundleGeneration: input.acknowledgedBundleGeneration,
+            };
+          }),
+        retentionWarnings: params.gateway
+          .logs()
+          .split("\n")
+          .filter((line) =>
+            /Node (?:bundle retention skipped|workspace retain publication failed)/u.test(line),
+          )
+          .slice(-10),
       });
       expect(node?.workerBundle?.status, diagnostic).toBe(params.status);
       expect(environment?.workerBundle?.status, diagnostic).toBe(params.status);
@@ -599,6 +625,7 @@ describe("paired node worker lifecycle wire", () => {
 
         // Bundle maintenance reports only the public status/version projection and repairs loss.
         await expectPublicBundleStatus({
+          gateway,
           operator,
           nodeId,
           status: "installed",
@@ -614,6 +641,7 @@ describe("paired node worker lifecycle wire", () => {
         await workerNode.connect();
         await waitForNewRetainCommand(retainCountBeforeReconnect);
         await expectPublicBundleStatus({
+          gateway,
           operator,
           nodeId,
           status: "missing",
@@ -631,6 +659,7 @@ describe("paired node worker lifecycle wire", () => {
         );
         await waitForNewRetainCommand(retainCountBeforeRepair);
         await expectPublicBundleStatus({
+          gateway,
           operator,
           nodeId,
           status: "installed",

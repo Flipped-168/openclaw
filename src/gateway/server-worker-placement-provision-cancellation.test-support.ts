@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, vi } from "vitest";
-import { getRuntimeConfig } from "../config/config.js";
+import { getRuntimeConfig, setRuntimeConfigSnapshot } from "../config/config.js";
 import { upsertSessionEntryCore } from "../config/sessions/session-accessor.js";
 import { createDeferredCore } from "../shared/deferred.js";
 import { closeOpenClawAgentDatabaseByPathAsync } from "../state/openclaw-agent-db-lifecycle.js";
@@ -7,6 +7,7 @@ import { createTestGatewayScheduler } from "../test-utils/gateway-scheduler-cloc
 import type { WorkerPlacementSessionWorkCancellation } from "./server-worker-placement-cancel.js";
 import { createGatewayWorkerPlacementRuntime } from "./server-worker-placement-startup.js";
 import { getWorkerPlacementStartupMocks } from "./server-worker-placement-startup.test-harness.js";
+import { resolveGatewaySessionStoreTargetWithStoreAsync } from "./session-utils-store-lookup.js";
 import type { WorkerSessionPlacementIdentity } from "./worker-environments/placement-record.js";
 import type { createWorkerSessionPlacementStore } from "./worker-environments/placement-store.js";
 import * as support from "./worker-environments/service.test-support.js";
@@ -67,26 +68,32 @@ export function setupSessionFixture(request: WorkerSessionPlacementIdentity) {
       lifecycleRevision: "original",
       worktree: { id: "workspace", branch: "fixture", repoRoot: support.testState.root },
     };
-    const target = {
-      agentId: request.agentId,
-      canonicalKey: request.sessionKey,
-      store: { [request.sessionKey]: entry },
-      storeKeys: [request.sessionKey],
-      storePath: `${support.testState.root}/sessions.sqlite`,
+    const storePath = `${support.testState.root}/sessions.sqlite`;
+    const config = {
+      ...support.testState.config,
+      session: { ...support.testState.config.session, store: storePath },
     };
+    setRuntimeConfigSnapshot(config, config);
     await upsertSessionEntryCore(
-      { agentId: request.agentId, sessionKey: request.sessionKey, storePath: target.storePath },
+      { agentId: request.agentId, sessionKey: request.sessionKey, storePath },
       entry,
     );
+    const target = await resolveGatewaySessionStoreTargetWithStoreAsync({
+      cfg: config,
+      key: request.sessionKey,
+      agentId: request.agentId,
+      exactRead: true,
+    });
     const worktree = { id: "workspace", ownerId: request.sessionKey, path: support.testState.root };
-    moveDestinationMocks.getRuntimeConfig.mockReturnValue(support.testState.config);
+    moveDestinationMocks.getRuntimeConfig.mockReturnValue(config);
     moveDestinationMocks.resolveGatewaySessionTarget.mockReturnValue(target);
     moveDestinationMocks.resolveCanonicalSession.mockReturnValue(entry);
     moveDestinationMocks.findManagedWorktree.mockReturnValue(worktree);
     moveDestinationMocks.resolveSessionTarget.mockResolvedValue({
+      [Symbol.dispose]: () => {},
       assertCurrent: () => {},
       assertBindingCurrent: () => {},
-      config: support.testState.config,
+      config,
       target,
       entry,
       worktree,

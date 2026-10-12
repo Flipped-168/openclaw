@@ -594,13 +594,27 @@ export async function withSessionStoreReaderInWorker<T>(
           item.path === database.path &&
           (!logical || item.owner.receipt.agentId === database.agentId),
       )?.owner;
+      let sourceIdentity =
+        prepareSource || capturePhysicalSource
+          ? readDatabasePathIdentitySync(database.path)
+          : undefined;
+      const preparedDatabase = { ...database, env: { ...env } };
+      let sourcePrepared = false;
+      const prepareRead = () => {
+        if (sourcePrepared || !sourceIdentity) {
+          return;
+        }
+        // A missing file can be created by the writer ahead of this cold read.
+        // Capture it under the read's existing admission before dispatching the snapshot.
+        if (sourceIdentity.birthtime === undefined) {
+          sourceIdentity = readDatabasePathIdentitySync(database.path);
+        }
+        prepareSource?.(preparedDatabase, sourceIdentity);
+        sourcePrepared = true;
+      };
       return withSessionHistoryWorkerDatabase(
-        { ...database, requestedPaths: [storePath, sourcePath], env },
+        { ...database, requestedPaths: [storePath, sourcePath], env, prepareRead },
         async (reader) => {
-          const sourceIdentity =
-            prepareSource || capturePhysicalSource
-              ? readDatabasePathIdentitySync(database.path)
-              : undefined;
           const assertCapturedCurrent = () => {
             assertSourcesCurrent();
             reader.assertCurrent();
@@ -619,9 +633,8 @@ export async function withSessionStoreReaderInWorker<T>(
             assertFinalCurrent = assertCapturedCurrent;
           }
           assertCapturedCurrent();
-          const preparedDatabase = { ...database, env: { ...env } };
-          if (sourceIdentity) {
-            prepareSource?.(preparedDatabase, sourceIdentity);
+          if (sourceIdentity?.birthtime !== undefined) {
+            prepareRead();
           }
           return await read({
             ...route,

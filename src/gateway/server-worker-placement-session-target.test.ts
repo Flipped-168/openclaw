@@ -13,7 +13,9 @@ import {
   patchSessionEntryCore,
   replaceSessionEntry,
 } from "../config/sessions/session-accessor.js";
+import { createSessionActorReplica } from "../config/sessions/session-actor-replica.js";
 import { withIncognitoSessionActor } from "../config/sessions/session-incognito-binding.js";
+import { readDatabasePathIdentitySync } from "../infra/sqlite-worker-identity.js";
 import { openIncognitoTestActor } from "../state/openclaw-agent-execution-incognito.test-support.js";
 import { openOpenClawStateDatabase } from "../state/openclaw-state-db.js";
 import { getSessionRepositoryWorkspaceStore } from "../state/session-repository-workspaces.js";
@@ -70,7 +72,7 @@ test("prepares an actor workspace and guards exact placement metadata without ho
     const sql = observeHostDataSql();
     try {
       await withIncognitoSessionActor(actor, async () => {
-        const resolved = await resolveWorkerPlacementSessionTarget({
+        using resolved = await resolveWorkerPlacementSessionTarget({
           ...identity,
           config: {},
           errorMessage: "placement source changed",
@@ -334,7 +336,7 @@ test("rejects stale repository selection and refreshes the accepted checkpoint a
         ...REQUEST,
         errorMessage: "repository selection changed",
       });
-    const selected = await select();
+    using selected = await select();
     selected.assertCurrent();
     const accepted = await repositories.acceptCheckpoint({
       workspaceId: bound.workspaceId,
@@ -346,7 +348,7 @@ test("rejects stale repository selection and refreshes the accepted checkpoint a
     expect(selected.workspace).toEqual({ kind: "repository", repository: bound });
     expect(() => selected.assertCurrent()).toThrow("repository selection changed");
     selected.assertBindingCurrent();
-    const refreshed = await select();
+    using refreshed = await select();
     refreshed.assertCurrent();
     expect(refreshed.workspace).toEqual({ kind: "repository", repository: accepted });
 
@@ -465,7 +467,7 @@ test("resolves consecutive placement workspaces without decoding unrelated sessi
     const parse = vi.spyOn(JSON, "parse");
     try {
       for (const sessionKey of keys) {
-        const resolved = await resolveWorkerPlacementSessionTarget({
+        using resolved = await resolveWorkerPlacementSessionTarget({
           sessionRuntime: {
             resolveGatewaySessionStoreTargetWithStoreAsync,
             resolveCanonicalSessionEntryFromStoreKeys,
@@ -543,5 +545,62 @@ test("reclaim keeps its session generation through its own workspace metadata co
       lifecycleRevision: "reclaim-generation",
       spawnedCwd: "/accepted-workspace",
     });
+  });
+});
+
+test("retains workspace ownership across row-cache invalidation and observes later writes", async () => {
+  await withStateDirEnv("worker-retained-workspace-", async () => {
+    const config: OpenClawConfig = { agents: { entries: { main: {} } } };
+    setRuntimeConfigSnapshot(config, config);
+    const identity = {
+      agentId: "main",
+      sessionKey: "agent:main:retained-workspace",
+      sessionId: "retained-workspace-session",
+    };
+    const storePath = resolveSessionStorePathCore(undefined, { agentId: identity.agentId });
+    const scope = { ...identity, storePath };
+    await replaceSessionEntry(scope, {
+      sessionId: identity.sessionId,
+      updatedAt: 1,
+      lifecycleRevision: "retained-workspace-generation",
+      worktree: { id: "retained-worktree", branch: "synthetic", repoRoot: "/synthetic" },
+    });
+    const physical = readDatabasePathIdentitySync(storePath);
+    using resolved = await resolveWorkerPlacementSessionTarget({
+      ...identity,
+      config,
+      errorMessage: "workspace owner changed",
+      sessionRuntime: {
+        resolveGatewaySessionStoreTargetWithStoreAsync,
+        resolveCanonicalSessionEntryFromStoreKeys,
+        managedWorktrees: {
+          findLiveByOwner: async (_kind, ownerId) => {
+            const replica = createSessionActorReplica({
+              target: {
+                sessionKey: identity.sessionKey,
+                database: {
+                  kind: "file",
+                  physicalIdentity: physical.key.slice("file:".length),
+                  birthtime: physical.birthtime,
+                  nativeLocation: storePath,
+                },
+              },
+              lifetime: { assertCurrent() {}, assertReadable() {} },
+              currentGeneration: () => "retained-workspace-fixture",
+            });
+            replica.invalidate();
+            replica.close();
+            return { id: "retained-worktree", ownerId, path: "/synthetic/workspace" };
+          },
+        },
+      },
+    });
+    expect(resolved.workspace).toEqual({ kind: "local", path: "/synthetic/workspace" });
+    await patchSessionEntryCore(scope, () => ({ label: "updated during placement" }));
+    expect(() => resolved.assertCurrent()).not.toThrow();
+    await patchSessionEntryCore(scope, () => ({
+      worktree: { id: "replacement-worktree", branch: "synthetic", repoRoot: "/synthetic" },
+    }));
+    expect(() => resolved.assertCurrent()).toThrow("workspace owner changed");
   });
 });

@@ -202,7 +202,7 @@ export async function retainGatewaySessionEntryReadOnly(
   agentId: string | undefined,
   allowMetadataChanges?: (previous: SessionEntry, current: SessionEntry) => boolean,
   cfg: OpenClawConfig = getRuntimeConfig(),
-  options: { exactRead?: true } = {},
+  options: { exactRead?: true; preserveQualifiedAddress?: true } = {},
 ) {
   const memory = captureMemoryRead({ cfg, key: sessionKey, agentId, projection: "list" });
   if (memory) {
@@ -267,7 +267,7 @@ export async function retainGatewaySessionEntryReadOnly(
     );
   }
   const assertRoutingCurrent = captureSessionMutationRouting(cfg, undefined, [
-    { sessionKey, agentId },
+    { sessionKey, agentId, preserveQualifiedAddress: options.preserveQualifiedAddress },
   ]);
   let released = false;
   let invalidated = false;

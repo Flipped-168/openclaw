@@ -24,6 +24,10 @@ export type PreparedSessionSourceFacts = PreparedSessionMutationFacts & {
   readSource?: CapturedSessionEntryReadSource;
 };
 
+export type ExistingSessionMutationFacts = PreparedSessionSourceFacts & {
+  target: NonNullable<PreparedSessionMutationFacts["target"]>;
+};
+
 export type CommittedSessionMutationTarget = {
   agentId: string;
   sessionKey: string;

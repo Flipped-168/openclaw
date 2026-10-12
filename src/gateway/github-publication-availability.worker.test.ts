@@ -28,7 +28,15 @@ import { prepareGitHubPublicationFact } from "./worker-environments/worker-githu
 async function prepareGitHubPublicationAvailability(
   params: Parameters<typeof prepareGitHubPublicationFact>[0],
 ) {
-  return (await prepareGitHubPublicationFact(params))?.available ?? false;
+  const facts = await prepareGitHubPublicationFact(params);
+  if (!facts) {
+    const selected = mocks.session.mock.results.at(-1)?.value;
+    console.error("[publication availability fixture diagnosis]", {
+      source: selected?.readSource,
+      capturedSource: selected?.capturedReadSource,
+    });
+  }
+  return facts?.available ?? false;
 }
 
 const identity = {

@@ -259,12 +259,6 @@ describe("Codex initialization through the registered session deletion owner", (
                   context.agentId,
                 );
               }
-              if (failure === "import") {
-                // Persist the fixture trigger so both worker and native writes reject the import.
-                openOpenClawAgentDatabase({ agentId: "main" }).db.exec(
-                  "CREATE TRIGGER reject_import BEFORE INSERT ON transcript_events BEGIN SELECT RAISE(ABORT, 'injected import failure'); END",
-                );
-              }
               let patch: Awaited<ReturnType<NonNullable<typeof input.afterCreate>>>;
               try {
                 patch = await input.afterCreate!(context);
@@ -379,6 +373,12 @@ describe("Codex initialization through the registered session deletion owner", (
           return attached;
         });
 
+        if (failure === "import") {
+          // Install the import fault before the fork retains its source authority.
+          openOpenClawAgentDatabase({ agentId: "main" }).db.exec(
+            "CREATE TRIGGER reject_import BEFORE INSERT ON transcript_events BEGIN SELECT RAISE(ABORT, 'injected import failure'); END",
+          );
+        }
         const result = await withPluginRuntimeRegistryScope(
           registry,
           flow === "fork" ? invokeFork : fixture.adopt,

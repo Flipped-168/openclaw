@@ -5,7 +5,6 @@ import type { ManagedWorktreeRecord } from "../agents/worktrees/types.js";
 import { getRuntimeConfig } from "../config/config.js";
 import { retainPreparedSessionEntryPredicate } from "../config/sessions/session-accessor.sqlite-entry-cache-publication-state.js";
 import { getSessionActorStorageBinding } from "../config/sessions/session-actor-storage-binding.js";
-import { readRetainedSessionEntryFacts } from "../config/sessions/session-entry-read-facts.js";
 import { withSessionEntriesFromStoreInWorker } from "../config/sessions/session-entry-read-runtime.js";
 import { captureSessionEntryMetadataRead } from "../config/sessions/session-entry-source-authority.js";
 import { captureIncognitoSessionBinding } from "../config/sessions/session-incognito-binding.js";
@@ -22,6 +21,7 @@ import { runExclusiveSessionLifecycleMutation } from "../sessions/session-lifecy
 import { createLazyRuntimeModule } from "../shared/lazy-runtime.js";
 import { getSessionRepositoryWorkspaceStore } from "../state/session-repository-workspaces.js";
 import { captureSessionMutationRouting } from "./session-sharing-preparation.js";
+import { retainGatewaySessionEntryReadOnly } from "./session-utils-read-lifetime.js";
 import type * as sessionUtils from "./session-utils.js";
 import type { WithPreparedWorkerWorkspaceRecovery } from "./worker-environments/placement-reclaim-contract.js";
 import type {
@@ -85,24 +85,15 @@ export async function resolveWorkerPlacementSessionStoreTarget(
   });
 }
 
-/** Reuse committed actor facts at effects; a cache miss must retry async preparation. */
+/** Process-owned actors expose their current workspace metadata directly. */
 export function readPreparedWorkerPlacementSessionStoreTarget(
   target: Awaited<ReturnType<typeof resolveWorkerPlacementSessionStoreTarget>>,
   identity: Pick<WorkerSessionPlacementIdentity, "sessionKey" | "agentId">,
 ) {
   const memory = getSessionActorStorageBinding(identity);
-  const metadata = memory ? undefined : captureSessionEntryMetadataRead(identity);
   const entry = memory
     ? memory.actor.snapshot(memory.authority)?.entry
-    : metadata
-      ? metadata.readCurrent()
-      : readRetainedSessionEntryFacts(
-          {
-            agentId: target.readSource?.agentId ?? target.agentId,
-            path: target.readSource?.path ?? target.storePath,
-          },
-          { sessionKeys: [target.canonicalKey], snapshotFields: [] },
-        )?.entries.find((row) => row.sessionKey === target.canonicalKey)?.entry;
+    : captureSessionEntryMetadataRead(identity)?.readCurrent();
   return { ...target, store: entry ? { [target.canonicalKey]: entry } : {} };
 }
 
@@ -114,7 +105,7 @@ export function createWorkerWorkspaceRecoveryPreparer(options: {
     assertOwnerCurrent();
     const sessionRuntime = await options.loadSessionRuntime();
     assertOwnerCurrent();
-    const resolved = await resolveWorkerPlacementSessionTarget({
+    using resolved = await resolveWorkerPlacementSessionTarget({
       sessionRuntime,
       config: options.getConfig(),
       ...identity,
@@ -284,12 +275,7 @@ export async function runWorkerPlacementSessionBarrier<T>(params: {
     identities: [params.sessionKey, target.canonicalKey, ...target.storeKeys, params.sessionId],
     signal: params.signal,
     run: async () => {
-      const {
-        target: currentTarget,
-        entry,
-        workspace,
-        assertCurrent,
-      } = await resolveWorkerPlacementSessionTarget({
+      using resolved = await resolveWorkerPlacementSessionTarget({
         sessionRuntime: params.sessionRuntime,
         config: params.getConfig(),
         sessionId: params.sessionId,
@@ -298,6 +284,7 @@ export async function runWorkerPlacementSessionBarrier<T>(params: {
         expectedTarget: target,
         errorMessage: `Session ${params.sessionKey} changed before cloud worker ${params.action}. Retry.`,
       });
+      const { target: currentTarget, entry, workspace, assertCurrent } = resolved;
       params.signal?.throwIfAborted();
       assertCurrent(params.getConfig());
       if (entry.archivedAt !== undefined) {
@@ -357,106 +344,143 @@ export async function resolveWorkerPlacementSessionTarget(params: {
   const resolveTarget = (cfg: OpenClawConfig) =>
     params.readTarget?.(cfg) ??
     resolveWorkerPlacementSessionStoreTarget(params.sessionRuntime, cfg, params);
-  const initialTarget = actorBinding
-    ? await resolveWorkerPlacementSessionStoreTarget(params.sessionRuntime, params.config, params)
-    : await resolveTarget(params.config);
-  const initialEntry: InternalSessionEntry | undefined = memory
-    ? memory.actor.snapshot(memory.authority)?.entry
-    : actorBinding
-      ? (
-          await actorBinding.actor.sessions.read(
-            {
-              assertCurrent: () => {
-                metadata!.assertCurrent();
-                actorClaim!.assertCurrent();
-              },
-            },
-            { sessionKey: params.sessionKey },
-            actorBinding.admissionSignal,
+  const retained =
+    !memory && !actorBinding && !params.readTarget
+      ? await retainGatewaySessionEntryReadOnly(
+          params.sessionKey,
+          params.agentId,
+          (previous, current) =>
+            previous.archivedAt === current.archivedAt &&
+            previous.worktree?.id === current.worktree?.id &&
+            previous.repositoryWorkspaceId === current.repositoryWorkspaceId,
+          params.config,
+          { exactRead: true, preserveQualifiedAddress: true },
+        )
+      : undefined;
+  try {
+    const initialTarget =
+      retained ??
+      (actorBinding
+        ? await resolveWorkerPlacementSessionStoreTarget(
+            params.sessionRuntime,
+            params.config,
+            params,
           )
-        ).entry
-      : params.sessionRuntime.resolveCanonicalSessionEntryFromStoreKeys(
-          initialTarget.store,
-          initialTarget.storeKeys,
-        );
-  const expected = params.expectedTarget ?? initialTarget;
-  const targetChangedError = () =>
-    params.expectedTarget
-      ? new WorkerDispatchTargetChangedError(params.errorMessage)
-      : new Error(params.errorMessage);
-  if (
-    initialTarget.storePath !== expected.storePath ||
-    initialTarget.canonicalKey !== expected.canonicalKey ||
-    initialTarget.agentId !== expected.agentId ||
-    !initialEntry ||
-    initialEntry.sessionId !== params.sessionId ||
-    (params.expectedEntry !== undefined &&
-      (initialEntry.lifecycleRevision !== params.expectedEntry.lifecycleRevision ||
-        initialEntry.worktree?.id !== params.expectedEntry.worktree?.id ||
-        initialEntry.repositoryWorkspaceId !== params.expectedEntry.repositoryWorkspaceId))
-  ) {
-    throw targetChangedError();
-  }
-  const initialIdentity = {
-    lifecycleRevision: initialEntry.lifecycleRevision,
-    archivedAt: initialEntry.archivedAt,
-    worktreeId: initialEntry.worktree?.id,
-    repositoryWorkspaceId: initialEntry.repositoryWorkspaceId,
-  };
-  const acceptWorktree = captureWorktreeRegistryReadGuard(worktreeContext, "source-owner");
-  const worktree = initialIdentity.repositoryWorkspaceId
-    ? undefined
-    : await params.sessionRuntime.managedWorktrees.findLiveByOwner(
-        "session",
-        initialTarget.canonicalKey,
-      );
-  const assertWorktreeCurrent = acceptWorktree(
-    worktree ? { ...worktree, ownerKind: "session" } : undefined,
-  );
-  const prepared = initialIdentity.repositoryWorkspaceId
-    ? await getSessionRepositoryWorkspaceStore().prepare(initialIdentity.repositoryWorkspaceId)
-    : undefined;
-  const assertRoutingCurrent = captureSessionMutationRouting(params.config, targetChangedError, [
-    { sessionKey: params.sessionKey, agentId: params.agentId },
-  ]);
-  const resolveBinding = (config = params.config) => {
-    actorClaim?.assertCurrent();
-    assertRoutingCurrent(config);
-    const target =
-      params.readTarget?.(config) ??
-      (memory || actorBinding
-        ? initialTarget
-        : readPreparedWorkerPlacementSessionStoreTarget(initialTarget, params));
-    const entry: InternalSessionEntry | undefined = memory
+        : await resolveTarget(params.config));
+    const initialEntry: InternalSessionEntry | undefined = memory
       ? memory.actor.snapshot(memory.authority)?.entry
       : actorBinding
-        ? metadata!.readCurrent()
+        ? (
+            await actorBinding.actor.sessions.read(
+              {
+                assertCurrent: () => {
+                  metadata!.assertCurrent();
+                  actorClaim!.assertCurrent();
+                },
+              },
+              { sessionKey: params.sessionKey },
+              actorBinding.admissionSignal,
+            )
+          ).entry
         : params.sessionRuntime.resolveCanonicalSessionEntryFromStoreKeys(
-            target.store,
-            target.storeKeys,
+            initialTarget.store,
+            initialTarget.storeKeys,
           );
+    const expected = params.expectedTarget ?? initialTarget;
+    const targetChangedError = () =>
+      params.expectedTarget
+        ? new WorkerDispatchTargetChangedError(params.errorMessage)
+        : new Error(params.errorMessage);
     if (
-      target.storePath !== expected.storePath ||
-      target.canonicalKey !== expected.canonicalKey ||
-      target.agentId !== expected.agentId ||
-      !entry ||
-      entry.sessionId !== params.sessionId ||
-      entry.lifecycleRevision !== initialIdentity.lifecycleRevision ||
-      entry.archivedAt !== initialIdentity.archivedAt ||
-      entry.worktree?.id !== initialIdentity.worktreeId ||
-      entry.repositoryWorkspaceId !== initialIdentity.repositoryWorkspaceId
+      initialTarget.storePath !== expected.storePath ||
+      initialTarget.canonicalKey !== expected.canonicalKey ||
+      initialTarget.agentId !== expected.agentId ||
+      !initialEntry ||
+      initialEntry.sessionId !== params.sessionId ||
+      (params.expectedEntry !== undefined &&
+        (initialEntry.lifecycleRevision !== params.expectedEntry.lifecycleRevision ||
+          initialEntry.worktree?.id !== params.expectedEntry.worktree?.id ||
+          initialEntry.repositoryWorkspaceId !== params.expectedEntry.repositoryWorkspaceId))
     ) {
       throw targetChangedError();
     }
-    if (entry.repositoryWorkspaceId) {
-      prepared?.assertSourceCurrent();
-      const repository = prepared?.workspace;
+    const initialIdentity = {
+      lifecycleRevision: initialEntry.lifecycleRevision,
+      archivedAt: initialEntry.archivedAt,
+      worktreeId: initialEntry.worktree?.id,
+      repositoryWorkspaceId: initialEntry.repositoryWorkspaceId,
+    };
+    const acceptWorktree = captureWorktreeRegistryReadGuard(worktreeContext, "source-owner");
+    const worktree = initialIdentity.repositoryWorkspaceId
+      ? undefined
+      : await params.sessionRuntime.managedWorktrees.findLiveByOwner(
+          "session",
+          initialTarget.canonicalKey,
+        );
+    const assertWorktreeCurrent = acceptWorktree(
+      worktree ? { ...worktree, ownerKind: "session" } : undefined,
+    );
+    const prepared = initialIdentity.repositoryWorkspaceId
+      ? await getSessionRepositoryWorkspaceStore().prepare(initialIdentity.repositoryWorkspaceId)
+      : undefined;
+    const assertRoutingCurrent = captureSessionMutationRouting(params.config, targetChangedError, [
+      { sessionKey: params.sessionKey, agentId: params.agentId },
+    ]);
+    const resolveBinding = (config = params.config) => {
+      actorClaim?.assertCurrent();
+      assertRoutingCurrent(config);
+      const target = params.readTarget?.(config) ?? initialTarget;
+      const entry: InternalSessionEntry | undefined = memory
+        ? memory.actor.snapshot(memory.authority)?.entry
+        : actorBinding
+          ? metadata!.readCurrent()
+          : retained
+            ? retained.isCurrentAtResponse()
+              ? retained.readRetainedEntry()
+              : undefined
+            : params.sessionRuntime.resolveCanonicalSessionEntryFromStoreKeys(
+                target.store,
+                target.storeKeys,
+              );
       if (
-        !repository ||
-        repository.workspaceId !== entry.repositoryWorkspaceId ||
-        repository.agentId !== target.agentId ||
-        repository.sessionKey !== target.canonicalKey ||
-        entry.worktree
+        target.storePath !== expected.storePath ||
+        target.canonicalKey !== expected.canonicalKey ||
+        target.agentId !== expected.agentId ||
+        !entry ||
+        entry.sessionId !== params.sessionId ||
+        entry.lifecycleRevision !== initialIdentity.lifecycleRevision ||
+        entry.archivedAt !== initialIdentity.archivedAt ||
+        entry.worktree?.id !== initialIdentity.worktreeId ||
+        entry.repositoryWorkspaceId !== initialIdentity.repositoryWorkspaceId
+      ) {
+        throw targetChangedError();
+      }
+      if (entry.repositoryWorkspaceId) {
+        prepared?.assertSourceCurrent();
+        const repository = prepared?.workspace;
+        if (
+          !repository ||
+          repository.workspaceId !== entry.repositoryWorkspaceId ||
+          repository.agentId !== target.agentId ||
+          repository.sessionKey !== target.canonicalKey ||
+          entry.worktree
+        ) {
+          throw targetChangedError();
+        }
+        return {
+          config,
+          target,
+          entry: actorBinding ? { ...initialEntry, ...entry } : entry,
+          worktree: undefined,
+          workspace: { kind: "repository", repository } satisfies WorkerSessionWorkspace,
+        };
+      }
+      assertWorktreeCurrent();
+      if (
+        !entry.worktree?.id ||
+        !worktree ||
+        worktree.id !== entry.worktree.id ||
+        worktree.ownerId !== target.canonicalKey
       ) {
         throw targetChangedError();
       }
@@ -464,46 +488,34 @@ export async function resolveWorkerPlacementSessionTarget(params: {
         config,
         target,
         entry: actorBinding ? { ...initialEntry, ...entry } : entry,
-        worktree: undefined,
-        workspace: { kind: "repository", repository } satisfies WorkerSessionWorkspace,
+        worktree,
+        workspace: { kind: "local", path: worktree.path } satisfies WorkerSessionWorkspace,
       };
-    }
-    assertWorktreeCurrent();
-    if (
-      !entry.worktree?.id ||
-      !worktree ||
-      worktree.id !== entry.worktree.id ||
-      worktree.ownerId !== target.canonicalKey
-    ) {
-      throw targetChangedError();
-    }
-    return {
-      config,
-      target,
-      entry: actorBinding ? { ...initialEntry, ...entry } : entry,
-      worktree,
-      workspace: { kind: "local", path: worktree.path } satisfies WorkerSessionWorkspace,
     };
-  };
-  const resolveCurrent = (config = params.config) => {
-    const selected = resolveBinding(config);
-    if (
-      selected.workspace.kind === "repository" &&
-      prepared?.current()?.revision !== selected.workspace.repository.revision
-    ) {
-      throw targetChangedError();
-    }
-    return selected;
-  };
-  return {
-    ...resolveCurrent(),
-    assertBindingCurrent: (config?: OpenClawConfig) => {
-      resolveBinding(config);
-    },
-    assertCurrent: (config?: OpenClawConfig) => {
-      resolveCurrent(config);
-    },
-  };
+    const resolveCurrent = (config = params.config) => {
+      const selected = resolveBinding(config);
+      if (
+        selected.workspace.kind === "repository" &&
+        prepared?.current()?.revision !== selected.workspace.repository.revision
+      ) {
+        throw targetChangedError();
+      }
+      return selected;
+    };
+    return {
+      ...resolveCurrent(),
+      [Symbol.dispose]: () => retained?.release(),
+      assertBindingCurrent: (config?: OpenClawConfig) => {
+        resolveBinding(config);
+      },
+      assertCurrent: (config?: OpenClawConfig) => {
+        resolveCurrent(config);
+      },
+    };
+  } catch (error) {
+    retained?.release();
+    throw error;
+  }
 }
 
 export const loadWorkerPlacementSessionRuntimeModule = createLazyRuntimeModule(async () => {

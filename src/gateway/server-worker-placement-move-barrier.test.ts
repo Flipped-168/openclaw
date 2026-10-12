@@ -120,6 +120,7 @@ describe("worker placement move destination", () => {
         };
         moveDestinationMocks.resolveGatewaySessionTarget.mockReturnValueOnce(target);
         moveDestinationMocks.resolveSessionTarget.mockResolvedValueOnce({
+          [Symbol.dispose]: () => {},
           assertCurrent: assertAuthority,
           assertBindingCurrent: assertAuthority,
           config: {},

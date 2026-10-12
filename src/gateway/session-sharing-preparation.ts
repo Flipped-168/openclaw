@@ -51,6 +51,7 @@ import { resolveIncognitoOpenClawAgentSqlitePath } from "../state/openclaw-agent
 import {
   createSessionSharingReceiptRead,
   type CommittedSessionMutationTarget,
+  type ExistingSessionMutationFacts,
   type PreparedSessionSourceFacts,
 } from "./session-sharing-created-facts.js";
 import { readSessionSharingFactsInWorker } from "./session-sharing-facts-read.js";
@@ -69,10 +70,6 @@ import type { GatewaySessionStoreDiscoveryCache } from "./session-utils-store-ca
 import { prepareGatewaySessionStoreTargetReadOnly } from "./session-utils-store-lookup.js";
 import { findCanonicalStoreMatch } from "./session-utils-store-selection.js";
 import type { GatewaySessionStoreTarget } from "./session-utils-store.types.js";
-
-type ExistingSessionMutationFacts = PreparedSessionSourceFacts & {
-  target: NonNullable<PreparedSessionMutationFacts["target"]>;
-};
 
 export { SessionMutationFactsUnavailableError } from "./session-sharing-incognito.js";
 
@@ -515,7 +512,6 @@ export async function prepareSessionMutationFacts(
           },
           async (reads, select) => {
             for (const read of reads) {
-              assertActive();
               const loaded = await readSessionSharingFactsInWorker(
                 {
                   agentId: read.agentId ?? agentId,
@@ -531,7 +527,6 @@ export async function prepareSessionMutationFacts(
                 },
               );
               const sharing = loaded.sharing;
-              assertActive();
               const store = Object.fromEntries(
                 loaded.entries.map(({ sessionKey, entry }) => [sessionKey, entry]),
               );
@@ -573,6 +568,10 @@ export async function prepareSessionMutationFacts(
                     throw new SessionMutationFactsUnavailableError();
                   }
                   retainedReads.set(key, retained);
+                  const publication = retained.prepareRead();
+                  if (publication) {
+                    await publication;
+                  }
                   if (!initializedReads.has(key)) {
                     const entry = store[sessionKey];
                     retained.initialize({

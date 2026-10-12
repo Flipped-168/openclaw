@@ -447,7 +447,7 @@ export async function ensureSessionWorkspaceForPlacement(params: {
         return;
       }
       if (entry.worktree || entry.repositoryWorkspaceId) {
-        await resolveWorkerPlacementSessionTarget({
+        const workspace = await resolveWorkerPlacementSessionTarget({
           sessionRuntime: await loadWorkerPlacementSessionRuntimeModule(),
           config: params.cfg,
           sessionId: entry.sessionId,
@@ -459,6 +459,7 @@ export async function ensureSessionWorkspaceForPlacement(params: {
           },
           errorMessage: "The session workspace owner is unavailable; repair it before retrying.",
         });
+        workspace[Symbol.dispose]();
         params.assertCurrent();
         return;
       }

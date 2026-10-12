@@ -338,6 +338,10 @@ export function withPreparedSessionSharingSource(params: {
     });
   }
   const prepare = async (): Promise<PreparedSessionSourceAuthority> => {
+    if (params.targets.every((target) => !target.resolved && !target.absentTarget)) {
+      assertCurrent();
+      return { assertCurrent, checks: [], release: async () => {} };
+    }
     const prepared: Awaited<ReturnType<typeof prepareSessionSharingSource>>[] = [];
     const release = () => releaseSessionSourceAuthorities(prepared);
     try {
