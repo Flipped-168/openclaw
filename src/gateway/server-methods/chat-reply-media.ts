@@ -157,6 +157,7 @@ export async function captureWebchatReplyMediaScope(
       [Symbol.dispose]: () => facts.release(),
       // The custody fence already read this workspace; preparation consumes that same snapshot.
       workspace: authority.workspace,
+      prepareRead: facts.prepareRead,
       assertCurrent: () => {
         params.assertCurrent?.();
         const current = readEntry();
@@ -209,6 +210,11 @@ export async function withPreparedWebchatReplyMedia<T>(
   const hasMedia = sourcePayloads.some(
     (payload) => resolveSendableOutboundReplyParts(payload).mediaUrls.length > 0,
   );
+  // Finalization can await transcript reads after capture while a writer publishes.
+  const publication = scope.prepareRead?.();
+  if (publication) {
+    await publication;
+  }
   return await withChannelReadAuthority(
     scope.assertCurrent,
     async () => {

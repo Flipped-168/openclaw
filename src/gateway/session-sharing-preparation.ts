@@ -104,6 +104,7 @@ export type SessionFactsRead<Facts extends PreparedSessionMutationFacts> = {
   readonly storageTarget: Pick<GatewaySessionStoreTarget, "agentId" | "canonicalKey" | "storePath">;
   bindCreation(this: void, operation: SessionEntryCreationOperation): void;
   recordCreated?(this: void, created: CommittedSessionMutationTarget): void;
+  prepareRead?(this: void): Promise<void> | undefined;
   readCurrent(this: void, cfg: OpenClawConfig): Facts;
   release(this: void): void;
 };
@@ -148,6 +149,7 @@ export async function prepareSessionMutationFacts(
   let acknowledgesCreatedIdentity = (_change: SessionIdentityMutation): boolean => false;
   let expectedPlaceholder: SessionEntryPlaceholder | undefined;
   let assertSource: () => void;
+  let prepareRead: (() => Promise<void> | undefined) | undefined;
   let captureCreatedPublication = (_change: SessionRowChange): boolean => false;
   let recordCreated: ((created: CommittedSessionMutationTarget) => void) | undefined;
   const selectedPaths = new Set<string>();
@@ -577,12 +579,16 @@ export async function prepareSessionMutationFacts(
       assertActive();
       // Selection cleanup can yield while a writer stages its postimage.
       // Join that publication before consuming the retained sharing facts.
-      const publications = [...retainedReads.values()].flatMap((retained) => {
-        const publication = retained.prepareRead();
-        return publication ? [publication] : [];
-      });
-      if (publications.length > 0) {
-        await Promise.all(publications);
+      prepareRead = () => {
+        const publications = [...retainedReads.values()].flatMap((retained) => {
+          const publication = retained.prepareRead();
+          return publication ? [publication] : [];
+        });
+        return publications.length > 0 ? Promise.all(publications).then(() => {}) : undefined;
+      };
+      const publication = prepareRead();
+      if (publication) {
+        await publication;
       }
       storageTarget = Object.freeze({
         agentId: selected.agentId,
@@ -691,6 +697,7 @@ export async function prepareSessionMutationFacts(
       storageTarget,
       bindCreation,
       recordCreated: (created: CommittedSessionMutationTarget) => recordCreated?.(created),
+      prepareRead,
       readCurrent,
       release,
     };

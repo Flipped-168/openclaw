@@ -3,9 +3,12 @@ import path from "node:path";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { createDeferred } from "../../../test/helpers/promise.js";
 import { replaceSessionEntry } from "../../config/sessions/session-accessor.js";
+import { retainSessionEntryWorkerPublication } from "../../config/sessions/session-accessor.sqlite-entry-worker-publication.js";
 import type { SessionEntry } from "../../config/sessions/types.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { drainGlobalSingletonLifecycleState } from "../../shared/global-singleton.js";
+import { readOpenClawAgentDatabaseIdentity } from "../../state/openclaw-agent-db-identity.js";
+import { openOpenClawAgentDatabase } from "../../state/openclaw-agent-db-lifecycle.js";
 import {
   createOpenClawTestState,
   type OpenClawTestState,
@@ -173,4 +176,45 @@ it("preserves already-produced text after its turn is aborted", async () => {
     inputs: [{ kind: "raw", payload: { text: "Completed before cancellation." } }],
   });
   expect(assistantContent).toEqual([{ type: "text", text: "Completed before cancellation." }]);
+});
+
+it("joins a publication staged after media authority was captured", async () => {
+  const target = {
+    sessionKey: SESSION_KEY,
+    agentId: "main",
+    storePath: (await loadSessionEntryAsync(SESSION_KEY, { agentId: "main" })).storePath,
+  };
+  await replaceSessionEntry(target, {
+    sessionId: "media-publication",
+    lifecycleRevision: "initial",
+    updatedAt: 1,
+  });
+  using scope = await captureWebchatReplyMediaScope({
+    cfg: {},
+    agentId: "main",
+    sessionKey: SESSION_KEY,
+  });
+  const database = openOpenClawAgentDatabase({ agentId: "main" });
+  const identity = readOpenClawAgentDatabaseIdentity(database).identity;
+  if (typeof identity !== "string") {
+    throw new Error("Expected durable session store");
+  }
+  const publication = retainSessionEntryWorkerPublication({
+    ...target,
+    databaseIdentity: identity,
+  });
+  publication.begin([SESSION_KEY], []);
+  const delivery = prepareWebchatReplyMediaForDisplay({
+    scope,
+    inputs: [{ kind: "raw", payload: { text: "Completed reply." } }],
+  });
+  try {
+    // The pending writer rolls back; its retained policy facts remain authoritative.
+    publication.settle(undefined, false);
+    await expect(delivery).resolves.toMatchObject({
+      assistantContent: [{ type: "text", text: "Completed reply." }],
+    });
+  } finally {
+    publication.settle(undefined, false);
+  }
 });
