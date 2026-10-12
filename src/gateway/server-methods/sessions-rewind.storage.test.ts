@@ -234,8 +234,9 @@ async function revokeDuringWriterWait(
     }
     return pending;
   });
-  const mutation = invoke();
+  let mutation: ReturnType<typeof invokeMessageCut> | undefined;
   try {
+    mutation = invoke();
     await awaitGateBeforeSettlement(
       queued.promise,
       mutation.error,
@@ -246,9 +247,9 @@ async function revokeDuringWriterWait(
     writer.mockRestore();
     release.resolve();
     await heldWriter;
-    await mutation.error;
+    await mutation?.error;
   }
-  return mutation;
+  return expectDefined(mutation, "queued message cut");
 }
 
 async function revokeWithPublicLifecyclePredecessor(
@@ -256,7 +257,6 @@ async function revokeWithPublicLifecyclePredecessor(
   requestContext: GatewayRequestContext,
   invoke: () => ReturnType<typeof invokeMessageCut>,
 ) {
-  await initializeSessionReadContext(requestContext);
   const storePath = resolveSessionStorePathCore(undefined, { agentId: scope.agentId });
   const entered = createDeferredCore();
   const release = createDeferredCore();
@@ -669,6 +669,7 @@ it.each(["SQLite writer fault injection", "public lifecycle predecessor"] as con
         connect: { role: "operator", scopes: ["operator.write"] },
       } as GatewayClient;
       const requestContext = context();
+      await initializeSessionReadContext(requestContext);
       const invoke = () => {
         const admission = resolveSessionMutationAuthorization({
           client,
