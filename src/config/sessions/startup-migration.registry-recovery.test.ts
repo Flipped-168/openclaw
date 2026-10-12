@@ -470,62 +470,23 @@ it("re-registers durable lineage children before configured-only runtime reads",
     ).toBe(false);
 
     phase = "running startup migration";
-    const lifecycle = await import("../../state/openclaw-agent-db.js");
-    const entryRewrite = await import("../../commands/doctor/shared/session-entry-rewrite.js");
-    const canonicalValidation = await import("./session-canonical-validation-readiness.js");
-    const closeDatabase = lifecycle.closeOpenClawAgentDatabaseByPathAsync;
-    const repairOutcomes = entryRewrite.repairLegacySessionRunOutcomes;
-    const certifyCanonical = canonicalValidation.certifySessionCanonicalValidationPending;
-    const diagnose = async <T>(label: string, operation: () => Promise<T>): Promise<T> => {
-      try {
-        return await operation();
-      } catch (error) {
-        throw new Error(`Registry startup failed while ${label}`, { cause: error });
-      }
-    };
-    const stackTraceLimit = Error.stackTraceLimit;
-    Error.stackTraceLimit = 100;
-    const close = vi
-      .spyOn(lifecycle, "closeOpenClawAgentDatabaseByPathAsync")
-      .mockImplementation((...args) =>
-        diagnose(`closing ${args[0]}`, () => closeDatabase(...args)),
-      );
-    const repair = vi
-      .spyOn(entryRewrite, "repairLegacySessionRunOutcomes")
-      .mockImplementation((...args) =>
-        diagnose(`repairing run outcomes for ${args[0].agentId}`, () => repairOutcomes(...args)),
-      );
-    const certify = vi
-      .spyOn(canonicalValidation, "certifySessionCanonicalValidationPending")
-      .mockImplementation((...args) =>
-        diagnose(`certifying canonical rows for ${args[0].agentId}`, () =>
-          certifyCanonical(...args),
-        ),
-      );
-    try {
-      await runSessionStartupMigration({
-        cfg,
-        env,
-        log: { info: vi.fn(), warn: vi.fn() },
-        deps: {
-          migrateLegacyMainSessionKeys: vi.fn(async () => ({
-            armed: false,
-            changes: [],
-            complete: false,
-            ledgerComplete: false,
-            legacyAgentId: "main",
-            mainKey: "main",
-            outcomes: [{ kind: "not-armed" as const }],
-            warnings: [],
-          })),
-        },
-      });
-    } finally {
-      close.mockRestore();
-      repair.mockRestore();
-      certify.mockRestore();
-      Error.stackTraceLimit = stackTraceLimit;
-    }
+    await runSessionStartupMigration({
+      cfg,
+      env,
+      log: { info: vi.fn(), warn: vi.fn() },
+      deps: {
+        migrateLegacyMainSessionKeys: vi.fn(async () => ({
+          armed: false,
+          changes: [],
+          complete: false,
+          ledgerComplete: false,
+          legacyAgentId: "main",
+          mainKey: "main",
+          outcomes: [{ kind: "not-armed" as const }],
+          warnings: [],
+        })),
+      },
+    });
 
     phase = "checking recovered child registration";
     expect(listOpenClawRegisteredAgentDatabases({ env })).toContainEqual(
