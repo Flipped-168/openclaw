@@ -12,10 +12,7 @@ import {
   RUNTIME_DEPENDENCY_OWNERSHIP_RELATIVE_PATH,
   type RuntimeDependencyOwnership,
 } from "../src/infra/runtime-dependency-ownership.ts";
-import {
-  UPDATE_PRELOAD_IMPORTS_FILE,
-  UPDATE_RETAINED_IMPORTS_PROTOCOL,
-} from "../src/infra/update-retained-imports-contract.ts";
+import { UPDATE_PRELOAD_IMPORTS_FILE } from "../src/infra/update-retained-imports-contract.ts";
 import { verifyBuiltPluginControlPlaneModules } from "./check-built-plugin-control-plane-modules.mts";
 import { copyBundledPluginMetadata } from "./copy-bundled-plugin-metadata.mts";
 import { copyHookMetadata, listHookMetadataOutputs } from "./copy-hook-metadata.ts";
@@ -620,17 +617,6 @@ export function runRuntimePostBuild(params: RuntimePostBuildParams = {}) {
   );
   runPhase("updater preload imports", () => {
     const chunks = listPostSwapImportChunks(rootDir);
-    // A release declaring retained imports ships no bridges for itself, so an
-    // empty list (lost region markers) would leave its Bun updater uncovered.
-    const manifest = path.join(rootDir, "package.json");
-    if (
-      chunks.length === 0 &&
-      fs.existsSync(manifest) &&
-      JSON.parse(fs.readFileSync(manifest, "utf8")).openclaw?.updateRetainedImports ===
-        UPDATE_RETAINED_IMPORTS_PROTOCOL
-    ) {
-      throw new Error("Found no post-swap updater imports to preload");
-    }
     writeTextFileIfChanged(
       path.join(rootDir, "dist", UPDATE_PRELOAD_IMPORTS_FILE),
       `${JSON.stringify({ chunks }, null, 2)}\n`,

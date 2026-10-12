@@ -1287,7 +1287,7 @@ describe("previous release update compatibility", () => {
     return { root, inventory };
   }
 
-  it("preloads exactly the chunks a bridge would cover, and marked releases record none", () => {
+  it("preloads exactly the chunks a bridge would cover", () => {
     const { root, inventory } = recordImportedFixture(
       'import("./service-abcdefgh.js").then((m) => m.runner())',
       {
@@ -1300,17 +1300,6 @@ describe("previous release update compatibility", () => {
       inventory.releases.flatMap((release) => release.chunks.map((chunk) => chunk.path)),
     );
     expect(listPostSwapImportChunks(root)).toEqual(["service-abcdefgh.js"]);
-    write(
-      root,
-      "package.json",
-      JSON.stringify({
-        name: "openclaw",
-        version: "2026.9.1",
-        type: "module",
-        openclaw: { updateRetainedImports: 1 },
-      }),
-    );
-    expect(recordUpdateCompatibilityRelease({ packageDir: root, integrity }).chunks).toEqual([]);
   });
 
   it("fails the build on computed post-swap imports outside the reviewed exemptions", () => {

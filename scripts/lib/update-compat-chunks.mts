@@ -1,7 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
 import * as ts from "typescript/unstable/ast";
-import { UPDATE_RETAINED_IMPORTS_PROTOCOL } from "../../src/infra/update-retained-imports-contract.ts";
 import { createNativeTypeScriptParser } from "./native-typescript.mts";
 import { isRecord as object } from "./record-shared.mjs";
 import { parseReleaseVersion } from "./release-version.mjs";
@@ -354,17 +353,6 @@ export function recordUpdateCompatibilityRelease(params: {
       release.commit === build.commit &&
       release.integrity === params.integrity,
   )?.chunk;
-  // This release's updater serves its own later imports, so it needs no bridges.
-  if (packageJson.openclaw?.updateRetainedImports === UPDATE_RETAINED_IMPORTS_PROTOCOL) {
-    return {
-      version: packageJson.version,
-      buildId: build.buildId,
-      commit: build.commit,
-      integrity: params.integrity,
-      schemaVersions: packageJson.openclaw?.schemaVersions,
-      chunks: [],
-    };
-  }
   using parser = createNativeTypeScriptParser({ cwd: packageDir });
   const graph = new ModuleGraph(parser);
   const chunks = new Map<string, UpdateCompatibilityChunk>();
