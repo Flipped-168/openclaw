@@ -345,9 +345,6 @@ export abstract class AppSidebarSessionNavigationElement extends AppSidebarBase 
   selectedAgentIdForSessions = (): string => this.getSessionNavigationState().selectedAgentId;
 
   sessionNavigationAgentId(session: Pick<SidebarRecentSession, "key" | "agentId">): string {
-    if (this.sidebarAgentsMode !== "roster") {
-      return this.selectedAgentIdForSessions();
-    }
     return resolveUiSessionRowAgentId(
       session,
       resolveUiDefaultAgentId({
@@ -640,7 +637,7 @@ export abstract class AppSidebarSessionNavigationElement extends AppSidebarBase 
     );
   }
 
-  /** The list follows the chip-selected agent without flashing stale rows mid-switch. */
+  /** Personal windows retain their configured-agent scope while the chat selection changes. */
   protected selectedAgentSessionRows(
     navigationState: SidebarSessionNavigationState,
   ): SidebarRecentSession[] {
@@ -658,7 +655,10 @@ export abstract class AppSidebarSessionNavigationElement extends AppSidebarBase 
           host: this,
           navigationState,
           selected,
-          agentIds: roster?.agentIds ?? [selected],
+          agentIds: roster?.agentIds ??
+            (this.sessionData.sessionsAgentId === null
+              ? this.context?.agents.state.agentsList?.agents.map((agent) => agent.id)
+              : undefined) ?? [selected],
           result: roster?.result,
           compareSessions: createSidebarSessionRowsComparator(this.readSidebarSessionSortOptions),
           resolveAttention: this.resolveSessionAttention,
@@ -684,7 +684,8 @@ export abstract class AppSidebarSessionNavigationElement extends AppSidebarBase 
       return this.groupedSessionSource.result;
     }
     const selected = this.expandedAgentId();
-    return selected === normalizeAgentId(this.sessionData.sessionsAgentId ?? "")
+    return this.sessionData.sessionsAgentId === null ||
+      selected === normalizeAgentId(this.sessionData.sessionsAgentId)
       ? this.sessionData.sessionsResult
       : (this.sessionData.sessionResultsByAgent[selected] ?? null);
   }
