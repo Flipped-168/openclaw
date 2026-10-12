@@ -186,6 +186,8 @@ async function expectPublicBundleStatus(params: {
   operator: GatewayClient;
   nodeId: string;
   status: "installed" | "missing";
+  stage: "initial" | "missing" | "repaired";
+  host: PairedNodeWorkerHost;
 }): Promise<void> {
   await vi.waitFor(
     async () => {
@@ -193,8 +195,19 @@ async function expectPublicBundleStatus(params: {
       const environment = (await readEnvironments(params.operator)).find(
         (entry) => entry.id === `node:${params.nodeId}`,
       );
-      expect(node?.workerBundle?.status).toBe(params.status);
-      expect(environment?.workerBundle?.status).toBe(params.status);
+      const diagnostic = JSON.stringify({
+        stage: params.stage,
+        expectedStatus: params.status,
+        nodeStatus: node?.workerBundle ?? null,
+        environmentStatus: environment?.workerBundle ?? null,
+        invokeErrors: params.host.invokeErrors,
+        retainCommands: params.host.commands.filter(
+          (command) => command === NODE_WORKER_WORKSPACE_RETAIN_COMMAND,
+        ).length,
+        bundleInstalls: bundleInstallFrames(params.host).length,
+      });
+      expect(node?.workerBundle?.status, diagnostic).toBe(params.status);
+      expect(environment?.workerBundle?.status, diagnostic).toBe(params.status);
       for (const projection of [node?.workerBundle, environment?.workerBundle]) {
         expect(Object.keys(projection ?? {}).toSorted()).toEqual(
           params.status === "installed" ? ["status", "version"] : ["status"],
@@ -585,7 +598,13 @@ describe("paired node worker lifecycle wire", () => {
         await expectSuccessfulTurn({ operator, key: retainedKey, marker: "WIRE-MOVED-BACK" });
 
         // Bundle maintenance reports only the public status/version projection and repairs loss.
-        await expectPublicBundleStatus({ operator, nodeId, status: "installed" });
+        await expectPublicBundleStatus({
+          operator,
+          nodeId,
+          status: "installed",
+          stage: "initial",
+          host: workerNode,
+        });
         const installedBundle = await workerNode.installedBundleDirectory(bundleHash!);
         const installCountBeforeLoss = bundleInstallFrames(workerNode).length;
         await fs.rm(installedBundle, { recursive: true, force: true });
@@ -594,7 +613,13 @@ describe("paired node worker lifecycle wire", () => {
         const retainCountBeforeReconnect = retainCommandCount();
         await workerNode.connect();
         await waitForNewRetainCommand(retainCountBeforeReconnect);
-        await expectPublicBundleStatus({ operator, nodeId, status: "missing" });
+        await expectPublicBundleStatus({
+          operator,
+          nodeId,
+          status: "missing",
+          stage: "missing",
+          host: workerNode,
+        });
         await expectSuccessfulTurn({ operator, key: localKey, marker: "WIRE-LOCAL-AFTER-LOSS" });
 
         const repairedKey = await createSession({ operator, published, suffix: "reinstalled" });
@@ -605,7 +630,13 @@ describe("paired node worker lifecycle wire", () => {
           { timeout: 30_000, interval: 100 },
         );
         await waitForNewRetainCommand(retainCountBeforeRepair);
-        await expectPublicBundleStatus({ operator, nodeId, status: "installed" });
+        await expectPublicBundleStatus({
+          operator,
+          nodeId,
+          status: "installed",
+          stage: "repaired",
+          host: workerNode,
+        });
 
         // An offline runner fails before handoff, leaves the active placement retryable, and
         // does not terminalize the independent local session.

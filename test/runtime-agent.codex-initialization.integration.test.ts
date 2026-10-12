@@ -265,7 +265,17 @@ describe("Codex initialization through the registered session deletion owner", (
                   "CREATE TRIGGER reject_import BEFORE INSERT ON transcript_events BEGIN SELECT RAISE(ABORT, 'injected import failure'); END",
                 );
               }
-              const patch = await input.afterCreate!(context);
+              let patch: Awaited<ReturnType<NonNullable<typeof input.afterCreate>>>;
+              try {
+                patch = await input.afterCreate!(context);
+              } finally {
+                if (failure === "import") {
+                  // The import fault must not alter schema admission during rollback.
+                  openOpenClawAgentDatabase({ agentId: "main" }).db.exec(
+                    "DROP TRIGGER reject_import",
+                  );
+                }
+              }
               if (!patch) {
                 throw new Error("Codex initializer did not return its final patch");
               }

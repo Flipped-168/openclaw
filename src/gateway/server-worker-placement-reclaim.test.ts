@@ -21,6 +21,8 @@ import {
   admitWorkerStopChat,
   createWorkerStopChatContext,
 } from "./server-worker-placement.test-harness.js";
+import { resolveGatewaySessionStoreTargetWithStoreAsync } from "./session-utils-store-lookup.js";
+import { resolveCanonicalSessionEntryFromStoreKeys } from "./session-utils-store.js";
 import { coordinateWorkerPlacementDispatch } from "./worker-environments/placement-dispatch-coordinator.js";
 import { REQUEST } from "./worker-environments/placement-dispatch-test-fixtures.js";
 import { createHarness } from "./worker-environments/placement-dispatch-test-harness.js";
@@ -80,18 +82,19 @@ async function scenario(
     worktree: { id: "task-worktree", branch: "test", repoRoot: worktreePath },
     updatedAt: Date.now(),
   };
-  const target = {
-    storePath,
-    canonicalKey: REQUEST.sessionKey,
-    storeKeys: [REQUEST.sessionKey],
-    agentId: REQUEST.agentId,
-    store: { [REQUEST.sessionKey]: entry },
-  };
-  lookup.value = { ...target, cfg: {}, entry, legacyKey: undefined };
   await replaceSessionEntry(
     { storePath, sessionKey: REQUEST.sessionKey, agentId: REQUEST.agentId },
     entry,
   );
+  const target = await resolveGatewaySessionStoreTargetWithStoreAsync({
+    cfg: { session: { store: storePath } },
+    key: REQUEST.sessionKey,
+    agentId: REQUEST.agentId,
+    exactRead: true,
+    readOnly: true,
+    clone: false,
+  });
+  lookup.value = { ...target, cfg: {}, entry, legacyKey: undefined };
   const barrierEntered = createDeferred();
   const releaseBarrier = createDeferred();
   const context = createWorkerStopChatContext();
@@ -117,7 +120,7 @@ async function scenario(
                 },
         },
         resolveGatewaySessionStoreTargetWithStoreAsync: async () => target,
-        resolveCanonicalSessionEntryFromStoreKeys: () => entry,
+        resolveCanonicalSessionEntryFromStoreKeys,
       }) as never,
     cancelSessionWork: async (request) => {
       cancellationEntered.resolve();
@@ -207,7 +210,7 @@ async function scenario(
                 }),
               },
               resolveGatewaySessionStoreTargetWithStoreAsync: async () => target,
-              resolveCanonicalSessionEntryFromStoreKeys: () => entry,
+              resolveCanonicalSessionEntryFromStoreKeys,
             }) as never,
         )
       : (_request, run) => run(),
@@ -554,15 +557,22 @@ it.each([false, true])(
 );
 
 it("an idempotent failed-cleanup result does not cancel work already on the local placement", async () => {
-  const storePath = path.join(os.tmpdir(), "failed-already-local.sqlite");
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "failed-already-local-"));
+  roots.push(root);
+  const storePath = path.join(root, "sessions.sqlite");
   const entry = { sessionId: REQUEST.sessionId, updatedAt: Date.now() };
-  const target = {
-    storePath,
-    canonicalKey: REQUEST.sessionKey,
-    storeKeys: [REQUEST.sessionKey],
+  await replaceSessionEntry(
+    { storePath, sessionKey: REQUEST.sessionKey, agentId: REQUEST.agentId },
+    entry,
+  );
+  const target = await resolveGatewaySessionStoreTargetWithStoreAsync({
+    cfg: { session: { store: storePath } },
+    key: REQUEST.sessionKey,
     agentId: REQUEST.agentId,
-    store: { [REQUEST.sessionKey]: entry },
-  };
+    exactRead: true,
+    readOnly: true,
+    clone: false,
+  });
   const local = { state: "local", sessionId: REQUEST.sessionId, generation: 4 };
   const cancel = vi.fn();
   const barriers = createGatewayWorkerPlacementReclaimBarriers({
@@ -575,7 +585,7 @@ it("an idempotent failed-cleanup result does not cancel work already on the loca
       ({
         managedWorktrees: { findLiveByOwner: async () => undefined },
         resolveGatewaySessionStoreTargetWithStoreAsync: async () => target,
-        resolveCanonicalSessionEntryFromStoreKeys: () => entry,
+        resolveCanonicalSessionEntryFromStoreKeys,
       }) as never,
     cancelSessionWork: cancel,
     revokeSessionAuthority: vi.fn(),
@@ -623,18 +633,19 @@ it.each(["missing", "local"] as const)(
     const placements = createWorkerSessionPlacementStore({ database });
     const storePath = path.join(root, "sessions.sqlite");
     const entry = { sessionId: REQUEST.sessionId, updatedAt: Date.now() };
-    const target = {
-      storePath,
-      canonicalKey: REQUEST.sessionKey,
-      storeKeys: [REQUEST.sessionKey],
-      agentId: REQUEST.agentId,
-      store: { [REQUEST.sessionKey]: entry },
-    };
-    lookup.value = { ...target, cfg: {}, entry, legacyKey: undefined };
     await replaceSessionEntry(
       { storePath, sessionKey: REQUEST.sessionKey, agentId: REQUEST.agentId },
       entry,
     );
+    const target = await resolveGatewaySessionStoreTargetWithStoreAsync({
+      cfg: { session: { store: storePath } },
+      key: REQUEST.sessionKey,
+      agentId: REQUEST.agentId,
+      exactRead: true,
+      readOnly: true,
+      clone: false,
+    });
+    lookup.value = { ...target, cfg: {}, entry, legacyKey: undefined };
     if (state === "local") {
       await placements.releaseTurn(
         await placements.claimTurn({
@@ -648,7 +659,7 @@ it.each(["missing", "local"] as const)(
     const sessionRuntime = {
       managedWorktrees: { findLiveByOwner: async () => undefined },
       resolveGatewaySessionStoreTargetWithStoreAsync: async () => target,
-      resolveCanonicalSessionEntryFromStoreKeys: () => entry,
+      resolveCanonicalSessionEntryFromStoreKeys,
     };
     const context = createWorkerStopChatContext();
     const cancelApprovals = vi.fn();

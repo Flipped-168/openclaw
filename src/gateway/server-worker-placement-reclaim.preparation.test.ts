@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
 import { replaceSessionEntry } from "../config/sessions/session-accessor.js";
+import { replaceSessionEntrySync } from "../config/sessions/session-accessor.sqlite-entry.js";
 import { clearAgentRunContext } from "../infra/agent-run-registry.js";
 import * as operationAdmission from "../infra/sqlite-worker-operation-admission.js";
 import { sqliteWorkerOwnerProbe as probe } from "../infra/sqlite-worker-owner-probe.test-support.js";
@@ -17,6 +18,8 @@ import {
   admitWorkerStopChat,
   createWorkerStopChatContext,
 } from "./server-worker-placement.test-harness.js";
+import { resolveGatewaySessionStoreTargetWithStoreAsync } from "./session-utils-store-lookup.js";
+import { resolveCanonicalSessionEntryFromStoreKeys } from "./session-utils-store.js";
 import { coordinateWorkerPlacementDispatch } from "./worker-environments/placement-dispatch-coordinator.js";
 import { REQUEST } from "./worker-environments/placement-dispatch-test-fixtures.js";
 import { createHarness } from "./worker-environments/placement-dispatch-test-harness.js";
@@ -59,13 +62,18 @@ async function cancellationLoadFixture(
     worktree: { id: "task-worktree", branch: "test", repoRoot: root },
     updatedAt: Date.now(),
   };
-  const target = {
-    storePath,
-    canonicalKey: REQUEST.sessionKey,
-    storeKeys: [REQUEST.sessionKey],
+  await replaceSessionEntry(
+    { storePath, sessionKey: REQUEST.sessionKey, agentId: REQUEST.agentId },
+    entry,
+  );
+  const target = await resolveGatewaySessionStoreTargetWithStoreAsync({
+    cfg: { session: { store: storePath } },
+    key: REQUEST.sessionKey,
     agentId: REQUEST.agentId,
-    store: { [REQUEST.sessionKey]: entry },
-  };
+    exactRead: true,
+    readOnly: true,
+    clone: false,
+  });
   const runtime = {
     managedWorktrees: {
       findLiveByOwner: async () => ({
@@ -83,10 +91,9 @@ async function cancellationLoadFixture(
       }),
     },
     resolveGatewaySessionStoreTargetWithStoreAsync: async () => target,
-    resolveCanonicalSessionEntryFromStoreKeys: () => entry,
+    resolveCanonicalSessionEntryFromStoreKeys,
   };
   lookup.value = { ...target, cfg: {}, entry, legacyKey: undefined };
-  await replaceSessionEntry({ ...target, sessionKey: REQUEST.sessionKey }, entry);
   const context = createWorkerStopChatContext();
   let delayCancellation = false;
   const loading = createDeferredCore();
@@ -231,6 +238,10 @@ it.each(["same-owner", "replacement", "incarnation", "authorization"] as const)(
         });
       } else if (change === "incarnation") {
         f.entry.lifecycleRevision = "replacement";
+        await replaceSessionEntry(
+          { storePath: f.storePath, sessionKey: REQUEST.sessionKey, agentId: REQUEST.agentId },
+          f.entry,
+        );
       } else if (change === "authorization") {
         authorized = false;
       }
@@ -500,6 +511,10 @@ it.each(
         await f.placements.startDispatch(REQUEST);
       } else if (change === "incarnation") {
         f.entry.lifecycleRevision = "replacement";
+        await replaceSessionEntry(
+          { storePath: f.storePath, sessionKey: REQUEST.sessionKey, agentId: REQUEST.agentId },
+          f.entry,
+        );
       }
       f.loaded.resolve();
       const result = await second;
@@ -534,6 +549,7 @@ it.each([
     const {
       placements,
       entry,
+      storePath,
       context,
       loading,
       loaded,
@@ -621,6 +637,10 @@ it.each([
         });
       } else if (advance === "incarnation") {
         entry.lifecycleRevision = "replacement";
+        await replaceSessionEntry(
+          { storePath, sessionKey: REQUEST.sessionKey, agentId: REQUEST.agentId },
+          entry,
+        );
       }
       loaded.resolve();
       if (advance !== "replacement" && advance !== "incarnation") {
@@ -845,6 +865,10 @@ it.each([
           allowed = false;
         } else {
           f.entry.lifecycleRevision = "replacement";
+          replaceSessionEntrySync(
+            { storePath: f.storePath, sessionKey: REQUEST.sessionKey, agentId: REQUEST.agentId },
+            f.entry,
+          );
         }
       }
       admit(request, grant);

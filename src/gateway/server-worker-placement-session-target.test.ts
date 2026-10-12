@@ -25,6 +25,7 @@ import { resolveWorkerPlacementSessionTarget } from "./server-worker-placement-s
 import { createGatewayWorkerPlacementRuntime } from "./server-worker-placement-startup.js";
 import { resolveGatewaySessionStoreTargetWithStoreAsync } from "./session-utils-store-lookup.js";
 import { resolveCanonicalSessionEntryFromStoreKeys } from "./session-utils-store.js";
+import { LOCAL_PLACEMENT } from "./worker-environments/placement-dispatch-coordinator.test-support.js";
 import {
   REQUEST,
   seedActivePlacement,
@@ -491,5 +492,56 @@ test("resolves consecutive placement workspaces without decoding unrelated sessi
     } finally {
       parse.mockRestore();
     }
+  });
+});
+
+test("reclaim keeps its session generation through its own workspace metadata commit", async () => {
+  await withStateDirEnv("worker-reclaim-metadata-", async () => {
+    const config: OpenClawConfig = { agents: { entries: { main: {} } } };
+    setRuntimeConfigSnapshot(config, config);
+    const scope = {
+      agentId: REQUEST.agentId,
+      sessionKey: REQUEST.sessionKey,
+      storePath: resolveSessionStorePathCore(undefined, { agentId: REQUEST.agentId }),
+    };
+    await replaceSessionEntry(scope, {
+      sessionId: REQUEST.sessionId,
+      lifecycleRevision: "reclaim-generation",
+      repositoryWorkspaceId: "accepted-repository",
+      updatedAt: 1,
+    });
+    const placement = { ...LOCAL_PLACEMENT, ...REQUEST };
+    const barriers = createGatewayWorkerPlacementReclaimBarriers({
+      placements: {
+        get: () => placement,
+        getAsync: async () => placement,
+        waitForTurnClaimRelease: async () => {},
+      },
+      loadSessionRuntime: async () => ({
+        resolveGatewaySessionStoreTargetWithStoreAsync,
+        resolveCanonicalSessionEntryFromStoreKeys,
+        managedWorktrees: { findLiveByOwner: async () => undefined },
+      }),
+      cancelSessionWork: async () => {},
+      revokeSessionAuthority: () => {},
+    });
+    const reclaimed = await barriers.runReclaimPreparation({
+      ...REQUEST,
+      run: async (authorize) => {
+        await patchSessionEntryCore(
+          scope,
+          () => ({ repositoryWorkspaceId: undefined, spawnedCwd: "/accepted-workspace" }),
+          { assertCommitAllowed: authorize, skipMaintenance: true },
+        );
+        authorize?.();
+        return placement;
+      },
+    });
+    expect(reclaimed).toBe(placement);
+    expect(loadExactSessionEntryReadOnly(scope)?.entry).toMatchObject({
+      sessionId: REQUEST.sessionId,
+      lifecycleRevision: "reclaim-generation",
+      spawnedCwd: "/accepted-workspace",
+    });
   });
 });

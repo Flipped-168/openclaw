@@ -1,27 +1,49 @@
-import { expect, it, vi } from "vitest";
+import path from "node:path";
+import { afterEach, expect, it, vi } from "vitest";
+import { createTempDirTracker } from "../../test/helpers/temp-dir.js";
+import { patchSessionEntryCore, replaceSessionEntry } from "../config/sessions/session-accessor.js";
 import { beginSessionWorkAdmission } from "../sessions/session-lifecycle-admission.js";
 import { createDeferredCore } from "../shared/deferred.js";
+import { closeOpenClawAgentDatabasesAsync } from "../state/openclaw-agent-db.js";
 import { createGatewayWorkerPlacementReclaimBarriers } from "./server-worker-placement-reclaim.js";
+import { resolveGatewaySessionStoreTargetWithStoreAsync } from "./session-utils-store-lookup.js";
+import { resolveCanonicalSessionEntryFromStoreKeys } from "./session-utils-store.js";
+
+const tempDirs = createTempDirTracker();
+afterEach(async () => {
+  await closeOpenClawAgentDatabasesAsync();
+  tempDirs.cleanup();
+});
 
 vi.mock("../config/config.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../config/config.js")>()),
   getRuntimeConfig: () => ({}),
 }));
 
-function fixture(name: string, state: "active" | "failed" | "local" | "reclaimed" = "active") {
+async function fixture(
+  name: string,
+  state: "active" | "failed" | "local" | "reclaimed" = "active",
+) {
   const request = {
     sessionId: `session-${name}`,
     sessionKey: `agent:main:${name}`,
     agentId: "main",
   };
   const entry = { sessionId: request.sessionId, lifecycleRevision: "original", updatedAt: 1 };
-  const target = {
-    storePath: `/fixture/reclaim-preparation-${name}.sqlite`,
-    canonicalKey: request.sessionKey,
-    storeKeys: [request.sessionKey],
-    agentId: request.agentId,
-    store: { [request.sessionKey]: entry },
-  };
+  const root = tempDirs.make("worker-reclaim-preparation-");
+  const env = { ...process.env, OPENCLAW_STATE_DIR: root };
+  const storePath = path.join(root, "sessions.sqlite");
+  const scope = { ...request, storePath, env };
+  await replaceSessionEntry(scope, entry);
+  const resolveTarget = () =>
+    resolveGatewaySessionStoreTargetWithStoreAsync({
+      cfg: { session: { store: storePath } },
+      key: request.sessionKey,
+      agentId: request.agentId,
+      env,
+      exactRead: true,
+    });
+  const target = await resolveTarget();
   const placement = {
     ...request,
     state,
@@ -38,8 +60,8 @@ function fixture(name: string, state: "active" | "failed" | "local" | "reclaimed
     },
     loadSessionRuntime: async () => ({
       managedWorktrees: { findLiveByOwner: async () => undefined },
-      resolveGatewaySessionStoreTargetWithStoreAsync: async () => target,
-      resolveCanonicalSessionEntryFromStoreKeys: () => entry,
+      resolveGatewaySessionStoreTargetWithStoreAsync: resolveTarget,
+      resolveCanonicalSessionEntryFromStoreKeys,
     }),
     cancelSessionWork: cancel,
     revokeSessionAuthority: vi.fn(),
@@ -54,7 +76,8 @@ function fixture(name: string, state: "active" | "failed" | "local" | "reclaimed
     });
   return {
     ...request,
-    entry,
+    replaceLifecycle: (lifecycleRevision: string) =>
+      patchSessionEntryCore(scope, () => ({ lifecycleRevision }), { skipMaintenance: true }),
     placement,
     cancel,
     run,
@@ -65,7 +88,7 @@ function fixture(name: string, state: "active" | "failed" | "local" | "reclaimed
 }
 
 it("one failed Stop cannot reopen ingress while another Stop still owns its closure", async () => {
-  const f = fixture("overlap");
+  const f = await fixture("overlap");
   const entered = createDeferredCore();
   const release = createDeferredCore();
   let calls = 0;
@@ -94,7 +117,7 @@ it("one failed Stop cannot reopen ingress while another Stop still owns its clos
 it.each(["authorization", "incarnation"] as const)(
   "rejects changed %s after cancellation and reopens admission on failure",
   async (change) => {
-    const f = fixture(`changed-${change}`);
+    const f = await fixture(`changed-${change}`);
     const entered = createDeferredCore();
     const release = createDeferredCore();
     let authorized = true;
@@ -123,7 +146,7 @@ it.each(["authorization", "incarnation"] as const)(
       if (change === "authorization") {
         authorized = false;
       } else {
-        f.entry.lifecycleRevision = "replacement-with-same-session-id";
+        await f.replaceLifecycle("replacement-with-same-session-id");
       }
       release.resolve();
       await rejected;
@@ -138,7 +161,7 @@ it.each(["authorization", "incarnation"] as const)(
 );
 
 it("rechecks the exact worker owner after asynchronous cancellation setup", async () => {
-  const f = fixture("changed-worker");
+  const f = await fixture("changed-worker");
   const entered = createDeferredCore();
   const release = createDeferredCore();
   const signalled = vi.fn();
@@ -161,7 +184,7 @@ it("rechecks the exact worker owner after asynchronous cancellation setup", asyn
 });
 
 it("auto-suspend eligibility rejects before closing admission or signalling cancellation", async () => {
-  const f = fixture("auto-suspend");
+  const f = await fixture("auto-suspend");
   await expect(
     f.prepare({
       beforeDrain: () => {
@@ -175,7 +198,7 @@ it("auto-suspend eligibility rejects before closing admission or signalling canc
 });
 
 it("keeps admissions closed while serialized teardown is queued, then revalidates the incarnation", async () => {
-  const f = fixture("queued-teardown");
+  const f = await fixture("queued-teardown");
   const entered = createDeferredCore();
   const release = createDeferredCore();
   const teardown = vi.fn();
@@ -191,7 +214,7 @@ it("keeps admissions closed while serialized teardown is queued, then revalidate
   const rejected = expect(stop).rejects.toThrow("Session");
   await entered.promise;
   await expect(f.admit()).rejects.toThrow();
-  f.entry.lifecycleRevision = "new-incarnation";
+  await f.replaceLifecycle("new-incarnation");
   release.resolve();
   await rejected;
   expect(teardown).not.toHaveBeenCalled();
