@@ -32,7 +32,7 @@ import {
   prepareGatewaySessionAccessAuthority,
   type GatewaySessionAccessAuthority,
 } from "../session-access-authority.js";
-import { sessionMutationTargetFields } from "../session-method-policy.js";
+import { mayCreateSessionTarget, sessionMutationTargetFields } from "../session-method-policy.js";
 import { resolveRequestedSessionAgentId } from "../session-request-agent.js";
 import type { SessionRowReadView } from "../session-row-prepared-read.js";
 import { getSessionRowProjection } from "../session-row-projection-access.js";
@@ -437,8 +437,29 @@ export async function authorizeGatewayRequestPreDispatch(params: {
     params.markSessionSubscribePhase?.(
       subscriptionAccessOnly ? "accessFacts" : "projectionReadiness",
     );
+    // Resident rows retain projection authority; missing creation targets retain their absence.
+    const needsRetainedCreationFacts =
+      projection &&
+      mayCreateSessionTarget(params.method) &&
+      !params.consumeSessionTurn &&
+      resolveDirectIncognitoTargets(params.method, requestParams).length === 0 &&
+      resolveDirectSessionTargets(params.method, requestParams).some((target) => {
+        const agent = resolveRequestedSessionAgentId(
+          params.context.getRuntimeConfig(),
+          target.sessionKey,
+          target.agentId,
+        );
+        return (
+          agent.ok &&
+          projection.sharingTargetState({ key: target.sessionKey, agentId: agent.agentId })
+            .status !== "ready"
+        );
+      });
     const preparedSessionMutation =
-      projection && !subscriptionAccessOnly && !params.method.startsWith("talk.")
+      projection &&
+      !needsRetainedCreationFacts &&
+      !subscriptionAccessOnly &&
+      !params.method.startsWith("talk.")
         ? await projection.withPreparedExactRows((cfg) => {
             signal?.throwIfAborted();
             assertChatRoutingCurrent?.();

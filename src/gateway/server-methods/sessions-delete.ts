@@ -9,6 +9,7 @@ import {
   validateSessionsDeleteParams,
 } from "../../../packages/gateway-protocol/src/index.js";
 import { tryResolveAgentOperationAgentId } from "../../agents/agent-scope-config.js";
+import { SessionResetCleanupError } from "../../auto-reply/reply/session-reset-cleanup.js";
 import {
   deleteSessionEntryLifecycle,
   SESSION_LIFECYCLE_CHANGED_ERROR_REASON,
@@ -370,7 +371,8 @@ async function deleteGatewaySessionInScope(
           // Durable rows are read at phase boundaries; the deletion worker compares the
           // exact post-cleanup row before commit. Cache residency is not row authority.
           const commitGuard = () => {
-            assertGenerationCurrent();
+            // The deletion receipt removes the captured row before this guard settles.
+            assertExternalCurrent();
             if (memory) {
               const error = resolveEntryError(readMemoryEntry());
               if (error) {
@@ -477,6 +479,9 @@ async function deleteGatewaySessionInScope(
   try {
     deletion = await deleteCurrent();
   } catch (error) {
+    if (error instanceof SessionResetCleanupError) {
+      return { ok: false, error: sessionChangedError() };
+    }
     if (!(error instanceof SessionDeletionError)) {
       throw error;
     }

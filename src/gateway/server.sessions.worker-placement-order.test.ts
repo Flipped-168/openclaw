@@ -54,6 +54,7 @@ test.each(["delete", "archive", "recover"] as const)(
         messages: [{ role: "user", content: "recover this session" }],
       });
     }
+    const moveEntry = (await loadSessionEntryAsync(sessionKey)).entry;
     let placement = {
       sessionId,
       sessionKey,
@@ -77,7 +78,6 @@ test.each(["delete", "archive", "recover"] as const)(
       loadSessionRuntime: async () => {
         moveLoading.resolve();
         await releaseMove.promise;
-        const entry = (await loadSessionEntryAsync(sessionKey)).entry;
         return {
           managedWorktrees: {
             findLiveByOwner: async () => ({
@@ -91,9 +91,9 @@ test.each(["delete", "archive", "recover"] as const)(
             canonicalKey: sessionKey,
             storeKeys: [sessionKey],
             agentId: "main",
-            store: { [sessionKey]: entry! },
+            store: { [sessionKey]: moveEntry! },
           }),
-          resolveCanonicalSessionEntryFromStoreKeys: () => entry,
+          resolveCanonicalSessionEntryFromStoreKeys: () => moveEntry,
         } as never;
       },
       revokeSessionAuthority: () => {},

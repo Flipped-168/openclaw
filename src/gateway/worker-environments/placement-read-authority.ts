@@ -74,8 +74,13 @@ export function retainSessionPlacementRead(
   return {
     current(this: void) {
       assertUsable();
-      if (reader.revoked || hasPendingPublication(owner, sessionId)) {
-        throw new Error(`Session ${sessionId} placement authority changed`);
+      if (reader.revoked) {
+        throw new Error(`Session ${sessionId} placement authority changed (retained read revoked)`);
+      }
+      if (hasPendingPublication(owner, sessionId)) {
+        throw new Error(
+          `Session ${sessionId} placement authority changed (retained publication pending)`,
+        );
       }
       return reader.placement;
     },

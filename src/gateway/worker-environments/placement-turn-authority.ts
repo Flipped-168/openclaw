@@ -218,14 +218,17 @@ function capturePlacementObservation(pathname: string, sessionId?: string) {
       !owner.active ||
       owners.get(owner.identity.key) !== owner
     ) {
-      throw new Error(changedMessage);
+      throw new Error(`${changedMessage} (read scope invalidated)`);
     }
   };
   const authority = {
     assertCurrent(this: void) {
       assertUsable();
-      if (observation.revoked || hasPendingPublication(owner, sessionId)) {
-        throw new Error(changedMessage);
+      if (observation.revoked) {
+        throw new Error(`${changedMessage} (prepared snapshot changed)`);
+      }
+      if (hasPendingPublication(owner, sessionId)) {
+        throw new Error(`${changedMessage} (prepared publication pending)`);
       }
     },
     release(this: void) {
