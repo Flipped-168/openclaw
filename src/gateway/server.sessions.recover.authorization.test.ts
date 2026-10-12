@@ -153,6 +153,7 @@ test("sessions.recover denies a narrow continuation into a linked foreign succes
   const sourceOwner = roleClient("view", "linked-recovery-owner");
   sourceOwner.connect.scopes = ["operator.sessions.write"];
   const broadWriter = roleClient("write", "linked-recovery-writer");
+  using _ = { [Symbol.dispose]: (await prepareUserProfileCatalog()).release };
   broadWriter.connect.scopes = ["operator.write"];
   using _ = { [Symbol.dispose]: (await prepareUserProfileCatalog()).release };
   const cfg = recoveryConfig(storePath);
@@ -257,6 +258,7 @@ test("sessions.recover retains source revocation for its accepted own successor"
   const sourceKey = "agent:main:dashboard:narrow-own-recovery";
   const sourceSessionId = "narrow-own-recovery-source";
   const owner = roleClient("view", "narrow-recovery-owner");
+  using _ = { [Symbol.dispose]: (await prepareUserProfileCatalog()).release };
   owner.connect.scopes = ["operator.sessions.write"];
   using _ = { [Symbol.dispose]: (await prepareUserProfileCatalog()).release };
   await seedRecoverableSession({
