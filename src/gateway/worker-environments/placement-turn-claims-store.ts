@@ -224,6 +224,13 @@ export function createPlacementTurnClaimWorkerOps(runtime: {
                   facts.projection
                     ? { projection: facts.projection, conflictSessionIds: new Set() }
                     : undefined,
+                  command.type === "placementTurns.claim" ||
+                    command.type === "placementTurns.release" ||
+                    command.type === "placementTurns.releaseIfOwned" ||
+                    command.type === "placementTurns.claimReclaimResult" ||
+                    command.type === "placementTurns.claimMutationResult" ||
+                    command.type === "placementTurns.completeResult" ||
+                    command.type === "placementTurns.cancelResult",
                 )
               : stagePlacementWorkspaceResultWorkerPublication(
                   context.admission.identity,

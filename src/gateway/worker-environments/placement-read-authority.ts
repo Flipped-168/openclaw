@@ -16,12 +16,16 @@ export function hasPendingPublication(owner: PlacementAuthorityOwner, sessionId?
 }
 
 export function affectsPlacementObservation(change: ClaimChange, sessionId?: string): boolean {
-  return (
-    change.kind !== "tools" &&
-    (sessionId === undefined
-      ? change.kind !== "claim" || !change.localOnly
-      : change.sessionId === sessionId)
-  );
+  if (change.kind === "tools") {
+    return false;
+  }
+  if (sessionId !== undefined) {
+    return change.sessionId === sessionId;
+  }
+  // Turn, ACK, result, and journal bookkeeping leave preservation ownership unchanged.
+  return change.kind === "claim"
+    ? !change.localOnly && (!change.inventoryUnchanged || change.indeterminate === true)
+    : change.indeterminate === true;
 }
 
 export function prunePublication(owner: PlacementAuthorityOwner, sessionId: string): void {

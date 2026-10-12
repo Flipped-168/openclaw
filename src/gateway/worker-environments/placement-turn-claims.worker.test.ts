@@ -376,6 +376,61 @@ it("persists monotonic ACKs and their terminal fence through the gate without ho
   expect(placements.get(claim.sessionId)?.lastLiveEventAckCursor).toBe(9);
 });
 
+it("keeps the maintenance inventory usable across non-local turn bookkeeping", async () => {
+  const requested = input("maintenance-bookkeeping");
+  const active = await advancePlacementFixtureToActive(placements, database, requested, {
+    environmentId: "maintenance-bookkeeping-environment",
+  });
+  const inventory = await placements.prepareMaintenancePlacements();
+  const turn = {
+    ...requested,
+    owner: {
+      kind: "worker" as const,
+      environmentId: active.environmentId,
+      ownerEpoch: active.activeOwnerEpoch,
+    },
+  };
+  let pendingChecks = 0;
+  const admission = probe.admission(operationAdmission, (request, grant, admit) => {
+    admit(request, () => {
+      if (request.stage === "commit") {
+        inventory.assertCurrent();
+        pendingChecks += 1;
+      }
+      return grant();
+    });
+  });
+  const queries = observeHostDataSql();
+  try {
+    await placements.releaseTurn(await placements.claimTurn(turn));
+    const claim = await placements.claimTurn(turn);
+    await placements.updateAckCursors({ claim, liveEvent: 9 });
+    await placements.acceptWorkspaceResult(claim);
+    await placements.completeWorkspaceResultAndReleaseTurn(claim);
+    inventory.assertCurrent();
+    expect(pendingChecks).toBe(6);
+    expect(inventory.placements).toContainEqual(active);
+    const current = await placements.prepareMaintenancePlacements();
+    try {
+      expect(current.placements).toContainEqual(
+        expect.objectContaining({
+          sessionId: active.sessionId,
+          state: "active",
+          turnClaim: null,
+          lastLiveEventAckCursor: 9,
+        }),
+      );
+    } finally {
+      current.release();
+    }
+    expect(queries.queries).toEqual([]);
+  } finally {
+    queries.restore();
+    admission.mockRestore();
+    inventory.release();
+  }
+});
+
 it.each(["placement", "caller"] as const)(
   "rolls back both ACK cursor and terminal fence when %s authority is revoked before commit",
   async (owner) => {
