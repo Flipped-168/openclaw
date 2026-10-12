@@ -16,8 +16,8 @@ import {
   closeOpenClawAgentDatabasesForTest,
   openOpenClawAgentDatabase,
 } from "../state/openclaw-agent-db.js";
-import { openOpenClawStateDatabase } from "../state/openclaw-state-db.js";
 import { prepareUserProfileCatalog } from "../state/user-profile-list.js";
+import { ensureUserProfilesSchema } from "../state/user-profiles-schema.js";
 import { withOpenClawTestState as withRawTestState } from "../test-utils/openclaw-test-state.js";
 import { createDirectChatContext } from "./server-chat.agent-events.test-helpers.js";
 import {
@@ -357,7 +357,7 @@ describe("session resolution metadata", () => {
 
   it("does not publish a discovery result after its session becomes a foreign draft", async () => {
     await withOpenClawTestState({ label: "resolve-publication-visibility" }, async () => {
-      openOpenClawStateDatabase();
+      ensureUserProfilesSchema({});
       using _ = { [Symbol.dispose]: (await prepareUserProfileCatalog()).release };
       const client = roleClient("view", "resolve-publication-viewer");
       const owner = roleClient("write", "resolve-publication-owner");
