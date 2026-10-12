@@ -117,13 +117,13 @@ export const ChatPaneView = defineSolidBridge<ChatPaneProps, PaneMethods>(
     const bridgeCompletion = Object.getOwnPropertyDescriptor(
       Object.getPrototypeOf(element),
       "updateComplete",
-    )?.get;
+    )?.get?.bind(element);
     if (!bridgeCompletion) {
       throw new Error("Chat pane requires the bridge commit fence");
     }
     Object.defineProperty(element, "updateComplete", {
       configurable: true,
-      get: () => Promise.resolve(bridgeCompletion.call(element)).then(() => runtime.updateComplete),
+      get: () => Promise.resolve(bridgeCompletion()).then(() => runtime.updateComplete),
     });
     for (const key of [
       "transcriptLoading",

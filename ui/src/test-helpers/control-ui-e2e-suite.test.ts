@@ -114,6 +114,7 @@ vi.mock("playwright", () => ({ chromium: { launch: async () => {
         });
         context = {
           setDefaultTimeout() {},
+          addInitScript: async () => {},
           pages: () => pageClosed ? [] : [page],
           newPage: async () => page,
           browser: () => ({ isConnected: () => true }),
@@ -188,6 +189,7 @@ vi.mock("playwright", () => ({ chromium: { launch: async () => {
         });
         context = {
           setDefaultTimeout() {},
+          addInitScript: async () => {},
           pages: () => [page],
           newPage: async () => page,
           route: async (pattern, handler) => { contextHandlers.push({ pattern, handler }); },
@@ -211,6 +213,7 @@ vi.mock("playwright", () => ({ chromium: { launch: async () => {
       }
       return {
         setDefaultTimeout() {},
+        addInitScript: async () => {},
         pages: () => [],
         newPage: async () => closedPage,
         unrouteAll: async () => {},

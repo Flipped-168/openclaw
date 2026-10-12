@@ -790,6 +790,30 @@ describe("chat pane board shell", () => {
     expect(pane.resolveBoardProvider().snapshot$.value.sessionKey).toBe("agent:work:primary");
   });
 
+  it("keeps the board and its iframe connected when a retained pane hides and returns", () => {
+    const pane = createTestPane();
+    pane.boardProvider = createMockBoardProvider(pane.state.sessionKey);
+    const container = document.body.appendChild(document.createElement("div"));
+    const layout = openSlot({ columns: [] }, "dashboard");
+    const draw = () => render(pane.renderBoardPanel(pane.resolveBoardView(), layout), container);
+    try {
+      pane.visuallyPresented = true;
+      draw();
+      const board = container.querySelector("openclaw-board-view")!;
+      const frame = board.appendChild(document.createElement("iframe"));
+      for (const visible of [false, true]) {
+        pane.visuallyPresented = visible;
+        draw();
+        expect(container.querySelector("openclaw-board-view")).toBe(board);
+        expect(frame.isConnected).toBe(true);
+        expect(board.active).toBe(visible);
+      }
+    } finally {
+      render(html``, container);
+      container.remove();
+    }
+  });
+
   it.each([
     { key: "notes", acknowledged: "agent:research:notes", globalScope: false },
     { key: "global", acknowledged: "agent:research:global", globalScope: true },

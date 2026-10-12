@@ -1,5 +1,4 @@
 import { html, nothing } from "lit";
-import { guard } from "lit/directives/guard.js";
 import { GATEWAY_SERVER_CAPS } from "../../../../packages/gateway-protocol/src/index.js";
 import type { GatewaySessionRow } from "../../api/types.ts";
 import { hasOperatorApprovalsAccess, hasOperatorWriteAccess } from "../../app/operator-access.ts";
@@ -622,7 +621,6 @@ export abstract class ChatPaneBoard extends ChatPaneHistory {
 
   protected renderBoardPanel(board: ResolvedBoardView, layout: SidebarLayout) {
     const session = this.resolveBoardConversation();
-    const sessionKey = this.resolveBoardSessionKey(board.snapshot.sessionKey);
     if (!this.isBoardPanelAvailable(board)) {
       return nothing;
     }
@@ -638,7 +636,6 @@ export abstract class ChatPaneBoard extends ChatPaneHistory {
     // Only the loaded board acknowledgment supplies a missing owner; its display key
     // must not replace the original session target (notably global versus a literal key).
     session.agentId ??= parseAgentSessionKey(board.snapshot.sessionKey)?.agentId;
-    const boardActive = isSidebarSlotVisible(layout, "dashboard") && this.visuallyPresented;
     const connectionGeneration = this.connectionGeneration;
     const renderSurface = () =>
       renderBoardSessionSurface({
@@ -668,10 +665,8 @@ export abstract class ChatPaneBoard extends ChatPaneHistory {
         } satisfies BoardViewCallbacks,
         widgetFrameUrl: (name, revision) => board.provider.widgetFrameUrl(name, revision),
       });
-    // Keep one template boundary so hiding the panel does not remount app iframes.
-    return html`${
-      boardActive ? renderSurface() : guard([sessionKey, session.agentId], renderSurface)
-    }`;
+    // Changing Lit's directive chain would replace the retained Solid board owner.
+    return html`${renderSurface()}`;
   }
 
   protected showDashboard(expanded: boolean): void {
