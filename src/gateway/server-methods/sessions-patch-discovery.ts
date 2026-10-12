@@ -25,6 +25,7 @@ export async function discoverSessionPatchTargets(
               key,
               agentId: requestedAgent.agentId,
               exactRead: true,
+              readOnly: true,
               targetDiscoveryCache,
             })
           : undefined,

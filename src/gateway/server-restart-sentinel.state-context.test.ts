@@ -77,8 +77,9 @@ vi.mock("./session-utils.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./session-utils.js")>()),
   loadSessionEntryAsync: mocks.loadSessionEntryAsync,
 }));
-// mock-isolation: Inspect the supplied state context without loading worker store discovery.
-vi.mock("./session-utils-store-worker.js", () => ({
+// mock-isolation: Keep real entry reads for the state-custody cases; stub target selection.
+vi.mock("./session-utils-store-worker.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./session-utils-store-worker.js")>()),
   resolveGatewaySessionStoreTargetInWorker: mocks.resolveSessionTarget,
 }));
 // mock-isolation: The state-context suite observes adoption without executing a model turn.
