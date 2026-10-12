@@ -218,20 +218,22 @@ export async function readCachedPlacementRecoveryCandidates(
   captured: PlacementReadObservation,
   read: () => Promise<WorkerPlacementRecoveryCandidate[]>,
 ): Promise<WorkerPlacementRecoveryCandidate[]> {
+  const { owner, observation, authority, assertUsable } = captured;
   try {
-    return await preparePlacementRead(
-      captured,
-      undefined,
-      async (owner) => (owner.recoveryCandidatesEmpty ? [] : await read()),
-      (candidates, { owner }) => {
-        if (candidates.length === 0) {
-          owner.recoveryCandidatesEmpty = true;
-        }
-        return candidates;
-      },
-    );
+    const signal = getAsyncWorkSignal();
+    signal?.throwIfAborted();
+    assertUsable();
+    // Candidate discovery is a snapshot; each recovery effect acquires its exact owner.
+    const candidates =
+      owner.recoveryCandidatesEmpty && !hasPendingPublication(owner) ? [] : await read();
+    signal?.throwIfAborted();
+    assertUsable();
+    if (candidates.length === 0 && !observation.revoked && !hasPendingPublication(owner)) {
+      owner.recoveryCandidatesEmpty = true;
+    }
+    return candidates;
   } finally {
-    captured.authority.release();
+    authority.release();
   }
 }
 

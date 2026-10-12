@@ -87,6 +87,38 @@ vi.mock("./session-utils.js", async (importOriginal) => {
   };
 });
 
+vi.mock("./session-utils-read-lifetime.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./session-utils-read-lifetime.js")>();
+  const retain: typeof actual.retainGatewaySessionEntryReadOnly = async (
+    _sessionKey,
+    _agentId,
+    _allowMetadataChanges,
+    cfg = {},
+  ) => {
+    const target = moveDestinationMocks.resolveGatewaySessionTarget();
+    const readEntry = () => ({ updatedAt: 0, ...moveDestinationMocks.resolveCanonicalSession() });
+    const entry = readEntry();
+    let active = true;
+    return {
+      ...target,
+      cfg,
+      entry,
+      store: { [target.canonicalKey]: entry },
+      legacyKey: undefined,
+      readRetainedEntry: readEntry,
+      isCurrent: () => active,
+      isCurrentAtResponse: () => active,
+      release: () => {
+        active = false;
+      },
+    };
+  };
+  return {
+    ...actual,
+    retainGatewaySessionEntryReadOnly: retain,
+  };
+});
+
 vi.mock("../agents/worktrees/service.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../agents/worktrees/service.js")>();
   return {
