@@ -199,7 +199,7 @@ async function preservedSessionKeys() {
 
 describe("worker placement session maintenance ownership", () => {
   it.each(["local claim", "local release", "worker dispatch"] as const)(
-    "fences a fresh lifecycle upsert only for worker placements during %s",
+    "admits a fresh lifecycle upsert during an unrelated %s",
     async (publication) => {
       await withOpenClawTestState({ scenario: "minimal" }, async (state) => {
         const store = createWorkerSessionPlacementStore({ database: openOpenClawStateDatabase() });
@@ -258,10 +258,6 @@ describe("worker placement session maintenance ownership", () => {
             ],
           });
         try {
-          if (publication === "worker dispatch") {
-            await expect(mutate()).rejects.toThrow("Worker placement inventory changed");
-            expect(loadSessionEntryReadOnly(scope)).toBeUndefined();
-          }
           await expect(mutate()).resolves.toMatchObject({ afterCount: 1 });
           expect(loadSessionEntryReadOnly(scope)?.sessionId).toBe("fresh-local-session");
         } finally {
