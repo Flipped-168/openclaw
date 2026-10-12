@@ -272,7 +272,7 @@ it("rechecks delivery policy and exact actor lifetime in retained notice callbac
     restartRecoveryDeliveryContext: deliveryContext,
   });
   await withIncognitoSessionActor(actor, async () => {
-    const isCurrent = captureRestartRecoveryDeliveryCurrent({
+    using isCurrent = await captureRestartRecoveryDeliveryCurrent({
       ...target,
       recoveryRunId: "notice-run",
       lifecycleGeneration: getAgentEventLifecycleGeneration(),

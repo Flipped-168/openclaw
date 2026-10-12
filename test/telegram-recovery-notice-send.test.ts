@@ -10,7 +10,6 @@ import {
 } from "../src/agents/main-session-recovery/main-session-restart-recovery-delivery.js";
 import type { ChannelHeartbeatAdapter } from "../src/channels/plugins/types.adapters.js";
 import { replaceSessionEntry } from "../src/config/sessions/session-accessor.js";
-import { readSessionEntryReadOnlyInWorker } from "../src/config/sessions/session-entry-read-runtime.js";
 import type { OpenClawConfig } from "../src/config/types.openclaw.js";
 import { createGatewayInstanceRuntime } from "../src/gateway/server-instance-runtime.js";
 import type { GatewayRecoveryRuntime } from "../src/gateway/server-instance-runtime.types.js";
@@ -133,7 +132,6 @@ describe("recovery notice final transport fence", () => {
           restartRecoveryDeliveryContext: scope.deliveryContext,
         },
       );
-      await readSessionEntryReadOnlyInWorker(scope);
       const snapshot = captureActivePluginRegistrySnapshot();
       stageActivePluginRegistry(
         createTestRegistry([{ pluginId: "telegram", source: "test", plugin: telegramPlugin }]),
@@ -334,7 +332,6 @@ describe("recovery typing final transport fence", () => {
           restartRecoveryDeliveryContext: scope.deliveryContext,
         },
       );
-      await readSessionEntryReadOnlyInWorker(scope);
       const originalTyping = telegramPlugin.heartbeat?.sendTyping;
       if (!originalTyping) {
         throw new Error("Missing original Telegram typing hook");
@@ -388,10 +385,11 @@ describe("recovery typing final transport fence", () => {
             throw new Error("Predecessor did not enter HTTP");
           }),
         ]);
+        using isCurrent = await captureRestartRecoveryDeliveryCurrent(scope);
         stop = runtime.recovery.startRecoveryTyping?.({
           ...scope.deliveryContext,
           runId: scope.recoveryRunId,
-          isCurrent: captureRestartRecoveryDeliveryCurrent(scope),
+          isCurrent,
         });
         await started.promise;
         await new Promise<void>((resolve) => {

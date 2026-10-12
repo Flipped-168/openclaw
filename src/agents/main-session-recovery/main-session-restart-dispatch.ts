@@ -299,6 +299,10 @@ async function resumeMainSessionWithinAdmission(
   let executionStarted = false;
   let preStartAbortAttempted = false;
   let preStartAbortConfirmed = false;
+  let deliveryCurrent:
+    | Awaited<ReturnType<typeof captureRestartRecoveryDeliveryCurrent>>
+    | undefined;
+  let deliveryCurrentTransferred = false;
   const rollbackReservation = async (kind: "abandon_reservation" | "cancel_reservation") => {
     if (!reservation) {
       return undefined;
@@ -439,8 +443,8 @@ async function resumeMainSessionWithinAdmission(
       sessionKey: dispatchSessionKey,
       storePath: params.storePath,
     });
-    const isDeliveryCurrent = deliveryContext
-      ? captureRestartRecoveryDeliveryCurrent({
+    deliveryCurrent = deliveryContext
+      ? await captureRestartRecoveryDeliveryCurrent({
           ...target,
           storePath: requesterStorePath,
           sessionKey: dispatchSessionKey,
@@ -452,6 +456,7 @@ async function resumeMainSessionWithinAdmission(
           shouldContinue: params.shouldContinue,
         })
       : undefined;
+    const isDeliveryCurrent = deliveryCurrent;
     const agentParams: AgentRunRequest = {
       agentId: params.agentId,
       message: buildResumeMessage(
@@ -539,6 +544,7 @@ async function resumeMainSessionWithinAdmission(
       onSettled: () => {
         dispatchSettled = true;
         stopTyping?.();
+        deliveryCurrent?.[Symbol.dispose]();
       },
     });
     ({ dispatchAccepted, executionStarted, preStartAbortAttempted, preStartAbortConfirmed } =
@@ -618,6 +624,8 @@ async function resumeMainSessionWithinAdmission(
         sanitizedPendingText ? " (with pending payload)" : ""
       }`,
     );
+    deliveryCurrentTransferred =
+      resumeResult === "started" && !dispatchSettled && Boolean(stopTyping);
     return resumeResult;
   } catch (error) {
     const explicitlyRejected = error instanceof GatewayClientRequestError && !dispatchAccepted;
@@ -689,5 +697,9 @@ async function resumeMainSessionWithinAdmission(
       `failed to resume interrupted main session ${params.sessionKey}: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`,
     );
     return "failed";
+  } finally {
+    if (!deliveryCurrentTransferred) {
+      deliveryCurrent?.[Symbol.dispose]();
+    }
   }
 }

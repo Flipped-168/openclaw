@@ -109,6 +109,14 @@ export function createAgentDatabaseNativeGeneration(
   let assertIntegrityVerifierCurrent: (() => void) | undefined;
   let preparationPublished = false;
 
+  // The actor outlives its opener; keep its callback outside the caller-capturing scope.
+  const onNativeLost = () => {
+    // Before the lease handoff this generation has borrowed no validation.
+    if (lease) {
+      invalidateOpenClawAgentDatabaseValidation(pathname);
+    }
+  };
+
   const assertCurrent = () => {
     assertLogicalCurrent();
     if (retiring) {
@@ -416,12 +424,7 @@ export function createAgentDatabaseNativeGeneration(
               readCloseReceipt = readReceipt;
               readOpenRefused = readRefused;
             },
-            onNativeLost: () => {
-              // Before the lease handoff this generation has borrowed no validation.
-              if (lease) {
-                invalidateOpenClawAgentDatabaseValidation(pathname);
-              }
-            },
+            onNativeLost,
           },
         );
         return openedStore;
