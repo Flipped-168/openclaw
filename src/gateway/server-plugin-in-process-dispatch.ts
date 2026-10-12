@@ -5,6 +5,7 @@ import {
   captureExternalSessionCommitGuard,
   composeSessionSourceAssertion,
 } from "../config/sessions/session-source-authority.js";
+import { runWithoutOwnedSessionTranscriptWrites } from "../config/sessions/transcript-write-context.js";
 import { isGatewayWorkerApprovalMethod } from "../infra/approval-gateway-runtime-methods.js";
 import { getPluginRuntimeGatewayRequestScope } from "../plugins/runtime/gateway-request-scope.js";
 import type { PluginRuntimeGatewayRequestScope } from "../plugins/runtime/gateway-request-scope.types.js";
@@ -131,7 +132,9 @@ export async function prepareInProcessAgentExecution(input: PrepareInProcessAgen
     },
     run<T>(run: () => Promise<T>): Promise<T> {
       assertCurrent();
-      return runOutsideOperatorToolGatewayAuthority(run);
+      return runWithoutOwnedSessionTranscriptWrites(() =>
+        runOutsideOperatorToolGatewayAuthority(run),
+      );
     },
   };
 }
@@ -169,10 +172,14 @@ async function withInProcessGatewayDispatch<T>(
         );
       }
     }
-    // A launched agent is autonomous; retaining tool-call AsyncLocalStorage would
-    // leak the human authority into later model-selected work after closure.
-    return method === "agent" && readOperatorToolGatewayAuthority()
-      ? await runOutsideOperatorToolGatewayAuthority(() => run(resolved))
+    // A launched agent owns its transcript and execution authority independently
+    // of the caller whose tool invocation admitted it.
+    return method === "agent"
+      ? await runWithoutOwnedSessionTranscriptWrites(() =>
+          readOperatorToolGatewayAuthority()
+            ? runOutsideOperatorToolGatewayAuthority(() => run(resolved))
+            : run(resolved),
+        )
       : await run(resolved);
   } finally {
     releaseOperatorAuthority?.();

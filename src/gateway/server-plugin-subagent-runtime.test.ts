@@ -9,6 +9,10 @@ import {
   type OpenClawConfig,
 } from "../config/config.js";
 import {
+  getOwnedSessionTranscriptWriterFence,
+  withOwnedSessionTranscriptWrites,
+} from "../config/sessions/transcript-write-context.js";
+import {
   withPluginRuntimeGatewayRequestScope,
   withPluginRuntimePluginScope,
 } from "../plugins/runtime/gateway-request-scope.js";
@@ -20,6 +24,7 @@ import {
 import * as commandQueue from "../process/command-queue.js";
 import { resetCommandQueueStateForTest } from "../process/command-queue.test-support.js";
 import { CommandLane } from "../process/lanes.js";
+import { trackAsyncWork } from "../shared/async-work-scope.js";
 import { ensureProfileForEmail } from "../state/user-profiles.js";
 import { withOpenClawTestState } from "../test-utils/openclaw-test-state.js";
 import { captureGatewayOperatorRunAuthority } from "./operator-run-authority.js";
@@ -129,6 +134,38 @@ afterEach(() => {
 });
 
 describe("plugin background completions", () => {
+  it("isolates completion from its caller transcript writer", async () => {
+    isolated.mockImplementationOnce(async (params) => {
+      expect(getOwnedSessionTranscriptWriterFence()).toBeUndefined();
+      return {
+        text: "Independent completion",
+        provider: params.provider,
+        model: params.model,
+        owner: { kind: "harness", id: "test-runtime" },
+      };
+    });
+    await withOwnedSessionTranscriptWrites(
+      {
+        sessionTarget: {
+          agentId: "main",
+          sessionId: "parent-session",
+          sessionKey: "agent:main:parent",
+          storePath: "/tmp/transcript-writer-parent.sqlite",
+          expectedWriterRunId: "parent-run",
+        },
+        withTranscriptWrite: trackAsyncWork,
+      },
+      async () => {
+        await expect(complete(createRuntime())).resolves.toEqual({
+          text: "Independent completion",
+        });
+        expect(getOwnedSessionTranscriptWriterFence()).toMatchObject({
+          expectedWriterRunId: "parent-run",
+        });
+      },
+    );
+  });
+
   it.each([
     {
       name: "untrusted plugin",
