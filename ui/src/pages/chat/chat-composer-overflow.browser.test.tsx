@@ -4,12 +4,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { page, server, userEvent } from "vitest/browser";
 import "@awesome.me/webawesome/dist/styles/themes/default.css";
 import type { SessionGoal } from "../../api/types.ts";
-import { renderComposerMenu } from "../../components/composer-menu.ts";
 import { cleanupSolid, mountSolid } from "../../test-helpers/mount-solid.ts";
 import { flush } from "../../test-helpers/solid-settle.ts";
 import { createComposerContainer, createComposerProps } from "./chat-composer.test-support.ts";
 import { renderAttachmentPreview } from "./components/chat-attachments.ts";
 import { ChatGoal, clearGoalElapsedTimers } from "./components/chat-composer-goal.tsx";
+import { ComposerMenu } from "./components/chat-composer-menu.tsx";
 import { resetChatComposerState } from "./components/chat-composer-state.ts";
 import { renderChatComposer } from "./components/chat-composer.tsx";
 import { subscribeTranscriptScroll } from "./components/chat-transcript-scroll-events.ts";
@@ -574,7 +574,13 @@ describe("composer overflow presentation", () => {
       );
       flush();
       const commands = container.querySelector<HTMLElement>(".agent-chat__goal-command-actions")!;
-      expect(getComputedStyle(commands).display).toBe("none");
+      const visibleCommands = () =>
+        [...commands.querySelectorAll<HTMLButtonElement>("button")]
+          .filter((button) => button.checkVisibility())
+          .map((button) => button.getAttribute("aria-label"));
+      const collapsedCommands = status === "active" ? [] : ["Resume goal"];
+      await afterLayout();
+      expect(visibleCommands()).toEqual(collapsedCommands);
       await page.getByRole("button", { name: "Show goal details", exact: true }).click();
       await afterLayout();
       const objective = container.querySelector<HTMLElement>(".agent-chat__goal-detail-objective")!;
@@ -635,7 +641,7 @@ describe("composer overflow presentation", () => {
       await afterLayout();
       expect(commands.getBoundingClientRect().top).toBe(commandBox.top);
       await page.getByRole("button", { name: "Hide goal details", exact: true }).click();
-      expect(getComputedStyle(commands).display).toBe("none");
+      expect(visibleCommands()).toEqual(collapsedCommands);
     },
   );
 
@@ -690,6 +696,8 @@ describe("composer overflow presentation", () => {
       }[kind];
       const [currentGoal, setGoal] = createSignal(goal, { equals: false });
       let goalView: ReturnType<typeof mountSolid> | undefined;
+      let menuView: ReturnType<typeof mountSolid> | undefined;
+      const [menuExpanded, setMenuExpanded] = createSignal(false);
       const draw = (expanded: boolean) => {
         goal.objective = expanded ? "Fixture objective\n".repeat(30) : "Short objective";
         if (kind === "goal") {
@@ -703,17 +711,23 @@ describe("composer overflow presentation", () => {
           flush();
           return;
         }
+        if (kind === "menu") {
+          menuView ??= mountSolid(
+            () => (
+              <ComposerMenu id="overflow-menu" label="Fixture results" revision={menuExpanded()}>
+                {Array.from({ length: menuExpanded() ? 20 : 1 }, (_, index) => (
+                  <div style={{ height: "40px" }}>Result {index}</div>
+                ))}
+              </ComposerMenu>
+            ),
+            { container },
+          );
+          setMenuExpanded(expanded);
+          flush();
+          return;
+        }
         render(
-          kind === "attachments"
-            ? renderAttachmentPreview({ attachments: attachments.slice(0, expanded ? 7 : 1) })
-            : renderComposerMenu({
-                id: "overflow-menu",
-                label: "Fixture results",
-                content: Array.from(
-                  { length: expanded ? 20 : 1 },
-                  (_, index) => html`<div style="height: 40px">Result ${index}</div>`,
-                ),
-              }),
+          renderAttachmentPreview({ attachments: attachments.slice(0, expanded ? 7 : 1) }),
           container,
         );
       };
