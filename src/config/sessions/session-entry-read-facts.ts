@@ -289,6 +289,7 @@ export function retainSessionEntryReadFacts(
         participants: result.participantRecords
           ? (result.participantRecords[key] ?? [])
           : previous?.participants,
+        projection: previous?.projection,
       },
       result.databaseIdentity.incarnation,
     );
