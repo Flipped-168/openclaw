@@ -3323,6 +3323,7 @@ describe("chat directive tag stripping for non-streaming final payloads", () => 
           },
         };
         mockState.sessionEntry = { sessionRoot: worktree, spawnedCwd: worktree };
+        await seedSqliteSessionEntry(mockState.sessionEntry);
         mockState.finalPayload = createSlashCommandMediaReply("final", [audioPath], {
           text: "Command result with TTS.",
           spokenText: "Command result with TTS.",
@@ -3732,6 +3733,7 @@ describe("chat directive tag stripping for non-streaming final payloads", () => 
       run: async () => {
         mutationStarted.resolve();
         await releaseMutation.promise;
+        await seedSqliteSessionEntry(mockState.sessionEntry);
       },
     });
     await mutationStarted.promise;
@@ -3851,7 +3853,10 @@ describe("chat directive tag stripping for non-streaming final payloads", () => 
       if (agentId) {
         await createGlobalTranscriptFixture("openclaw-chat-inject-selected-global-", agentId);
       } else {
-        await createTranscriptFixture("openclaw-chat-inject-canonical-key-");
+        await createTranscriptFixture("openclaw-chat-inject-canonical-key-", {
+          agentId: "main",
+          sessionKey: canonicalKey,
+        });
         mockState.config = { agents: { ownership: "explicit", entries: { main: {} } } };
       }
       mockState.sessionEntry = { canonicalKey };

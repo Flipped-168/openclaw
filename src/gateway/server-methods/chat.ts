@@ -6,6 +6,8 @@ import {
   validateChatToolTitlesParams,
 } from "../../../packages/gateway-protocol/src/index.js";
 import { resolveSessionWorkStartError } from "../../config/sessions.js";
+import { readRetainedSessionEntryFacts } from "../../config/sessions/session-entry-read-facts.js";
+import { captureSessionEntryMetadataRead } from "../../config/sessions/session-entry-source-authority.js";
 import { beginSessionWorkAdmission } from "../../sessions/session-lifecycle-admission.js";
 import {
   projectChatDisplayMessage,
@@ -51,7 +53,9 @@ export const chatHandlers: GatewayRequestHandlers = {
     const {
       agentId,
       storePath,
+      readSource,
       entry,
+      legacyKey,
       canonicalKey: sessionKey,
     } = await loadSessionEntryAsync(rawSessionKey, sessionLoadOptions, cfg);
     const sessionId = entry?.sessionId;
@@ -59,6 +63,12 @@ export const chatHandlers: GatewayRequestHandlers = {
       respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, "session not found"));
       return;
     }
+    const storageKey = legacyKey ?? sessionKey;
+    const metadata = captureSessionEntryMetadataRead({
+      agentId,
+      sessionKey: storageKey,
+      storePath,
+    });
 
     let appended: Awaited<ReturnType<typeof appendInjectedAssistantMessageToTranscript>>;
     try {
@@ -67,7 +77,19 @@ export const chatHandlers: GatewayRequestHandlers = {
         scope: storePath,
         identities: [sessionKey, sessionId],
         assertAllowed: () => {
-          const archivedError = resolveSessionWorkStartError(sessionKey, entry);
+          // Admission can wait behind archive/reset; use the owner's committed facts at entry.
+          const latestEntry = metadata
+            ? metadata.readCurrent()
+            : readRetainedSessionEntryFacts(
+                {
+                  agentId: readSource?.agentId ?? agentId,
+                  path: readSource?.path ?? storePath,
+                },
+                { sessionKeys: [storageKey], projection: "exact", snapshotFields: [] },
+              )?.entries.find((row) => row.sessionKey === storageKey)?.entry;
+          const archivedError = resolveSessionWorkStartError(sessionKey, latestEntry, {
+            expectedSessionId: sessionId,
+          });
           if (archivedError) {
             throw new Error(archivedError);
           }

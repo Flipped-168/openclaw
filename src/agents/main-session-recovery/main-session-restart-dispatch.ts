@@ -283,18 +283,6 @@ async function resumeMainSessionWithinAdmission(
     sessionKey: params.sessionKey,
     storePath: params.storePath,
   };
-  const isDeliveryCurrent = deliveryContext
-    ? captureRestartRecoveryDeliveryCurrent({
-        ...target,
-        sessionKey: dispatchSessionKey,
-        sessionId: params.entry.sessionId,
-        recoveryRunId,
-        lifecycleGeneration,
-        deliveryContext,
-        cfg: params.cfg,
-        shouldContinue: params.shouldContinue,
-      })
-    : undefined;
   const settlementTarget = {
     ...target,
     expectedRecoveryRunId: recoveryRunId,
@@ -450,6 +438,19 @@ async function resumeMainSessionWithinAdmission(
       sessionKey: dispatchSessionKey,
       storePath: params.storePath,
     });
+    const isDeliveryCurrent = deliveryContext
+      ? captureRestartRecoveryDeliveryCurrent({
+          ...target,
+          storePath: requesterStorePath,
+          sessionKey: dispatchSessionKey,
+          sessionId: params.entry.sessionId,
+          recoveryRunId,
+          lifecycleGeneration,
+          deliveryContext,
+          cfg: params.cfg,
+          shouldContinue: params.shouldContinue,
+        })
+      : undefined;
     const agentParams: AgentRunRequest = {
       agentId: params.agentId,
       message: buildResumeMessage(
