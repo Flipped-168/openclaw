@@ -268,7 +268,7 @@ describe("sessions.patchMany orchestration", () => {
         await withinTest(
           awaitGateBeforeSettlement(
             preflightCompleted.promise,
-            request,
+            Promise.resolve(request),
             "Patch settled before preparing its target",
           ),
           signal,
@@ -380,7 +380,7 @@ describe("sessions.patchMany orchestration", () => {
         await withinTest(
           awaitGateBeforeSettlement(
             preflightCompleted.promise,
-            request,
+            Promise.resolve(request),
             "Patch settled before preparing its target",
           ),
           signal,
