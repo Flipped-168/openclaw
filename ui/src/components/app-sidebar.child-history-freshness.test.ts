@@ -617,6 +617,8 @@ describe("sidebar routed-lineage freshness", () => {
             initial.key,
           ]);
         });
+        // Finish the initial filter request before opening the held successor read.
+        await sidebar.sessionData.refreshSidebarSessions();
         holdFiltered = true;
         if (first === "filtered list") {
           refresh = sidebar.sessionData.refreshSidebarSessions();

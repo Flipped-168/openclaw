@@ -129,6 +129,8 @@ it.each([
       expect(sidebar.sessionData.sessionsLoading).toBe(false);
       expect(keys()).toEqual(initialRows.map((row) => row.key));
     });
+    // Finish the initial filter request before opening the held successor read.
+    await sidebar.sessionData.refreshSidebarSessions();
 
     hold = true;
     refresh = sidebar.sessionData.refreshSidebarSessions();
