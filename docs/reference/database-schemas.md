@@ -103,8 +103,10 @@ old. A hit skips startup snapshot, readiness, schema, and integrity inspection,
 including post-ready scans. The plain checksum-protected write needs no rename
 or fsync protocol; an incomplete seal falls back to full validation.
 
-Admitted facts are shared with all workers and handles, including later opens
-and reopens after idle close. File identity uses volume, inode, and stable
+Admitted facts are shared with all workers and handles while the database is open.
+Final close releases their in-memory payloads; a clean-close seal restores validated
+facts on reopen without SQL. A close that cannot seal requires fresh admission.
+File identity uses volume, inode, and stable
 birthtime captured once with `fstat` on the retained admission descriptor, not SQL.
 Admission lookups and established borrowers reuse those shared facts without
 checking the pathname again. Native open and reopen still identify replacement

@@ -12,7 +12,7 @@ import {
   SqliteDatabaseGenerationSlot,
   readSqliteDatabaseAdmissionIdentity as identity,
   readSqliteDatabaseFactRevision,
-  isSqliteDatabaseAdmissionRetired as isRetired,
+  readSqliteDatabaseGeneration,
   isSqliteDatabaseAdmissionFactCurrent as valid,
   type Admission,
   type SqliteDatabaseAdmissionKey,
@@ -165,7 +165,17 @@ export class SqliteDatabaseCleanCloseSeals {
       encodeSealValue,
     );
     return () => {
-      if (database.isOpen || isRetired(record) || facts.some(([, fact]) => !valid(record, fact))) {
+      // Final native close drops idle payloads (retired=2), but the captured proof
+      // remains usable. Explicit retirement and revocation still forbid publication.
+      if (
+        database.isOpen ||
+        readSqliteDatabaseGeneration(record, "retired") === 1 ||
+        facts.some(
+          ([, fact]) =>
+            Atomics.load(new Int32Array(fact.current), 0) !== 1 ||
+            fact.revision !== readSqliteDatabaseFactRevision(record, fact.schemaDependent),
+        )
+      ) {
         return false;
       }
       try {

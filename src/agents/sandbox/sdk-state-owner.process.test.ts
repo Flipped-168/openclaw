@@ -85,7 +85,6 @@ describe("plugin SDK sandbox process ownership", () => {
       SystemRoot: process.env.SystemRoot,
       HOME: root,
       USERPROFILE: root,
-      BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0",
       OPENCLAW_HOME: root,
       OPENCLAW_STATE_DIR: path.join(root, "state"),
       OPENCLAW_CONFIG_PATH: path.join(root, "openclaw.json"),

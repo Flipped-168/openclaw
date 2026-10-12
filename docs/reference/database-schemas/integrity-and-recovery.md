@@ -12,8 +12,9 @@ title: "Integrity, troubleshooting, and recovery"
 Admission validates SQLite format, schema, canonical indexes, and required
 integrity once per physical database per process load, unless it can reuse a
 matching clean-close seal. The process shares admitted facts with all handles
-and worker isolates. Later opens, read scopes, and writer reopens after idle
-close do not repeat validation SQL. Current ownership, live write authority,
+and worker isolates while a database remains open. Final close releases those
+in-memory payloads. Reopens reuse a matching seal without validation SQL; an
+uncheckpointed or failed close requires fresh admission. Current ownership, live write authority,
 row-cache freshness, and durable quarantine refusals remain separate checks.
 A seal never overrides a recorded corruption refusal.
 
@@ -74,7 +75,7 @@ or validate seals. No database schema change is required for this seal format.
 | ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------- |
 | Startup with a matching, recent clean-close seal | Match checksum, schema identity, file metadata, and empty journals; reuse admitted facts without startup or post-ready scans |
 | Startup without a reusable seal                  | Run the normal full format, schema, canonical-index, integrity, and foreign-key validation                                   |
-| Same-process reopen or new worker                | Reuse file-bound admitted facts; retain current ownership and durable quarantine-row checks                                  |
+| Same-process reopen or new worker                | Reuse live file-bound facts or a matching seal; retain current ownership and durable quarantine-row checks                   |
 | Before a pending migration                       | Run full integrity, foreign-key, role, schema, and index checks                                                              |
 | After a migration or repair                      | Verify changes and publish committed facts through the existing owner                                                        |
 | Doctor, backup verification, and compaction      | Run full checks before accepting or rewriting the database                                                                   |
@@ -165,9 +166,9 @@ Cleanup that needs another connection uses ordinary admission and invalidates
 the seal before writing again. A forced exit during a write still requires the admission gate.
 This changes no schema, update, or rollback contract.
 
-Native execution workers can also borrow retained host proof after the host handle
-closes or is evicted. The receiving opener rechecks the physical file identity and
-shared revocation cell; a closed handle alone does not discard valid proof.
+Native execution workers borrow host proof while another handle retains it, or
+reuse a matching seal after final close. The receiving opener rechecks the physical
+file identity and shared revocation cell; final close releases in-memory proof.
 When native execution establishes the first runtime proof, it returns that proof
 through its existing admission so later cleanup workers can reuse it without a
 host SQLite open. The host accepts it only for the admitted physical file and
@@ -192,7 +193,8 @@ above, or override explicit process-local revocation. Older readers can
 ignore the nullable column; backup and rollback retain its existing row lifetime.
 
 Database replacement, quarantine, and failed admission discard applicable
-verification. Ordinary native close does not. Doctor maintenance discards remembered runtime verification after
+verification. Ordinary native close can preserve it in the clean-close seal.
+Doctor maintenance discards remembered runtime verification after
 draining agent connections and before raw maintenance can run. Pending migrations
 still run full checks, and canonical index
 repairs verify their result before committing, then publish the new admitted

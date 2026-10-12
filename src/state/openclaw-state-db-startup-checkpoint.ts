@@ -173,7 +173,7 @@ function hasStartupMigrationCheckpointSchema(db: DatabaseSync): boolean {
 
 export function withOpenClawStateStartupCheckpointConnection<T>(
   callback: (db: DatabaseSync) => T,
-  options: OpenClawStateDatabaseOptions & { atomic?: boolean; sealOnClose?: boolean },
+  options: OpenClawStateDatabaseOptions & { atomic?: boolean },
   initializeCanonicalSchema: (
     db: DatabaseSync,
     pathname: string,
@@ -273,8 +273,8 @@ export function withOpenClawStateStartupCheckpointConnection<T>(
           db.exec("PRAGMA foreign_keys = ON;");
         }
       }
-      if (result && options.sealOnClose) {
-        // Gateway lease release can be the last write, after cached owners closed.
+      if (result) {
+        // This private connection closes below; carry its proof across metadata retirement.
         // A blocked checkpoint merely leaves the next boot to validate normally.
         try {
           truncateSqliteWal(db, pathname);

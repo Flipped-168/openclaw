@@ -717,25 +717,7 @@ export function retireSqliteDatabaseAdmissionForPath(
   }
   state.localSchemaRevisions.delete(observed);
   const record = threadId === 0 ? state.registry.records.get(observed) : pathAdmission(location);
-  const descriptor = state.registry.descriptors.get(observed) ?? record?.descriptor;
-  if (descriptor === undefined) {
-    return;
-  }
-  const file = fs.fstatSync(descriptor, { bigint: true });
-  if (
-    file.nlink > 1n ||
-    (options.requireSoleDescriptor && !isSoleDatabaseFileDescriptor(descriptor, file))
-  ) {
-    return;
-  }
-  if (record) {
-    Atomics.store(new Int32Array(record.generation), SqliteDatabaseGenerationSlot.retired, 1);
-  }
-  fs.closeSync(descriptor);
-  state.registry.descriptors.delete(observed);
-  state.registry.forget(observed);
-  state.registry.publish();
-  if (record) {
+  if (state.registry.retireDescriptor(observed, options) && record) {
     exchange(record);
   }
 }
