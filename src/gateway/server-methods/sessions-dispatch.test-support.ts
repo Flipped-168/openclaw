@@ -8,7 +8,6 @@ import {
 import type { SessionsReclaimParams } from "../../../packages/gateway-protocol/src/schema/session-placement.js";
 import { useAutoCleanupTempDirTracker } from "../../../test/helpers/temp-dir.js";
 import { managedWorktrees } from "../../agents/worktrees/service.js";
-import { getRuntimeConfig } from "../../config/io.js";
 import {
   clearRuntimeConfigSnapshot,
   setRuntimeConfigSnapshot,
@@ -51,7 +50,7 @@ beforeEach(() => {
   const readFixtureEntry: typeof sessionStore.loadGatewaySessionEntryReadOnlyAsync = async (
     key,
     opts,
-    cfg = getRuntimeConfig(),
+    cfg,
   ) => {
     const target = await dispatchTestMocks.resolveTarget({
       cfg,
