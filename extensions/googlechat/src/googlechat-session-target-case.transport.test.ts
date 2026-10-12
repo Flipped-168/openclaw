@@ -6,6 +6,7 @@ import {
   createTestRegistry,
   setActivePluginRegistry,
 } from "openclaw/plugin-sdk/plugin-test-runtime";
+import { setRuntimeConfigSnapshot } from "openclaw/plugin-sdk/runtime-config-snapshot";
 import { upsertSessionEntry } from "openclaw/plugin-sdk/session-store-runtime";
 import { withOpenClawTestState } from "openclaw/plugin-sdk/test-state";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -97,6 +98,7 @@ describe("session-derived Google Chat delivery", () => {
           },
         },
       };
+      setRuntimeConfigSnapshot(config);
 
       // The session recorded its canonical destination on the inbound turn.
       await upsertSessionEntry({

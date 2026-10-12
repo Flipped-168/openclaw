@@ -322,6 +322,12 @@ it.each(authorityLossCases)(
           ? "agent deletion core:agent-deletion/doomed was lost"
           : "Agent doomed deletion no longer owns database cleanup.";
       const sessionKey = "agent:doomed:protected";
+      if (owner !== "unkeyed") {
+        await replaceSessionEntry(
+          { agentId: "doomed", env: state.env, sessionKey },
+          { sessionId: "protected-session", updatedAt: 1 },
+        );
+      }
       const completion = createDeferred();
       const authorityRejected = createDeferred<unknown>();
       const traces: unknown[] = [];

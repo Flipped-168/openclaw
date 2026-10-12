@@ -439,7 +439,7 @@ describe("createReplyRestartRecoveryClaimController", () => {
           expect(isAgentRunStaleLifecycleError(result)).toBe(true);
         } else {
           const message = {
-            "placement-publication": `Session ${fixture.entry.sessionId} placement authority changed (prepared snapshot changed)`,
+            "placement-publication": `Session ${fixture.entry.sessionId} placement authority changed`,
             "session-retarget": "session changed before durable user-turn admission",
             "service-replacement":
               "Worker placement service changed before durable user-turn admission",
