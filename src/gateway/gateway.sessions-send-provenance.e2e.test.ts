@@ -69,6 +69,9 @@ async function updateSenderPolicies(policies: Record<string, { deny: string[] | 
   await gateway.client.request("config.patch", {
     baseHash: before.hash,
     raw: JSON.stringify({ tools: { toolsBySender: policies } }),
+    replacePaths: Object.entries(policies).flatMap(([senderKey, policy]) =>
+      policy.deny === null ? [`tools.toolsBySender.${senderKey}.deny`] : [],
+    ),
   });
 }
 
