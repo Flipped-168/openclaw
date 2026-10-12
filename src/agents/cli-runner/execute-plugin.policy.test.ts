@@ -75,6 +75,7 @@ afterEach(() => {
 
 describe("plugin-owned CLI native tool policy", () => {
   it("uses the admitted turn policy when a warm transport retains a retired generation", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
     const oldHook = vi.fn();
     const previous = createMockPluginRegistry([
       { hookName: "before_tool_call", pluginId: "guard", handler: oldHook },
