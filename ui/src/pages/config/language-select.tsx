@@ -24,6 +24,7 @@ export function LanguageSelect(props: {
           },
           ...SUPPORTED_LOCALES.map((value) => ({ value, label: languageLabel(value) })),
         ],
+        showOptionTooltips: false,
         onChange: (value) =>
           props.onLocaleChange(SUPPORTED_LOCALES.find((locale) => locale === value)),
       }}

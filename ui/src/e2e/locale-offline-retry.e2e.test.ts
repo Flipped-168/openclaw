@@ -114,9 +114,7 @@ suite.define(() => {
           "same-document";
       });
 
-      const languageSelect = page
-        .locator(".settings-row", { hasText: "Language" })
-        .locator("openclaw-select-picker");
+      const languageSelect = page.locator("#settings-language openclaw-select-picker");
       await selectPickerValue(languageSelect, "fr");
 
       await expect.poll(() => abortedLocaleRequests).toBe(1);
