@@ -89,7 +89,7 @@ describe("node worker launch wire", () => {
   it(
     "transfers and reconciles a gateway-push workspace through a device runner",
     { timeout: TEST_TIMEOUT_MS },
-    async ({ signal }) => {
+    async ({ signal, onTestFailed }) => {
       const root = tempDirs.make("openclaw-node-worker-launch-wire-");
       const provider = await startMidturnProvider();
       const published = await createPublishedWireWorkspace(root);
@@ -110,6 +110,18 @@ describe("node worker launch wire", () => {
       let cleanupFailures: unknown[];
       let workspaceAwaitingReconciliation: string | undefined;
       let workspaceReconciled = createDeferred();
+      let phase = "gateway and node startup";
+      onTestFailed(() => {
+        const invocations = [workerNode, legacyWorkerNode].map((node) => ({
+          commands: node?.commands.slice(-12),
+          errors: node?.invokeErrors.map(String),
+        }));
+        console.error(
+          redactSensitiveText(
+            `[node-worker-launch-wire] ${phase}\n${JSON.stringify(invocations)}\n${gateway?.logs().slice(-12_000) ?? ""}`,
+          ),
+        );
+      });
 
       try {
         gateway = await startPairedNodeWorkerGateway({
@@ -174,6 +186,7 @@ describe("node worker launch wire", () => {
         });
         expect(workerNode.client).toBeTruthy();
 
+        phase = "session create and dispatch";
         await operator.request("sessions.create", {
           key: SESSION_KEY,
           agentId: "qa",
@@ -243,6 +256,7 @@ describe("node worker launch wire", () => {
         ).resolves.toBe("workspace inventory fixture\n");
         await fs.writeFile(path.join(remoteWorkspaceDir, "node-result.txt"), "device result\n");
 
+        phase = "baseline turn";
         const runId = `node-worker-launch-wire-${Date.now()}`;
         const started = await operator.request<{ runId?: string; status?: string }>("chat.send", {
           sessionKey: SESSION_KEY,
@@ -300,7 +314,9 @@ describe("node worker launch wire", () => {
           ),
         ).toHaveLength(1);
         // The owner resumes the workspace after committing its accepted manifest and files.
+        phase = "baseline reconciliation";
         await withinTest(workspaceReconciled.promise, signal);
+        phase = "baseline workspace verification";
         const described = (await gateway.call("sessions.describe", { key: SESSION_KEY })) as {
           session?: { execCwd?: string; spawnedCwd?: string; placement?: Record<string, unknown> };
         };
@@ -329,6 +345,7 @@ describe("node worker launch wire", () => {
           });
         }
         workspaceReconciled = createDeferred();
+        phase = "permission turn";
         const permissionRunId = `node-worker-permission-${Date.now()}`;
         await expect(
           operator.request<{ runId?: string; status?: string }>("chat.send", {
@@ -373,7 +390,9 @@ describe("node worker launch wire", () => {
         );
         expect(permissionReplies).toHaveLength(1);
         expect(wireMessageText(permissionReplies?.[0])).toContain(provider.execOutput);
+        phase = "permission reconciliation";
         await withinTest(workspaceReconciled.promise, signal);
+        phase = "permission workspace verification";
         const permissionDescribed = (await gateway.call("sessions.describe", {
           key: SESSION_KEY,
         })) as { session?: { execCwd?: string; spawnedCwd?: string } };
@@ -386,6 +405,7 @@ describe("node worker launch wire", () => {
 
         // Simulate the old capability declaration with the current supervisor over real wire.
         // This proves negotiation and same-identity reconnect, not an older binary upgrade.
+        phase = "legacy worker";
         legacyWorkerNode = await createPairedNodeWorkerHost({
           gateway,
           operator,
@@ -473,6 +493,7 @@ describe("node worker launch wire", () => {
           ),
         ).toHaveLength(1);
 
+        phase = "load fixture setup";
         const loadSessions: string[] = [];
         for (let index = 0; index < FINALIZATION_LOAD_CONCURRENCY; index += 1) {
           const sessionKey = `${SESSION_KEY}-load-${index}`;
@@ -520,6 +541,7 @@ describe("node worker launch wire", () => {
         const freshConnectionSamples: number[] = [];
         try {
           for (let wave = 0; wave < FINALIZATION_LOAD_WAVES; wave += 1) {
+            phase = `finalization load wave ${wave + 1}`;
             const waveFinalizationStarted = new Promise<number>((resolve) => {
               resolveWaveFinalizationStarted = resolve;
             });
@@ -586,6 +608,7 @@ describe("node worker launch wire", () => {
         expect(Math.max(...freshConnectionSamples)).toBeLessThan(CONTROL_PROBE_MAX_MS);
         expect(freshConnectionSamples).toHaveLength(FINALIZATION_LOAD_WAVES);
 
+        phase = "audit restart";
         await workerNode.stop();
         workerNode = undefined;
         await legacyWorkerNode.stop();
