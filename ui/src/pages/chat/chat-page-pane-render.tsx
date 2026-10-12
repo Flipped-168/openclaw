@@ -160,6 +160,10 @@ function ChatPageSession(props: { options: ChatPagePaneRenderOptions; sessionKey
     lastRoute = routeData() ?? lastRoute;
     return lastRoute;
   });
+  // Canonicalization can omit the initial loading flag before this pane's startup settles.
+  const routeLoadingSkeleton = createMemo<boolean>(
+    (previous) => routeData()?.routeLoadingSkeleton ?? previous ?? false,
+  );
   const draft = () =>
     active()
       ? routeDraft(props.options.data, props.options.consumedDraftData, props.sessionKey)
@@ -220,7 +224,7 @@ function ChatPageSession(props: { options: ChatPagePaneRenderOptions; sessionKey
         agentId={
           props.options.splitMode ? parseAgentSessionKey(props.sessionKey)?.agentId : undefined
         }
-        routeLoadingSkeleton={retainedRoute()?.routeLoadingSkeleton}
+        routeLoadingSkeleton={routeLoadingSkeleton()}
         presented={presented()}
         visuallyPresented={presented()}
         active={active()}
@@ -232,7 +236,7 @@ function ChatPageSession(props: { options: ChatPagePaneRenderOptions; sessionKey
           props.options.data,
         )}
         dashboardExpanded={retainedRoute()?.dashboardExpanded === true}
-        routeFace={retainedRoute()?.face ?? "chat"}
+        routeFace={retainedRoute()?.face}
         presentationTitle={presentationTitle()}
         narrow={props.options.narrow}
         mergedChrome={props.options.mergedChrome && active()}

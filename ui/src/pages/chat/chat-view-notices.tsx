@@ -267,11 +267,11 @@ export function renderChatComposerNotices(props: ChatComposerNoticesProps) {
           onDismiss: props.onDismissWorkspaceConflict,
         })}
       />
-      {renderPlacementStartupError(
-        props.placementStartup,
-        props.messages,
-        props.onRetrySessionPlacementStartup,
-      )}
+      <ChatPlacementStartupError
+        status={props.placementStartup}
+        messages={props.messages}
+        onRetry={props.onRetrySessionPlacementStartup}
+      />
     </>
   );
 }
@@ -295,54 +295,63 @@ function renderProviderPolicyNotice(notice: ProviderPolicyNotice | null | undefi
   );
 }
 
-function renderPlacementStartupError(
-  status: ApplicationPlacementStartupStatus | null | undefined,
-  messages: readonly unknown[],
-  onRetry?: () => void,
-) {
-  if (status?.phase !== "failed") {
-    return undefined;
-  }
-  const checking = status.action === "check-delivery";
-  const statusError = status.error ?? t("newSession.createFailed");
-  const error = checking
-    ? [t("chat.queue.checkDeliveryHelp"), status.error].filter(Boolean).join("\n\n")
-    : t("newSession.placementStartFailed", { error: statusError });
-  const displayStatusError = formatWebUiIconErrorText(statusError);
-  const displayError = checking
-    ? [t("chat.queue.checkDeliveryHelp"), status.error ? displayStatusError : undefined]
-        .filter(Boolean)
-        .join("\n\n")
-    : t("newSession.placementStartFailed", { error: displayStatusError });
+function ChatPlacementStartupError(props: {
+  status: ApplicationPlacementStartupStatus | null | undefined;
+  messages: readonly unknown[];
+  onRetry?: () => void;
+}) {
+  const checking = () => props.status?.action === "check-delivery";
+  const statusError = () => props.status?.error ?? t("newSession.createFailed");
+  const error = () =>
+    checking()
+      ? [t("chat.queue.checkDeliveryHelp"), props.status?.error].filter(Boolean).join("\n\n")
+      : t("newSession.placementStartFailed", { error: statusError() });
+  const displayStatusError = () => formatWebUiIconErrorText(statusError());
+  const displayError = () =>
+    checking()
+      ? [t("chat.queue.checkDeliveryHelp"), props.status?.error ? displayStatusError() : undefined]
+          .filter(Boolean)
+          .join("\n\n")
+      : t("newSession.placementStartFailed", { error: displayStatusError() });
   // History can own the bubble before startup observes its receipt. Keep the
   // banner action reachable when transcript deduplication hides the row.
-  const hasInlineTurn =
-    status.initialTurn && !findChatSubmissionMessage(messages, status.initialTurn.sendRunId, true);
-  const action = status.discardAndReload ? (
-    <button
-      class="btn btn--sm danger chat-error__discard"
-      type="button"
-      onClick={status.discardAndReload}
-    >
-      {t("newSession.discardUnsavedAndReload")}
-    </button>
-  ) : status.retryable && onRetry && !hasInlineTurn ? (
-    <button class="btn btn--sm" type="button" onClick={onRetry}>
-      {t(checking ? "chat.queue.checkDelivery" : "common.retry")}
-    </button>
-  ) : undefined;
+  const hasInlineTurn = () => {
+    const initialTurn = props.status?.initialTurn;
+    return initialTurn && !findChatSubmissionMessage(props.messages, initialTurn.sendRunId, true);
+  };
   return (
-    <ChatErrorNotice
-      error={error}
-      action={action}
-      displayError={displayError}
-      summary={
-        checking
-          ? t("chat.queue.checkDeliveryHelp")
-          : status.discardAndReload
-            ? displayError
-            : t("chat.errorStartSummary")
-      }
-    />
+    <Show when={props.status?.phase === "failed"}>
+      <ChatErrorNotice
+        error={error()}
+        action={
+          <Show
+            when={props.status?.discardAndReload}
+            fallback={
+              <Show when={props.status?.retryable && props.onRetry && !hasInlineTurn()}>
+                <button class="btn btn--sm" type="button" onClick={() => props.onRetry?.()}>
+                  {t(checking() ? "chat.queue.checkDelivery" : "common.retry")}
+                </button>
+              </Show>
+            }
+          >
+            <button
+              class="btn btn--sm danger chat-error__discard"
+              type="button"
+              onClick={() => props.status?.discardAndReload?.()}
+            >
+              {t("newSession.discardUnsavedAndReload")}
+            </button>
+          </Show>
+        }
+        displayError={displayError()}
+        summary={
+          checking()
+            ? t("chat.queue.checkDeliveryHelp")
+            : props.status?.discardAndReload
+              ? displayError()
+              : t("chat.errorStartSummary")
+        }
+      />
+    </Show>
   );
 }

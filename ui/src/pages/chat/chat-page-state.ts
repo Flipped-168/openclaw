@@ -11,7 +11,6 @@ import {
   isUiGlobalSessionKey,
   resolveUiGlobalAliasAgentId,
 } from "../../lib/sessions/session-key.ts";
-import type { SolidBridgeElement } from "../../lit/solid-bridge.ts";
 import {
   ControllerHost,
   SubscriptionsController,
@@ -33,6 +32,7 @@ import {
   renderChatPageSplitLayout,
 } from "./chat-page-pane-render.tsx";
 import { ChatPageRetainedSessions } from "./chat-page-retained-sessions.ts";
+import type { ChatPageHost } from "./chat-page-types.ts";
 import { resumeStagedPanes } from "./chat-pane-attachment-handoff.ts";
 import { bindChatPageSession } from "./chat-state-route.ts";
 import { ChatViewerPresenceController } from "./chat-viewer-presence.ts";
@@ -56,19 +56,6 @@ import {
   setPaneSession,
   singlePaneLayout,
 } from "./split-layout.ts";
-export type ChatPageProps = {
-  data: SessionChatRouteData;
-  navDrawerOpen: boolean;
-  presented: boolean;
-  context?: ApplicationContext;
-};
-export type ChatPageMethods = {
-  requestUpdate(): void;
-  addController: ControllerHost["addController"];
-  removeController: ControllerHost["removeController"];
-};
-export type ChatPageHost = SolidBridgeElement<ChatPageProps, ChatPageMethods>;
-
 export class ChatPageState extends ControllerHost {
   context!: ApplicationContext;
   @viewState() private layout: ChatSplitLayout | undefined;
@@ -219,7 +206,7 @@ export class ChatPageState extends ControllerHost {
   private updateQueued = false;
   private presentationChanged = false;
 
-  afterCommit(presentationChanged: boolean): void {
+  afterCommit(presentationChanged: boolean, readSnapshot: () => ChatPageSnapshot | null): void {
     this.presentationChanged ||= presentationChanged;
     if (this.updateQueued) {
       return;
@@ -230,12 +217,12 @@ export class ChatPageState extends ControllerHost {
       const changed = this.presentationChanged;
       this.presentationChanged = false;
       if (this.isConnected) {
-        this.updated(changed);
+        this.updated(changed, readSnapshot());
       }
     });
   }
 
-  private updated(presentationChanged: boolean) {
+  private updated(presentationChanged: boolean, renderedSnapshot: ChatPageSnapshot | null) {
     this.prefetch.hostUpdated();
     // Cancelling retained previews republishes pane state; suspend only on a hiding edge.
     if (this.wasConversationPresented && !this.conversationPresented) {
@@ -301,7 +288,8 @@ export class ChatPageState extends ControllerHost {
       this.syncRouteBindings();
       this.retainedSessions.settleRoute();
     }
-    if (data && routeHandoffRendered) {
+    // A queued commit may observe newer route data than its rendered frame.
+    if (data && routeHandoffRendered && renderedSnapshot?.content.options.pane.data === data) {
       queueMicrotask(() => {
         if (
           this.isConnected &&

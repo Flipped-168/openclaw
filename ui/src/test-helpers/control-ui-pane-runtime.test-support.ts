@@ -24,6 +24,7 @@ export function installControlUiPaneRuntimeTestAdapter() {
       "chatState",
       "context",
       "taskSuggestions",
+      "catalogMessages",
       "loadingOlder",
       "historyIntentTimer",
       "sessionSnapshotStore",

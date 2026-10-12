@@ -184,19 +184,45 @@ it.each([true, false])(
   },
 );
 
-it("keeps an expanded diagnostic and its focus across an equivalent owner publication", () => {
-  const ComposerNotices = renderChatComposerNotices;
-  const diagnostic = "Synthetic failure\n  at workspace/session.ts:42";
-  const [runError, publish] = createSignal({ summary: diagnostic });
-  const { container } = mountSolid(() => <ComposerNotices messages={[]} runError={runError()} />);
-  const details = container.querySelector("details")!;
-  const summary = details.querySelector("summary")!;
-  details.open = true;
-  summary.focus();
-  publish({ summary: diagnostic });
-  flush();
-  expect(container.querySelector("details")).toBe(details);
-  expect(details.open).toBe(true);
-  expect(document.activeElement).toBe(summary);
-  expect(details.querySelector("pre")?.textContent).toBe(diagnostic);
-});
+it.each(["run", "placement"] as const)(
+  "keeps an expanded diagnostic and its focus across owner publications (%s)",
+  (kind) => {
+    const ComposerNotices = renderChatComposerNotices;
+    const diagnostic = "Synthetic failure\n  at workspace/session.ts:42";
+    const initial: Parameters<typeof renderChatComposerNotices>[0] = {
+      messages: [],
+      runError: kind === "run" ? { summary: diagnostic } : undefined,
+      placementStartup:
+        kind === "placement"
+          ? {
+              sessionKey: "agent:main:failed-start",
+              phase: "failed",
+              startedAt: 1,
+              retryable: false,
+              error: diagnostic,
+            }
+          : undefined,
+    };
+    const [props, publish] = createSignal(initial);
+    const { container } = mountSolid(() => <ComposerNotices {...props()} />);
+    const details = container.querySelector("details")!;
+    const summary = details.querySelector("summary")!;
+    details.open = true;
+    summary.focus();
+    for (const messages of [[], [{ role: "assistant", content: "Updated history" }]]) {
+      publish({
+        ...initial,
+        messages,
+        runError: initial.runError && { ...initial.runError },
+        placementStartup: initial.placementStartup && { ...initial.placementStartup },
+      });
+      flush();
+      expect(container.querySelector("details")).toBe(details);
+      expect(details.open).toBe(true);
+      expect(document.activeElement).toBe(summary);
+      expect(details.querySelector("pre")?.textContent).toBe(
+        kind === "run" ? diagnostic : t("newSession.placementStartFailed", { error: diagnostic }),
+      );
+    }
+  },
+);

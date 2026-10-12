@@ -3,16 +3,13 @@ import { useApplication } from "../../lib/reactive/context.ts";
 import { projectSource } from "../../lib/reactive/projection.ts";
 import { defineSolidBridge } from "../../lit/solid-bridge.ts";
 import { ChatPageBody } from "./chat-page-pane-render.tsx";
-import {
-  ChatPageState,
-  type ChatPageHost,
-  type ChatPageMethods,
-  type ChatPageProps,
-} from "./chat-page-state.ts";
+import { ChatPageState } from "./chat-page-state.ts";
+import type { ChatPageHost, ChatPageMethods, ChatPageProps } from "./chat-page-types.ts";
 import "../../styles/chat.ts";
 import "../../styles/chat/composer.css";
 
-export { ChatPageState, type ChatPageHost } from "./chat-page-state.ts";
+export { ChatPageState } from "./chat-page-state.ts";
+export type { ChatPageHost } from "./chat-page-types.ts";
 
 export type ChatPage = ChatPageHost & {
   readonly sessionSplitAvailable: boolean;
@@ -67,7 +64,7 @@ export const ChatPageView = defineSolidBridge<ChatPageProps, ChatPageMethods>(
       (next) => {
         const changed = lastPresented !== next.presented;
         lastPresented = next.presented;
-        untrack(() => state.afterCommit(changed));
+        untrack(() => state.afterCommit(changed, frame));
       },
     );
     onCleanup(() => {

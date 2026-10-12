@@ -258,7 +258,7 @@ function ActivityGroupBody(props: {
             outcomes={describeToolGroup(state().visibleActivity)
               .outcomes.filter(({ kind }) => kind !== "failed" && kind !== "skipped")
               .map(({ label }) => label)}
-          />
+          />{" "}
           <ChatToolReviewOutcome
             outcome={state().reviewOutcome}
             reviewer={state().approvalReviews[0]?.label}
