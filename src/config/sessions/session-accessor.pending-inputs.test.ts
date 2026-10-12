@@ -115,7 +115,6 @@ describe("accepted input custody", () => {
       receipt.finish("interrupted");
     }
     await Promise.allSettled(retained.map(async (receipt) => receipt.settled?.()));
-    closeOpenClawAgentDatabasesForTest();
   });
 
   it("keeps accepted input outside the active transcript and applies its hook once across replay and promotion", async () => {
