@@ -915,7 +915,9 @@ export function inspectPersonalCredentialWriters(
         module.flags & SymbolFlags.Module
           ? checker.getMemberInModuleExports(module, name)
           : checker.getTypeOfSymbolAtLocation(module, binding).getProperty(name);
-      if (member && !bindModule(element.name, member)) return false;
+      if (member && !bindModule(element.name, member)) {
+        return false;
+      }
     }
     return true;
   };
@@ -927,8 +929,9 @@ export function inspectPersonalCredentialWriters(
         const module = accessSymbol(expression);
         if (module && bindModule(binding, module)) {
           let parent: ts.Node | undefined = binding.parent;
-          while (parent && !ts.isVariableStatement(parent) && !ts.isParameterDeclaration(parent))
+          while (parent && !ts.isVariableStatement(parent) && !ts.isParameterDeclaration(parent)) {
             parent = parent.parent;
+          }
           if (
             !parent ||
             !ts.isVariableStatement(parent) ||
@@ -957,8 +960,9 @@ export function inspectPersonalCredentialWriters(
   };
   for (const { source } of sources) {
     const visit = (node: ts.Node) => {
-      if (ts.isVariableDeclaration(node) && node.initializer)
+      if (ts.isVariableDeclaration(node) && node.initializer) {
         bindImports(node.initializer, node.name);
+      }
       if (
         ts.isCallExpression(node) &&
         ts.isPropertyAccessExpression(node.expression) &&
@@ -1150,8 +1154,9 @@ export function inspectPersonalCredentialWriters(
         while (
           ts.isAwaitExpression(expression.parent) ||
           ts.isParenthesizedExpression(expression.parent)
-        )
+        ) {
           expression = expression.parent;
+        }
         const callback = expression.parent;
         const loader = callback.parent;
         if (
@@ -1172,8 +1177,9 @@ export function inspectPersonalCredentialWriters(
             reviewed[1] === node.text &&
             (reviewed[2] === undefined ||
               (selected && ts.isStringLiteral(selected) && selected.text === reviewed[2]))
-          )
+          ) {
             continue;
+          }
         }
       }
       const guarded = targets(symbol);
