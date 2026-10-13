@@ -255,13 +255,6 @@ declare module "@solidjs/web" {
           "prop:agentId"?: ContributionsElement["agentId"];
           "prop:navigationMenus"?: ContributionsElement["navigationMenus"];
         };
-      "openclaw-plugin-view": HTMLAttributes<HTMLElementTagNameMap["openclaw-plugin-view"]> &
-        Properties<HTMLElementTagNameMap["openclaw-plugin-view"]> & {
-          "prop:props"?: HTMLElementTagNameMap["openclaw-plugin-view"]["props"];
-          "prop:defaultView"?: HTMLElementTagNameMap["openclaw-plugin-view"]["defaultView"];
-          "prop:replacementCompanion"?: HTMLElementTagNameMap["openclaw-plugin-view"]["replacementCompanion"];
-          "prop:defaultHost"?: HTMLElementTagNameMap["openclaw-plugin-view"]["defaultHost"];
-        };
       "openclaw-theme-mode-toggle": HTMLAttributes<
         HTMLElementTagNameMap["openclaw-theme-mode-toggle"]
       > &
