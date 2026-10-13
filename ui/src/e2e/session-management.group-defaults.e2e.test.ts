@@ -124,7 +124,6 @@ suite.define(() => {
       await group.locator(".sidebar-recent-sessions__head").hover();
       await group.getByRole("button", { name: "Group options for Client work" }).click();
       await page.getByRole("menuitem", { name: "New session defaults" }).click();
-      await page.evaluate(async () => customElements.whenDefined("wa-popover"));
       const dialog = page.locator(
         `openclaw-modal-dialog[label='New session defaults for "Client work"']`,
       );
@@ -148,7 +147,7 @@ suite.define(() => {
       const folderTrigger = dialog.locator("#session-group-defaults-folder-trigger");
       await expect.poll(() => folderTrigger.getAttribute("aria-label")).toContain("peter");
       await folderTrigger.click();
-      const folderPicker = dialog.locator("wa-popover.session-group-defaults__folder-popover");
+      const folderPicker = dialog.locator(".oc-popover.session-group-defaults__folder-popover");
       await folderPicker.getByRole("button", { name: "Browse folders" }).click();
       expect((await gateway.waitForRequest("fs.listDir")).params).toEqual({
         path: initialGroupCwd,
