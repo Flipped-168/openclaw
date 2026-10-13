@@ -30,9 +30,6 @@ export function resolveAssistantReplyPhase(message: unknown) {
     return phase;
   }
   const record = asRecord(message);
-  if (record?.stopReason === "toolUse") {
-    return "commentary";
-  }
   const metadata = asRecord(record?.["__openclaw"]);
   return metadata?.mirrorOrigin === "codex-app-server" &&
     metadata.runTerminal === true &&

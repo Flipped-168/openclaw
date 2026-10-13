@@ -32,7 +32,14 @@ import { persistedSteerTargetRunId } from "./stream-causal-boundary.ts";
 const TERMINAL_WORK_STATUSES = new Set(["done", "failed", "timeout", "killed"]);
 
 function assistantMessageKind(message: unknown, visibleContent: MessageGroup["visibleContent"]) {
-  return resolveAssistantReplyPhase(message) ?? (visibleContent === "none" ? "activity" : "reply");
+  return (
+    resolveAssistantReplyPhase(message) ??
+    (asRecord(message)?.stopReason === "toolUse"
+      ? "commentary"
+      : visibleContent === "none"
+        ? "activity"
+        : "reply")
+  );
 }
 
 /**
@@ -228,12 +235,13 @@ function groupChatItems(
     }
 
     const { item, normalized } = prepared;
-    const sourceRole = asRecord(item.message)?.role;
+    const record = asRecord(item.message);
     const hasAssistantText =
-      sourceRole === "assistant" &&
+      record?.role === "assistant" &&
+      record.stopReason === "toolUse" &&
       Boolean(resolveMessageDisplayMarkdown(item.message, normalized).trim());
-    // A tool call may share its source row with narration. The narration owns
-    // an assistant block, not the adjacent tools' collapsed disclosure.
+    // Tool-use narration stays visible between iterations. Legacy mixed rows
+    // retain their tool grouping and forwarded file-link attribution.
     const role = hasAssistantText ? "assistant" : normalizeRoleForGrouping(normalized.role);
     // Classify after content projection and keep the fact with its group; later
     // presentation passes reuse it; replacing a message refreshes its facts.
