@@ -8,6 +8,14 @@ import "./tooltip.ts";
 import "../styles/tabs.css";
 import tabsStyles from "../styles/tabs.css?inline";
 
+declare module "@solidjs/web" {
+  namespace JSX {
+    interface IntrinsicElements {
+      "openclaw-panel-tab-strip": HTMLAttributes<HTMLElement>;
+    }
+  }
+}
+
 export type SolidPanelTabStripTab = Omit<PanelTabStripTab, "icon"> & { icon?: JSX.Element };
 export type PanelTabStripProps<T extends SolidPanelTabStripTab> = {
   tabs: T[];
