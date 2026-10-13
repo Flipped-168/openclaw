@@ -23,6 +23,8 @@ const sessionEntries = "src/config/sessions/session-accessor.sqlite-entry-store.
 const authCells = "src/agents/auth-profiles/sqlite-json-write.ts";
 const authRelocation = "src/infra/state-migrations.shared-auth-store.ts";
 const machineState = "src/state/config-machine-state-write.ts";
+const credentialAuthority = "src/state/user-model-account-authority.ts";
+const credentialCustody = "src/agents/auth-profiles/credential-write-custody.ts";
 const guardedTables = new Set([
   "secret_store_entries",
   "auth_profile_store",
@@ -131,6 +133,33 @@ const callers = new Map<string, readonly string[]>([
       key("src/commands/doctor-session-canonical-keys.ts", "applyCanonicalDestinationArtifacts"),
     ],
   ],
+  [
+    key(credentialCustody, "withAuthProfileCredentialWriteCustody"),
+    [
+      key(credentialAuthority, "withAuthProfileCredentialWrite"),
+      key(
+        "src/agents/auth-profiles/store.ts",
+        "createAuthProfileStoreRuntime/saveAuthProfileStore",
+      ),
+    ],
+  ],
+  [
+    key(credentialAuthority, "withAuthProfileCredentialWrite"),
+    [
+      key(authCells, "writeAuthProfileJsonCell"),
+      key(authCells, "deleteAuthProfileJsonCell"),
+      key(machineState, "publishMachineStateWrite"),
+    ],
+  ],
+  [
+    key(machineState, "publishMachineStateWrite"),
+    [
+      "upsertConfigMachineState",
+      "updateConfigMachineStateInDatabase",
+      "deleteConfigMachineState",
+      "importConfigMachineState",
+    ].map((name) => key(machineState, name)),
+  ],
   ...["shared", "personal", "repository"].map((kind): [string, string[]] => [
     key(publicationWorker, `${kind}Mutation`),
     [
@@ -235,7 +264,7 @@ const sinks = new Map<string, number>([
   // Exclusive stopped-owner relocation copies the shared row and then removes its source.
   [key(authRelocation, "copyRowsToState"), 1],
   [key(authRelocation, "cleanupSourceRows"), 1],
-  // Transitional generic entry points: the next credential-custody phase reserves the auth key.
+  // Generic entry points publish the protected key through the credential owner.
   ...[
     "upsertConfigMachineState",
     "updateConfigMachineStateInDatabase",
@@ -475,6 +504,23 @@ export function inspectPersonalCredentialWriters(
         ((ts.isExportDeclaration(node) || ts.isExportSpecifier(node)) && node.isTypeOnly)
       ) {
         return;
+      }
+      if (
+        ts.isPropertyAssignment(node) &&
+        (ts.isIdentifier(node.name) || ts.isStringLiteralLikeNode(node.name)) &&
+        node.name.text === "type"
+      ) {
+        const type = checker.getTypeAtLocation(node.initializer);
+        const variants = type.isUnionType() ? type.getTypes() : [type];
+        if (
+          variants.some(
+            (value) => value.isStringLiteralType() && value.value === "machineState.write",
+          ) &&
+          key(file, operation(node)) !==
+            key("src/state/config-machine-state-async.ts", "writeConfigMachineStateAsync")
+        ) {
+          fail(node, "machine-state credential writes require the host publication adapter");
+        }
       }
       if (
         ts.isCallExpression(node) &&
