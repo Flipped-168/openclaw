@@ -81,10 +81,49 @@ it.each([
     "barrel export",
     "export { connectUserModelAccount as write } from './state/user-model-accounts.js';",
   ],
-  ["dynamic import", "const writers = await import('./state/user-model-accounts.js');"],
+  [
+    "dynamic import escape",
+    "export const writers = await import('./state/user-model-accounts.js');",
+  ],
   ["wildcard export", "export * from './state/user-model-accounts.js';"],
   ["namespace export", "export * as accounts from './state/user-model-accounts.js';"],
 ])("rejects an unowned %s", (_name, consumer) => {
+  expect(inspect({ "src/consumer.ts": consumer })).toEqual(
+    expect.arrayContaining([
+      expect.stringContaining("unreviewed personal credential writer reference"),
+    ]),
+  );
+});
+
+it.each([
+  "const { SELECT: selected } = await import('./state/user-model-accounts.js'); selected();",
+  "const accounts = await import('./state/user-model-accounts.js'); accounts.SELECT();",
+  "(await import('./state/user-model-accounts.js'))['SELECT']();",
+  "const [{ SELECT: selected }] = await Promise.all([import('./state/user-model-accounts.js')]); selected();",
+  "import('./state/user-model-accounts.js').then(({ SELECT: selected }) => selected());",
+  "Promise.all([import('./state/user-model-accounts.js')]).then(([accounts]) => accounts.SELECT());",
+])("checks a selected dynamic import without charging unused sibling exports: %s", (consumer) => {
+  const source = `${owner}\nexport function listUserProfileAuthLinksAsync() {}`;
+  const selected = (name: string) =>
+    inspect(
+      {
+        "src/consumer.ts": consumer.replaceAll("SELECT", name),
+      },
+      source,
+    );
+  expect(selected("listUserProfileAuthLinksAsync")).toEqual([]);
+  expect(selected("connectUserModelAccount")).toEqual([
+    expect.stringContaining("unreviewed personal credential writer reference"),
+  ]);
+});
+
+it.each([
+  "const accounts = await import('./state/user-model-accounts.js'); export const escaped = accounts;",
+  "export const [accounts] = await Promise.all([import('./state/user-model-accounts.js')]);",
+  "const { ...accounts } = await import('./state/user-model-accounts.js'); consume(accounts);",
+  "const accounts = await import('./state/user-model-accounts.js'); accounts[unknownKey]();",
+  "const { [unknownKey]: writer } = await import('./state/user-model-accounts.js'); writer();",
+])("rejects an unbounded dynamic namespace or export: %s", (consumer) => {
   expect(inspect({ "src/consumer.ts": consumer })).toEqual(
     expect.arrayContaining([
       expect.stringContaining("unreviewed personal credential writer reference"),
@@ -521,6 +560,81 @@ it("protects destructured facade writers and native readers that can synchronize
   ]);
 });
 
+it("preserves the released provider-auth package barrel without admitting a new facade", () => {
+  const sources = {
+    [authRuntime]: `export function ensureAuthProfileStore() {}`,
+    "src/plugin-sdk/provider-auth.ts": `export { ensureAuthProfileStore } from '../agents/auth-profiles/store-runtime.js';`,
+    "packages/plugin-sdk/src/provider-auth.ts": `export * from '../../../src/plugin-sdk/provider-auth.js';`,
+  };
+  expect(inspect(sources)).toEqual([]);
+  expect(
+    inspect({
+      ...sources,
+      "src/new-facade.ts": `export * from './plugin-sdk/provider-auth.js';`,
+    }),
+  ).toEqual([expect.stringContaining("unreviewed personal credential writer reference")]);
+});
+
+it("permits the exact native reader dependency forwards without opening sibling callers", () => {
+  const sources = {
+    [authRuntime]: `export function ensureAuthProfileStore() {} export function loadAuthProfileStoreForRuntime() {}`,
+    "extensions/codex/src/app-server/auth-profile.ts": `
+      import { ensureAuthProfileStore } from '../../../../src/agents/auth-profiles/store-runtime.js';
+      const selection = createCodexAuthProfileSelection({ ensureAuthProfileStore });
+    `,
+    "src/agents/cli-execution-auth.ts": `
+      import { loadAuthProfileStoreForRuntime } from './auth-profiles/store-runtime.js';
+      export function resolveCliExecutionAuthProfileId(params) {
+        const loadStore = params.loadAuthProfileStoreForRuntime ?? loadAuthProfileStoreForRuntime;
+        return loadStore();
+      }
+    `,
+    "src/system-agent/setup-inference-profile.ts": `
+      import { loadAuthProfileStoreForRuntime } from '../agents/auth-profiles/store-runtime.js';
+      export function resolveSetupInferenceProfileError(deps) {
+        const loadStore = deps.loadAuthProfileStoreForRuntime ?? loadAuthProfileStoreForRuntime;
+        return loadStore();
+      }
+    `,
+    "src/system-agent/verified-inference.ts": `
+      import { loadAuthProfileStoreForRuntime } from '../agents/auth-profiles/store-runtime.js';
+      function loadRouteAuthProfileStore(deps) {
+        return (deps.loadAuthProfileStoreForRuntime ?? loadAuthProfileStoreForRuntime)();
+      }
+    `,
+  };
+  expect(inspect(sources)).toEqual([]);
+  expect(
+    inspect({
+      ...sources,
+      "src/agents/cli-execution-auth.ts": sources["src/agents/cli-execution-auth.ts"].replace(
+        "resolveCliExecutionAuthProfileId",
+        "newReader",
+      ),
+    }),
+  ).toEqual([expect.stringContaining("from src/agents/cli-execution-auth.ts:newReader")]);
+});
+
+it("bounds reviewed lazy imports by loader, declaration scope and selected export", () => {
+  const file = "src/media-understanding/runner.ts";
+  const sources = {
+    [authRuntime]: `export function ensureAuthProfileStore() {}`,
+    "src/agents/model-auth.ts": `export { ensureAuthProfileStore } from './auth-profiles/store-runtime.js';`,
+  };
+  const source = `const loadHasAvailableAuthForProvider = createLazyRuntimeNamedExport(
+    () => import('../agents/model-auth.js'), 'hasAvailableAuthForProvider');`;
+  expect(inspect({ ...sources, [file]: source })).toEqual([]);
+  for (const changed of [
+    source.replace("'hasAvailableAuthForProvider'", "'ensureAuthProfileStore'"),
+    source.replace("createLazyRuntimeNamedExport", "newLoader"),
+    `function newLoader() { ${source} }`,
+  ]) {
+    expect(inspect({ ...sources, [file]: changed })).toEqual([
+      expect.stringContaining("unreviewed personal credential writer reference"),
+    ]);
+  }
+});
+
 it("closes raw-store and worker-kernel entries while preserving the named update dispatchers", () => {
   const sources = {
     [authCells]: `export function writeAuthProfileJsonCell() {}`,
@@ -677,6 +791,8 @@ it("preserves the released AuthStorage barrel and nonnative constructors", () =>
         Storage.forAgentAsync();
         sdk.AuthStorage.inMemory();
         sdk.AuthStorage['fromStorage']();
+        const { AuthStorage: DynamicStorage } = await import('./plugin-sdk/agent-sessions.js');
+        DynamicStorage.forAgentAsync();
       `,
     }),
   ).toEqual([]);
@@ -690,6 +806,8 @@ it.each([
   "import { AuthStorage } from './plugin-sdk/agent-sessions.js'; const { forAgent } = AuthStorage; forAgent().set();",
   "import { AuthStorage } from './plugin-sdk/agent-sessions.js'; export const Storage = AuthStorage;",
   "export { AuthStorage as Storage } from './plugin-sdk/agent-sessions.js';",
+  "const { AuthStorage: Storage } = await import('./plugin-sdk/agent-sessions.js'); Storage.forAgent().set();",
+  "const [{ AuthStorage: { forAgent: createStorage } }] = await Promise.all([import('./plugin-sdk/agent-sessions.js')]); createStorage().set();",
 ])("rejects a new native AuthStorage SDK entry or escape: %s", (consumer) => {
   expect(inspect({ ...authStorageSources, "src/new-writer.worker.ts": consumer })).toEqual(
     expect.arrayContaining([

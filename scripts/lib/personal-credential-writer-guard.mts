@@ -325,6 +325,7 @@ const nativeReadCallers = new Map<string, readonly string[]>([
     key(authRuntime, "ensureAuthProfileStore"),
     [
       "extensions/codex/src/account-usage-runtime.ts:handleCodexAccountUsage/assertCurrent",
+      "extensions/codex/src/app-server/auth-profile.ts:<module>",
       "extensions/codex/src/app-server/auth-profile-selection.ts:createCodexAuthProfileSelection/resolveCodexAppServerAuthProfileIdAtEffect",
       "extensions/codex/src/command-diagnostics.ts:resolvePendingCodexDiagnosticsTargets",
       "src/agents/embedded-agent-runner/cli-backend-dispatch-eligibility.ts:resolveEmbeddedCliBackendDispatchEligibility",
@@ -379,6 +380,9 @@ const nativeReadCallers = new Map<string, readonly string[]>([
   [
     key(authRuntime, "loadAuthProfileStoreForRuntime"),
     [
+      "src/agents/cli-execution-auth.ts:resolveCliExecutionAuthProfileId",
+      "src/system-agent/setup-inference-profile.ts:resolveSetupInferenceProfileError",
+      "src/system-agent/verified-inference.ts:loadRouteAuthProfileStore",
       "src/cli/capability-cli/model.ts:runModelAuthLogout",
       "src/cli/capability-cli/shared.ts:providerHasGenericConfig",
       "src/commands/doctor-auth.ts:loadAuthProfileHealth",
@@ -402,6 +406,22 @@ const nativeReadCallers = new Map<string, readonly string[]>([
   ],
 ]);
 
+// These deferred module projections are already audited; their selected writer calls stay guarded.
+const reviewedLazyImports = new Map<string, readonly [string, string, string?]>([
+  [
+    "src/agents/model-fallback-runner.ts:modelFallbackAuthRuntimeLoader",
+    ["createLazyImportLoader", "./auth-profiles.runtime.js"],
+  ],
+  [
+    "src/media-understanding/runner.entries.ts:loadModelAuth",
+    ["createLazyRuntimeModule", "../agents/model-auth.js"],
+  ],
+  [
+    "src/media-understanding/runner.ts:loadHasAvailableAuthForProvider",
+    ["createLazyRuntimeNamedExport", "../agents/model-auth.js", "hasAvailableAuthForProvider"],
+  ],
+]);
+
 const nativeSdkExports = new Map<string, readonly string[]>([
   [key(authStorage, "AuthStorage"), ["src/plugin-sdk/agent-sessions.ts"]],
   [
@@ -412,13 +432,17 @@ const nativeSdkExports = new Map<string, readonly string[]>([
       "src/agents/model-auth.ts",
       "src/plugin-sdk/agent-runtime.ts",
       "src/plugin-sdk/provider-auth.ts",
+      "packages/plugin-sdk/src/provider-auth.ts",
     ],
   ],
   [
     key(authRuntime, "ensureAuthProfileStoreWithoutExternalProfiles"),
     ["src/agents/auth-profiles.ts", "src/agents/model-auth.ts"],
   ],
-  [key(authRuntime, "ensureAuthProfileStoreForLocalUpdate"), ["src/plugin-sdk/provider-auth.ts"]],
+  [
+    key(authRuntime, "ensureAuthProfileStoreForLocalUpdate"),
+    ["src/plugin-sdk/provider-auth.ts", "packages/plugin-sdk/src/provider-auth.ts"],
+  ],
   [
     key(authRuntime, "loadAuthProfileStoreForRuntime"),
     ["src/agents/auth-profiles.ts", "src/plugin-sdk/agent-runtime.ts"],
@@ -430,11 +454,19 @@ const nativeSdkExports = new Map<string, readonly string[]>([
   ],
   [
     key(authProfiles, "upsertAuthProfile"),
-    ["src/agents/auth-profiles.ts", "src/plugin-sdk/provider-auth.ts"],
+    [
+      "src/agents/auth-profiles.ts",
+      "src/plugin-sdk/provider-auth.ts",
+      "packages/plugin-sdk/src/provider-auth.ts",
+    ],
   ],
   [
     key("src/plugins/provider-auth-helpers.ts", "upsertApiKeyProfile"),
-    ["src/plugin-sdk/provider-auth.ts", "src/plugin-sdk/provider-auth-api-key.ts"],
+    [
+      "src/plugin-sdk/provider-auth.ts",
+      "src/plugin-sdk/provider-auth-api-key.ts",
+      "packages/plugin-sdk/src/provider-auth.ts",
+    ],
   ],
 ]);
 
@@ -763,7 +795,7 @@ export function inspectPersonalCredentialWriters(
         (ts.isFunctionDeclaration(node) ||
           ts.isFunctionExpression(node) ||
           ts.isClassDeclaration(node) ||
-          ts.isMethodDeclaration(node) ||
+          (ts.isMethodDeclaration(node) && ts.isClassDeclaration(node.parent)) ||
           ts.isVariableDeclaration(node) ||
           ts.isBindingElement(node)) &&
         node.name &&
@@ -798,12 +830,17 @@ export function inspectPersonalCredentialWriters(
       }
     }
   }
+  const importedBindings = new Map<Symbol, Symbol>();
+  const resolveSymbol = (raw: Symbol | undefined): Symbol | undefined => {
+    const symbol = raw && raw.flags & SymbolFlags.Alias ? checker.getAliasedSymbol(raw) : raw;
+    return symbol && (importedBindings.get(symbol) ?? symbol);
+  };
   const resolved = new Map<Symbol, string[]>();
   const targets = (raw: Symbol | undefined): string[] => {
     if (!raw) {
       return [];
     }
-    const symbol = raw.flags & SymbolFlags.Alias ? checker.getAliasedSymbol(raw) : raw;
+    const symbol = resolveSymbol(raw)!;
     const cached = resolved.get(symbol);
     if (cached) {
       return cached;
@@ -822,6 +859,139 @@ export function inspectPersonalCredentialWriters(
       }
     }
     return found;
+  };
+  const handledImports = new Set<ts.CallExpression>();
+  const accessSymbol = (expression: ts.Expression): Symbol | undefined => {
+    if (ts.isAwaitExpression(expression) || ts.isParenthesizedExpression(expression)) {
+      return accessSymbol(expression.expression);
+    }
+    if (
+      ts.isCallExpression(expression) &&
+      expression.expression.kind === ts.SyntaxKind.ImportKeyword
+    ) {
+      const specifier = expression.arguments[0];
+      return specifier && resolveSymbol(checker.getSymbolAtLocation(specifier));
+    }
+    if (ts.isPropertyAccessExpression(expression) || ts.isElementAccessExpression(expression)) {
+      const base = accessSymbol(expression.expression);
+      const member = ts.isPropertyAccessExpression(expression)
+        ? expression.name.text
+        : ts.isStringLiteral(expression.argumentExpression)
+          ? expression.argumentExpression.text
+          : undefined;
+      if (base && member !== undefined) {
+        return resolveSymbol(
+          base.flags & SymbolFlags.Module
+            ? checker.getMemberInModuleExports(base, member)
+            : checker.getTypeOfSymbolAtLocation(base, expression.expression).getProperty(member),
+        );
+      }
+    }
+    return resolveSymbol(checker.getSymbolAtLocation(expression));
+  };
+  const bindModule = (binding: ts.BindingName, module: Symbol): boolean => {
+    if (ts.isIdentifier(binding)) {
+      const local = checker.getSymbolAtLocation(binding);
+      if (local) {
+        importedBindings.set(local, module);
+        names.add(binding.text);
+      }
+      return true;
+    }
+    if (
+      !ts.isObjectBindingPattern(binding) ||
+      binding.elements.some(
+        (element) =>
+          element.dotDotDotToken ||
+          (element.propertyName && ts.isComputedPropertyName(element.propertyName)),
+      )
+    ) {
+      return false;
+    }
+    for (const element of binding.elements) {
+      const name =
+        element.propertyName?.getText().replace(/^["']|["']$/g, "") ?? element.name.getText();
+      const member =
+        module.flags & SymbolFlags.Module
+          ? checker.getMemberInModuleExports(module, name)
+          : checker.getTypeOfSymbolAtLocation(module, binding).getProperty(name);
+      if (member && !bindModule(element.name, member)) return false;
+    }
+    return true;
+  };
+  const bindImports = (expression: ts.Expression, binding: ts.BindingName): void => {
+    if (ts.isAwaitExpression(expression) || ts.isParenthesizedExpression(expression)) {
+      bindImports(expression.expression, binding);
+    } else if (ts.isCallExpression(expression)) {
+      if (expression.expression.kind === ts.SyntaxKind.ImportKeyword) {
+        const module = accessSymbol(expression);
+        if (module && bindModule(binding, module)) {
+          let parent: ts.Node | undefined = binding.parent;
+          while (parent && !ts.isVariableStatement(parent) && !ts.isParameterDeclaration(parent))
+            parent = parent.parent;
+          if (
+            !parent ||
+            !ts.isVariableStatement(parent) ||
+            !parent.modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword)
+          ) {
+            handledImports.add(expression);
+          }
+        }
+      } else if (
+        ts.isPropertyAccessExpression(expression.expression) &&
+        ts.isIdentifier(expression.expression.expression) &&
+        expression.expression.expression.text === "Promise" &&
+        expression.expression.name.text === "all" &&
+        expression.arguments[0] &&
+        ts.isArrayLiteralExpression(expression.arguments[0]) &&
+        ts.isArrayBindingPattern(binding)
+      ) {
+        for (const [index, element] of binding.elements.entries()) {
+          const item = expression.arguments[0].elements[index];
+          if (item && ts.isBindingElement(element) && !element.dotDotDotToken) {
+            bindImports(item, element.name);
+          }
+        }
+      }
+    }
+  };
+  for (const { source } of sources) {
+    const visit = (node: ts.Node) => {
+      if (ts.isVariableDeclaration(node) && node.initializer)
+        bindImports(node.initializer, node.name);
+      if (
+        ts.isCallExpression(node) &&
+        ts.isPropertyAccessExpression(node.expression) &&
+        node.expression.name.text === "then"
+      ) {
+        const callback = node.arguments[0];
+        if (
+          callback &&
+          (ts.isArrowFunction(callback) || ts.isFunctionExpression(callback)) &&
+          callback.parameters[0]
+        ) {
+          bindImports(node.expression.expression, callback.parameters[0].name);
+        }
+      }
+      node.forEachChild(visit);
+    };
+    source.forEachChild(visit);
+  }
+  const selectsImportMember = (call: ts.CallExpression): boolean => {
+    let expression: ts.Expression = call;
+    while (
+      ts.isAwaitExpression(expression.parent) ||
+      ts.isParenthesizedExpression(expression.parent)
+    ) {
+      expression = expression.parent;
+    }
+    return (
+      (ts.isPropertyAccessExpression(expression.parent) &&
+        expression.parent.expression === expression) ||
+      (ts.isElementAccessExpression(expression.parent) &&
+        expression.parent.expression === expression &&
+        ts.isStringLiteral(expression.parent.argumentExpression))
+    );
   };
   const violations: string[] = [];
   const sinkCounts = new Map<string, number>();
@@ -944,7 +1114,9 @@ export function inspectPersonalCredentialWriters(
             node.parent.moduleSpecifier === node &&
             (!node.parent.exportClause || ts.isNamespaceExport(node.parent.exportClause))) ||
           (ts.isCallExpression(node.parent) &&
-            node.parent.expression.kind === ts.SyntaxKind.ImportKeyword)) &&
+            node.parent.expression.kind === ts.SyntaxKind.ImportKeyword &&
+            !handledImports.has(node.parent) &&
+            !selectsImportMember(node.parent))) &&
         !(
           (ts.isFunctionDeclaration(node.parent) ||
             ts.isFunctionExpression(node.parent) ||
@@ -952,7 +1124,8 @@ export function inspectPersonalCredentialWriters(
             ts.isMethodDeclaration(node.parent) ||
             ts.isVariableDeclaration(node.parent) ||
             ts.isBindingElement(node.parent)) &&
-          node.parent.name === node
+          (node.parent.name === node ||
+            (ts.isBindingElement(node.parent) && node.parent.propertyName === node))
         )
       ) {
         references.push(node);
@@ -964,7 +1137,45 @@ export function inspectPersonalCredentialWriters(
     for (const [index, node] of references.entries()) {
       const symbol = ts.isShorthandPropertyAssignment(node.parent)
         ? checker.getShorthandAssignmentValueSymbol(node.parent)
-        : symbols[index];
+        : (ts.isPropertyAccessExpression(node.parent) && node.parent.name === node) ||
+            (ts.isElementAccessExpression(node.parent) && node.parent.argumentExpression === node)
+          ? accessSymbol(node.parent)
+          : symbols[index];
+      if (
+        ts.isStringLiteral(node) &&
+        ts.isCallExpression(node.parent) &&
+        node.parent.expression.kind === ts.SyntaxKind.ImportKeyword
+      ) {
+        let expression: ts.Expression = node.parent;
+        while (
+          ts.isAwaitExpression(expression.parent) ||
+          ts.isParenthesizedExpression(expression.parent)
+        )
+          expression = expression.parent;
+        const callback = expression.parent;
+        const loader = callback.parent;
+        if (
+          ts.isArrowFunction(callback) &&
+          callback.body === expression &&
+          ts.isCallExpression(loader) &&
+          loader.arguments[0] === callback &&
+          ts.isIdentifier(loader.expression) &&
+          ts.isVariableDeclaration(loader.parent) &&
+          loader.parent.initializer === loader &&
+          ts.isIdentifier(loader.parent.name)
+        ) {
+          const reviewed = reviewedLazyImports.get(key(file, loader.parent.name.text));
+          const selected = loader.arguments[1];
+          if (
+            operation(loader) === "<module>" &&
+            reviewed?.[0] === loader.expression.text &&
+            reviewed[1] === node.text &&
+            (reviewed[2] === undefined ||
+              (selected && ts.isStringLiteral(selected) && selected.text === reviewed[2]))
+          )
+            continue;
+        }
+      }
       const guarded = targets(symbol);
       if (!guarded.length) {
         continue;
@@ -995,6 +1206,11 @@ export function inspectPersonalCredentialWriters(
           (ts.isExportSpecifier(node.parent) &&
             nativeSdkExports.get(target)?.includes(file) &&
             node.parent.name.text === target.slice(target.lastIndexOf(":") + 1)) ||
+          (nativeSdkExports.get(target)?.includes(file) &&
+            file === "packages/plugin-sdk/src/provider-auth.ts" &&
+            ts.isExportDeclaration(node.parent) &&
+            node.parent.moduleSpecifier === node &&
+            !node.parent.exportClause) ||
           (target === key(authStorage, "AuthStorage") &&
             file === "src/agents/sessions/index.ts" &&
             ts.isExportDeclaration(node.parent) &&
@@ -1059,11 +1275,26 @@ export function inspectPersonalCredentialWriters(
             continue;
           }
         }
+        const selectedNativeReader =
+          target === key(authRuntime, "loadAuthProfileStoreForRuntime") &&
+          ts.isBinaryExpression(node.parent) &&
+          node.parent.right === node &&
+          node.parent.operatorToken.kind === ts.SyntaxKind.QuestionQuestionToken &&
+          ts.isPropertyAccessExpression(node.parent.left) &&
+          node.parent.left.name.text === "loadAuthProfileStoreForRuntime";
+        const selectorDependency =
+          target === key(authRuntime, "ensureAuthProfileStore") &&
+          file === "extensions/codex/src/app-server/auth-profile.ts" &&
+          ts.isShorthandPropertyAssignment(node.parent) &&
+          ts.isObjectLiteralExpression(node.parent.parent) &&
+          ts.isCallExpression(node.parent.parent.parent) &&
+          ts.isIdentifier(node.parent.parent.parent.expression) &&
+          node.parent.parent.parent.expression.text === "createCodexAuthProfileSelection";
         const edge = `${target}<-${caller}`;
         const count = (edgeCounts.get(edge) ?? 0) + 1;
         edgeCounts.set(edge, count);
         if (
-          !directCall ||
+          (!directCall && !selectedNativeReader && !selectorDependency) ||
           !approvedCallers.get(target)?.includes(caller) ||
           count > (repeatedEdges.get(edge) ?? 1)
         ) {
