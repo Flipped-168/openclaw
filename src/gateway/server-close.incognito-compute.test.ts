@@ -12,6 +12,8 @@ import {
 } from "../config/sessions/session-transcript-reconcile.js";
 import { refreshCostUsageCacheForAgent } from "../infra/session-cost-usage-aggregation.js";
 import { onSessionCostUsageUpdated } from "../infra/session-cost-usage-events.js";
+import * as usagePricing from "../infra/session-cost-usage-pricing-context.js";
+import * as usageWorkerScope from "../infra/session-cost-usage-worker-scope.js";
 import { AsyncWorkScope } from "../shared/async-work-scope.js";
 import { createDeferredCore } from "../shared/deferred.js";
 import { IncognitoSessionEndedError } from "../state/incognito-session-error.js";
@@ -142,6 +144,47 @@ it("settles accepted actor reconciliation, usage and trajectory across the real 
     void verified.promise.catch(() => undefined);
     const published = vi.fn();
     unsubscribe = onSessionCostUsageUpdated(published);
+    const preparePricing = usagePricing.prepareUsageCostPricing;
+    vi.spyOn(usagePricing, "prepareUsageCostPricing").mockImplementation(async (...args) => {
+      mark("usage:pricing-start");
+      const result = await preparePricing(...args);
+      mark("usage:pricing-done");
+      return result;
+    });
+    const withUsageDatabases = usageWorkerScope.withSessionCostUsageWorkerDatabases;
+    vi.spyOn(usageWorkerScope, "withSessionCostUsageWorkerDatabases").mockImplementation(
+      (options, operation) =>
+        withUsageDatabases(options, (scope) =>
+          operation({
+            ...scope,
+            run(input, runOptions) {
+              mark("usage:native-run-start");
+              const onRequest = runOptions.onRequest;
+              return scope
+                .run(input, {
+                  ...runOptions,
+                  beforeDispatch() {
+                    mark("usage:native-dispatch");
+                    runOptions.beforeDispatch?.();
+                  },
+                  onRequest: onRequest
+                    ? async (value, context) => {
+                        const kind =
+                          value && typeof value === "object" && "kind" in value
+                            ? String(value.kind)
+                            : "unknown";
+                        mark(`usage:request:${kind}:start`);
+                        const result = await onRequest(value, context);
+                        mark(`usage:request:${kind}:done`);
+                        return result;
+                      }
+                    : undefined,
+                })
+                .finally(() => mark("usage:native-run-done"));
+            },
+          }),
+        ),
+    );
     const withCompute = actor.sessions.withCompute;
     vi.spyOn(actor.sessions, "withCompute").mockImplementation(
       (caller, selected, operation, abort) =>
