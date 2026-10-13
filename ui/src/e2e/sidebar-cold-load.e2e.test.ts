@@ -8,7 +8,6 @@ import {
   CHAT_SNAPSHOT_DB_NAME,
   SIDEBAR_SNAPSHOT_STORE_NAME,
 } from "../pages/chat/session-snapshot-database.ts";
-import { waitForControlUiInitialRoster } from "../test-helpers/control-ui-e2e-readiness.ts";
 import { takeControlUiScreenshotFrame } from "../test-helpers/control-ui-e2e-screenshot.ts";
 import {
   controlUiBundledSettingsStorageKey,
@@ -501,15 +500,26 @@ suite.define(() => {
             await page.reload();
             await page.locator('aside.sidebar[data-snapshot-state="cached"]').waitFor();
             await gateway.waitForRequest("connect");
-            await gateway.deferNext("sessions.list", { hasBoard: true });
+            // A queued refresh must not recover before the failed-catalog snapshot check.
+            await gateway.setMethodResponse("sessions.list", {
+              cases: [
+                {
+                  match: { hasBoard: true },
+                  response: {
+                    __mockError: {
+                      code: "UNAVAILABLE",
+                      message: "Synthetic dashboard catalog unavailable",
+                    },
+                  },
+                },
+                {
+                  match: {},
+                  response: { ...sessionsListResponse(rosterSessions), ownerSessionCounts },
+                },
+              ],
+            });
             await gateway.resolveDeferred("connect");
             await gateway.waitForRequest("sessions.list", { match: { hasBoard: true } });
-            // Let bootstrap join the pending catalog read before injecting its failure.
-            await waitForControlUiInitialRoster(page);
-            await gateway.rejectDeferred("sessions.list", {
-              code: "UNAVAILABLE",
-              message: "Synthetic dashboard catalog unavailable",
-            });
             await page.locator('aside.sidebar[data-snapshot-state="live"]').waitFor();
             await sidebar
               .getByRole("alert")
