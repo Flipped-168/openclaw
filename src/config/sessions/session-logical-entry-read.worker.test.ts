@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
-import { awaitGateBeforeSettlement } from "../../../test/helpers/promise.js";
+import { awaitGateBeforeSettlement, withinTest } from "../../../test/helpers/promise.js";
 import {
   emptySqliteCounts,
   observeParentSqlite,
@@ -50,7 +50,7 @@ function storedScope(storePath: string, scope: Partial<SessionAccessScope> = {})
 }
 
 function holdExecution(
-  stage: "while-queued" | "before-open" | "reply",
+  stage: "before-open" | "reply",
   shouldHold: (execution: OpenClawAgentDatabaseExecution) => boolean = () => true,
   once = stage === "reply",
 ) {
@@ -72,9 +72,6 @@ function holdExecution(
     .spyOn(executionOwner, "captureOpenClawAgentDatabaseExecution")
     .mockImplementation((...args) => {
       const execution = capture(...args);
-      if (stage === "while-queued") {
-        gate.entered.resolve();
-      }
       const overrides: Partial<OpenClawAgentDatabaseExecution> = {};
       if (stage === "before-open") {
         overrides.prepare = async (source) => {
@@ -361,25 +358,30 @@ it.each([
   { stage: "while-queued", change: "caller", registration: "changed" },
 ] as const)(
   "refuses $change replacement $stage ($registration registration)",
-  async ({ stage, change, registration }) => {
+  async ({ stage, change, registration }, { signal }) => {
     const scope = storedScope(state.statePath(stage, change, registration, "sessions.json"));
     replaceSessionEntrySync(scope, { sessionId: "selected-row", updatedAt: 1 });
     const target = toDatabaseOptions(resolveSqliteScope(scope));
     if (change === "file") {
       await closeOpenClawAgentDatabasesAsync();
     }
-    const gate = holdExecution(stage);
     const writerEntered = createDeferredCore();
-    const priorWriter =
-      stage === "while-queued"
-        ? runOpenClawAgentWorkerWrite(target, async () => {
-            writerEntered.resolve();
-            await gate.release.promise;
-          })
-        : undefined;
-    if (priorWriter) {
-      await writerEntered.promise;
-    }
+    const releaseWriter = createDeferredCore();
+    let priorWriter: Promise<void> | undefined;
+    const capture = executionOwner.captureOpenClawAgentDatabaseExecution;
+    const intercept = vi
+      .spyOn(executionOwner, "captureOpenClawAgentDatabaseExecution")
+      .mockImplementationOnce((...args) => {
+        intercept.mockRestore();
+        const execution = capture(...args);
+        // Discovery must finish its cold admission before a writer can hold the read queue.
+        priorWriter = runOpenClawAgentWorkerWrite(target, async () => {
+          writerEntered.resolve();
+          await releaseWriter.promise;
+        });
+        void priorWriter.catch((error: unknown) => writerEntered.reject(error));
+        return execution;
+      });
     let callerCurrent = true;
     const reading = readSessionEntryInWorker(scope, () => {
       if (!callerCurrent) {
@@ -389,13 +391,15 @@ it.each([
       (value) => ({ value, error: undefined }),
       (error: unknown) => ({ value: undefined, error }),
     );
-    void reading.then((result) => {
-      gate.entered.reject(
-        result.error ?? new Error("Logical read completed before its held boundary"),
-      );
-    });
     try {
-      await gate.entered.promise;
+      await withinTest(
+        awaitGateBeforeSettlement(
+          writerEntered.promise,
+          reading,
+          "Logical read completed before its held writer",
+        ),
+        signal,
+      );
       const databasePath = resolveOpenClawAgentSqlitePath(target);
       if (change === "file") {
         fs.renameSync(databasePath, `${databasePath}.original`);
@@ -410,15 +414,15 @@ it.each([
           env: state.env,
         });
       }
-      gate.release.resolve();
+      releaseWriter.resolve();
+      await priorWriter;
       const result = await reading;
       expect(result.value).toBeUndefined();
       expect(result.error).toBeInstanceOf(Error);
     } finally {
-      gate.release.resolve();
-      await reading;
-      await priorWriter;
-      gate.restore();
+      releaseWriter.resolve();
+      intercept.mockRestore();
+      await Promise.allSettled([reading, priorWriter]);
     }
   },
 );
