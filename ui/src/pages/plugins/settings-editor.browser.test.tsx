@@ -1,11 +1,12 @@
 import { createSignal, flush } from "solid-js";
 import { afterEach, describe, expect, it, onTestFinished, vi } from "vitest";
-import { page } from "vitest/browser";
+import { page, userEvent } from "vitest/browser";
 import type { ApplicationContext } from "../../app/context.ts";
 import { REDACTED_SENTINEL, type JsonSchema } from "../../lib/config-form-utils.ts";
 import type { GatewayPageController } from "../../lit/gateway-page-controller.ts";
 import { ControlUiPluginRuntime } from "../../plugins/control-ui-runtime.ts";
 import { mountSolid } from "../../test-helpers/mount-solid.ts";
+import { item, openMenu } from "../../test-helpers/solid-menu.tsx";
 import {
   createApplicationGateway,
   createSolidApplicationContextProvider,
@@ -226,11 +227,19 @@ describe("grouped plugin settings", () => {
       expect(model.onConfigPatch).not.toHaveBeenCalled();
     },
   );
-  it("keeps a retired menu bound to the setting action that rendered it", async () => {
+  it("does not execute a retired menu after switching settings", async () => {
     const { editor, model, update } = await mount();
     const original = vi.fn();
     await update({ onAskSetting: original });
-    const menu = editor.querySelector('[data-setting="enabled"] wa-dropdown')!;
+    const menu = editor.querySelector<HTMLElement>('[data-setting="enabled"] [role="menu"]')!;
+    const id = menu.id.slice(0, -":content".length);
+    await openMenu(id);
+    const ask = item("Ask OpenClaw", id);
+    await userEvent.click(ask);
+    expect(original).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ path: ["plugins", "entries", "fixture", "config", "enabled"] }),
+    );
+    original.mockClear();
     const replacement = vi.fn();
     await update({
       onAskSetting: replacement,
@@ -242,11 +251,9 @@ describe("grouped plugin settings", () => {
       },
     });
     expect(menu.isConnected).toBe(false);
-    menu.dispatchEvent(new CustomEvent("wa-select", { detail: { item: { value: "ask" } } }));
+    ask.click();
     expect(replacement).not.toHaveBeenCalled();
-    expect(original).toHaveBeenCalledExactlyOnceWith(
-      expect.objectContaining({ path: ["plugins", "entries", "fixture", "config", "enabled"] }),
-    );
+    expect(original).not.toHaveBeenCalled();
   });
   it.each<{
     name: string;
@@ -524,7 +531,7 @@ describe("grouped plugin settings", () => {
       row.click();
       expect(model.onConfigPatch).not.toHaveBeenCalled();
       getSelection()!.removeAllRanges();
-      row.querySelector<HTMLButtonElement>('button[slot="trigger"]')!.click();
+      row.querySelector<HTMLButtonElement>('button[aria-haspopup="menu"]')!.click();
       expect(model.onConfigPatch).not.toHaveBeenCalled();
       await update({ model: { ...model, canEditConfig: false } });
       row.click();
