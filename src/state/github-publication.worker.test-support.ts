@@ -20,8 +20,9 @@ export function holdNextReply(
   const ready = createDeferredCore();
   let deliver: ((error?: Error) => void) | undefined;
   let target: { worker: Worker; id: number } | undefined;
-  // oxlint-disable-next-line typescript/unbound-method -- Reflect.apply preserves the posting Worker.
-  const postMessage = Worker.prototype.postMessage;
+  // Restored spies retain native call-through; Reflect.apply supplies each live Worker.
+  const postMessage = vi.spyOn(Worker.prototype, "postMessage");
+  postMessage.mockRestore();
   const posts = vi.spyOn(Worker.prototype, "postMessage").mockImplementation(function (
     this: Worker,
     request: SqliteWorkerRequest,
@@ -42,12 +43,13 @@ export function holdNextReply(
     }
     return Reflect.apply(postMessage, this, [request, ...args]);
   });
-  // oxlint-disable-next-line typescript/unbound-method -- Reflect.apply preserves the emitting Worker.
-  const emit = Worker.prototype.emit;
+  const emit = vi.spyOn(Worker.prototype, "emit");
+  emit.mockRestore();
   const messages = vi.spyOn(Worker.prototype, "emit").mockImplementation(function (
     this: Worker,
     event: string | symbol,
     reply: SqliteWorkerReply,
+    ...args
   ) {
     if (event === "message" && this === target?.worker && reply.id === target.id && reply.ok) {
       messages.mockRestore();
@@ -59,18 +61,23 @@ export function holdNextReply(
               error: { name: error.name, message: error.message, code: "outcome-unknown" },
             }
           : reply;
-        Reflect.apply(emit, this, [event, outcome]);
+        Reflect.apply(emit, this, [event, outcome, ...args]);
       };
       ready.resolve();
       return true;
     }
-    return Reflect.apply(emit, this, [event, reply]);
+    return Reflect.apply(emit, this, [event, reply, ...args]);
   });
   const release = (error?: Error) => {
     const send = deliver;
     deliver = undefined;
     heldReplies.delete(release);
-    send?.(error);
+    try {
+      send?.(error);
+    } finally {
+      postMessage.mockClear();
+      emit.mockClear();
+    }
   };
   heldReplies.add(release);
   return { ready: ready.promise, release };
