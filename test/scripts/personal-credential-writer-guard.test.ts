@@ -323,13 +323,17 @@ it("counts the receipt deletion loop and lifecycle deletion as two reviewed sink
   ).toEqual([expect.stringContaining("unreviewed github_publication_session_lifecycles writer")]);
 });
 
-it("keeps session membership writes with the worker and canonical entry owner", () => {
+it("keeps session membership writes with the worker, native incognito, and canonical entry owners", () => {
   const members = "src/config/sessions/session-sharing-store.native.ts";
   const sources = {
     [members]: `export function addSessionMember() { db.insertInto('session_members'); }`,
     "src/config/sessions/session-sharing-store.worker.ts": `
       import { addSessionMember } from './session-sharing-store.native.js';
       function bindSqliteWorkerBackend() { return { execute() { addSessionMember(); } }; }
+    `,
+    "src/config/sessions/session-sharing-store.async.ts": `
+      import { addSessionMember } from './session-sharing-store.native.js';
+      function addSessionMemberInWorker() { return runSessionCollaborationWrite(() => addSessionMember()); }
     `,
     "src/config/sessions/session-accessor.sqlite-node-artifacts.ts": `
       export function clearSessionCollaborationForKey() {
