@@ -566,8 +566,9 @@ export function buildCliRunResult(params: {
   const stopReason = terminalInterruption?.reason ?? (yielded ? "end_turn" : "completed");
 
   try {
-    if (!terminalInterruption) {
-      runParams.onSuccessfulAuthBinding?.({
+    if (!terminalInterruption && runParams.onSuccessfulAuthBinding) {
+      runParams.assertCurrent?.();
+      runParams.onSuccessfulAuthBinding({
         ...(context.effectiveAuthProfileId
           ? { authProfileId: context.effectiveAuthProfileId }
           : {}),

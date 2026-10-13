@@ -953,6 +953,7 @@ describe("runCliAgent reliability", () => {
         runId: "run-committed-final",
       });
       let committed = false;
+      const notifyAuthBinding = vi.fn();
       const error =
         failure === "writer claim"
           ? new SessionTranscriptWriterClaimReboundError()
@@ -969,6 +970,7 @@ describe("runCliAgent reliability", () => {
         ...sessionParams(sessionTarget, dir),
         storePath,
         persistAssistantTranscript: true,
+        onSuccessfulAuthBinding: notifyAuthBinding,
         assertCurrent: () => {
           if (committed && failure !== "cleanup") {
             throw error;
@@ -986,6 +988,7 @@ describe("runCliAgent reliability", () => {
         expect(committed).toBe(true);
         expect(result.payloads).toEqual([{ text: "completed task" }]);
         expect(result.meta.error).toBeUndefined();
+        expect(notifyAuthBinding).toHaveBeenCalledTimes(failure === "cleanup" ? 1 : 0);
         expect(result.meta.executionTrace?.attempts).toEqual([
           expect.objectContaining({ result: "success" }),
         ]);
