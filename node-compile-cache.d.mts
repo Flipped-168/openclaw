@@ -9,5 +9,6 @@ export function resolveOpenClawCompileCacheRespawnEnv(params: {
 export function resolveOpenClawCompileCacheDirectory(params: {
   installRoot: string;
   env?: NodeJS.ProcessEnv;
+  prewarm?: boolean;
 }): string | undefined;
 export function resolveSafeNodeCompileCacheDirectory(directory: string): string | undefined;

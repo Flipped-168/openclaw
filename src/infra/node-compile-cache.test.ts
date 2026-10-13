@@ -21,6 +21,9 @@ it("prewarms the release graph, respecting the disabled cache policy", async () 
     new URL("../../node-compile-cache.mjs", import.meta.url),
     path.join(root, "node-compile-cache.mjs"),
   );
+  for (const file of ["gateway-run-argv.mjs", "cli-root-options.mjs"]) {
+    await fs.copyFile(new URL(`../../${file}`, import.meta.url), path.join(root, file));
+  }
   await fs.mkdir(path.join(root, "dist"));
   await fs.writeFile(path.join(root, "package.json"), '{"type":"module","version":"2026.10.1"}');
   await fs.writeFile(path.join(root, "dist", "build-info.json"), '{"buildId":"prewarm-release"}');

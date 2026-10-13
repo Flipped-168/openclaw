@@ -1879,7 +1879,11 @@ console.log(JSON.stringify({ parent: process.pid, bun: process.versions.bun, mar
          assert.deepEqual({ ...process.env }, before);
          process.stdout.write("cache-base:verified");`,
     );
-    const args = [path.join(fixtureRoot, mode === "direct" ? "dist/entry.js" : "openclaw.mjs")];
+    const args = [
+      path.join(fixtureRoot, mode === "direct" ? "dist/entry.js" : "openclaw.mjs"),
+      "gateway",
+      "run",
+    ];
     if (mode === "foreign") {
       const preload = path.join(fixtureRoot, "foreign.mjs");
       await fs.writeFile(

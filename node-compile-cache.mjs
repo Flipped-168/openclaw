@@ -5,6 +5,7 @@ import * as module from "node:module";
 import os from "node:os";
 import path from "node:path";
 import { isMainThread, Worker, workerData } from "node:worker_threads";
+import { isForegroundGatewayRunArgv } from "./gateway-run-argv.mjs";
 
 const MAX_BYTES = 512 * 1024 * 1024;
 const MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
@@ -76,8 +77,21 @@ export function enableOpenClawCompileCache({ directory, env = process.env }) {
   }
 }
 
-export function resolveOpenClawCompileCacheDirectory({ installRoot, env = process.env }) {
+export function resolveOpenClawCompileCacheDirectory({
+  installRoot,
+  env = process.env,
+  prewarm = false,
+}) {
   if (env.NODE_DISABLE_COMPILE_CACHE !== undefined) {
+    return undefined;
+  }
+  // Cold cache persistence runs after output on Node and Bun. Pay that cost only
+  // for a long-lived Gateway, explicit prewarming, or a caller-requested cache.
+  if (
+    !prewarm &&
+    env.NODE_COMPILE_CACHE === undefined &&
+    !isForegroundGatewayRunArgv(process.argv)
+  ) {
     return undefined;
   }
   const packagePath = path.join(installRoot, "package.json");
