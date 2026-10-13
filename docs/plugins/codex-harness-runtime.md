@@ -31,6 +31,9 @@ These request snapshots stay in process memory after parent settlement, within
 a shared 32 MiB least-recently-used budget. An evicted or oversized snapshot,
 or a WebSocket continuation that references prior server-side context, falls
 back to native thread reconstruction without guaranteed prompt-cache reuse.
+When declarations remain in the snapshot budget, native reconstruction retains
+the parent's exact tool schemas, including the code-mode catalog. Tool choice
+remains `none` and native hosted search stays disabled.
 The separately retained OpenClaw instruction text is limited to 256 KiB per
 thread and 256 threads per route. Thread retirement or client shutdown removes
 the retained context. None of these snapshots extends the parent's authority:

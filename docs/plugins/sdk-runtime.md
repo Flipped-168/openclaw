@@ -96,8 +96,12 @@ inference routes, it replays the parent's last prepared instructions, tool schem
 and input prefix, including after parent completion, with tool choice set to `none`.
 Snapshots share a 32 MiB in-memory LRU budget; evicted or oversized snapshots
 and WebSocket continuation requests fall back to native thread reconstruction
-without guaranteed cache reuse. The fork has
-its own thread, session, and current model authority. Start a normal parent turn
+without guaranteed cache reuse. While declarations remain in the snapshot budget,
+tool schemas stay parent-identical even on that native reconstruction path.
+Denied forks always set tool choice to `none` on managed inference requests,
+while native hosted search remains disabled. The fork has its own thread,
+session, and current model authority.
+Start a normal parent turn
 in the current runtime before requesting a fork. The native hook relay must be
 enabled and available; otherwise the request fails closed.
 The built-in `openclaw` runtime replays the parent's recorded provider request
@@ -111,7 +115,8 @@ the tool and system caches. Other APIs without a supported hosted-tool prohibiti
 are rejected when the recorded request contains tools.
 Snapshots stay in bounded process memory until expiry or session cleanup.
 Read-only forks do not acquire workspace placement authority, so a parent's
-pending placement publication does not block them. Session reset or deletion
+pending placement publication does not block them. Normal parent settlement and
+usage updates preserve the fork's read authority. Session reset or deletion
 revokes even an in-flight fork before its answer can be returned.
 After a restart or without a prepared parent turn, the request fails closed:
 "Cache-parity session fork requires a parent turn prepared by this OpenClaw

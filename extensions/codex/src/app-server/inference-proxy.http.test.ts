@@ -200,8 +200,12 @@ describe("inference HTTP transport ownership", () => {
       tools: [],
       input: [{ role: "developer", content: "rebuilt environment" }, question],
     });
-    const parentWire = JSON.parse(received[0].toString());
-    const forkWire = JSON.parse(received[1].toString());
+    const [parentBytes, forkBytes] = received;
+    if (!parentBytes || !forkBytes) {
+      throw new Error("Expected both parent and fork wire requests");
+    }
+    const parentWire = JSON.parse(parentBytes.toString());
+    const forkWire = JSON.parse(forkBytes.toString());
     expect(forkWire.instructions).toBe(parentWire.instructions);
     expect(JSON.stringify(forkWire.tools)).toBe(JSON.stringify(parentWire.tools));
     expect(JSON.stringify(forkWire.input.slice(0, -1))).toBe(JSON.stringify(parentWire.input));
@@ -294,6 +298,7 @@ describe("inference HTTP transport ownership", () => {
         expect(JSON.parse((await received.promise).toString())).toEqual({
           ...body,
           instructions: "native instructions\n\nprivate parent prefix",
+          tool_choice: "none",
         });
         await upload.closed;
         await owner.unregister();

@@ -205,6 +205,47 @@ describe("parent-local inference context", () => {
     context.close();
   });
 
+  it("preserves parent tool declarations but uses native history after a WebSocket continuation", () => {
+    const { context, register } = fixture();
+    const parent = register("private");
+    const declarations = {
+      type: "additional_tools",
+      role: "developer",
+      tools: [{ type: "custom", name: "exec", description: "exact catalog including web.run" }],
+    };
+    context.prepare({
+      ...request("root", parent.generation),
+      input: [declarations, { role: "user", content: "parent task" }],
+    });
+    context.prepare({
+      ...request("root", parent.generation),
+      previous_response_id: "parent-response",
+      input: [{ type: "function_call_output", call_id: "call", output: "one" }],
+    });
+    parent.release();
+    const fork = context.fork({
+      sourceThreadId: "root",
+      threadId: "fork",
+      signal: new AbortController().signal,
+      assertCurrent: () => {},
+    });
+    const history = [
+      { role: "user", content: "native reconstructed parent task" },
+      { role: "assistant", content: "native reconstructed answer" },
+      { role: "user", content: "side question" },
+    ];
+    try {
+      const prepared = context.prepare({
+        ...request("fork", fork.generation),
+        input: [{ ...declarations, tools: [] }, ...history],
+      }).body;
+      expect(prepared.input).toEqual([declarations, ...history]);
+      expect(prepared.tool_choice).toBe("none");
+      expect(prepared).not.toHaveProperty("previous_response_id");
+    } finally {
+      context.close();
+    }
+  });
   it.each([
     { input: [] },
     { input: [{ type: "function_call_output", call_id: "call", output: "result" }] },
@@ -239,6 +280,7 @@ describe("parent-local inference context", () => {
         expect(context.prepare(rebuilt).body).toEqual({
           ...rebuilt,
           instructions: "rebuilt base\n\nprivate",
+          tool_choice: "none",
         });
       } finally {
         context.close();
@@ -248,9 +290,16 @@ describe("parent-local inference context", () => {
 
   it("falls back to native reconstruction when the global wire-prefix LRU evicts a session", () => {
     const contexts = Array.from({ length: 3 }, () => createCodexInferenceContext(() => {}));
+    const contextAt = (index: number) => {
+      const context = contexts[index];
+      if (!context) {
+        throw new Error(`Missing inference context ${index}`);
+      }
+      return context;
+    };
     const payload = "x".repeat(11 * 1024 * 1024);
     const prepareParent = (index: number) => {
-      const context = contexts[index];
+      const context = contextAt(index);
       const parent = context.register({
         threadId: "parent",
         text: "private",
@@ -264,7 +313,7 @@ describe("parent-local inference context", () => {
       parent.release();
     };
     const fork = (index: number) =>
-      contexts[index].fork({
+      contextAt(index).fork({
         sourceThreadId: "parent",
         threadId: "fork",
         signal: new AbortController().signal,
@@ -282,7 +331,7 @@ describe("parent-local inference context", () => {
           instructions: "rebuilt",
           input: [{ role: "user", content: "side question" }],
         };
-        const prepared = contexts[index].prepare(rebuilt).body;
+        const prepared = contextAt(index).prepare(rebuilt).body;
         expect(prepared.instructions).toBe(
           index === 1 ? "rebuilt\n\nprivate" : "native base\n\nprivate",
         );

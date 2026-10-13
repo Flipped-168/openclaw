@@ -1,6 +1,7 @@
 import "./btw.mocks.test-support.js";
 import { describe, expect, it, vi } from "vitest";
 import type { ImageContent } from "../llm/types.js";
+import { createAssistantMessageEventStream } from "../llm/utils/event-stream.js";
 import type { PreparedAgentRunAdmission } from "./admitted-run-context.js";
 import {
   DEFAULT_SESSION_KEY,
@@ -19,7 +20,6 @@ import {
   setupBtwTestHooks,
   prepareProviderRuntimeAuthMock,
   registerProviderStreamForModelMock,
-  makeAsyncEvents,
   createDoneEvent,
   resolveModelAsyncMock,
   resolveModelWithRegistryMock,
@@ -93,7 +93,10 @@ describe("side-question provider boundaries", () => {
     const payload = { input: [], tools: [{ type: "web_search" }] };
     const stream: StreamFn = async (model, _context, options) => {
       await options?.onPayload?.(payload, model);
-      return makeAsyncEvents([createDoneEvent("Search answer.")]);
+      const output = createAssistantMessageEventStream();
+      output.push(createDoneEvent("Search answer."));
+      output.end();
+      return output;
     };
     registerProviderStreamForModelMock.mockReturnValue(stream);
 

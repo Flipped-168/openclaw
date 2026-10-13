@@ -11,6 +11,7 @@ import {
 import * as commandQueue from "../process/command-queue.js";
 import { resetCommandQueueStateForTest } from "../process/command-queue.test-support.js";
 import { CommandLane } from "../process/lanes.js";
+import { sessionChanges } from "../sessions/session-row-changes.js";
 import { ensureProfileForEmail } from "../state/user-profiles.js";
 import { withOpenClawTestState } from "../test-utils/openclaw-test-state.js";
 import {
@@ -25,6 +26,7 @@ import type {
   GatewayRequestOptions,
 } from "./server-methods/types.js";
 import { createGatewaySubagentRuntime } from "./server-plugin-subagent-runtime.js";
+import { requireSessionRowProjection } from "./session-row-projection-access.js";
 
 const sideQuestion = vi.hoisted(() => vi.fn<typeof runBtwSideQuestion>());
 // mock-isolation: the Gateway admission is real; the provider runtime is replaced at its boundary.
@@ -140,6 +142,30 @@ describe("plugin session forks", () => {
     });
   });
 
+  it("keeps fork admission current while parent projection facts are rematerializing", async () => {
+    await withSession(async (client) => {
+      const projection = requireSessionRowProjection(context);
+      sideQuestion.mockImplementationOnce(async (params) => {
+        params.assertCurrent?.();
+        sessionChanges.emit({
+          agentId: "research",
+          sessionKey,
+          scope: "session-entry",
+          factsInvalidated: "category",
+        });
+        expect(projection.needsMaterialization).toBe(true);
+        expect(projection.describe({ agentId: "research", key: sessionKey })).toBeUndefined();
+        params.assertCurrent?.();
+        return { text: "Reviewed the settled parent." };
+      });
+      try {
+        await expect(fork(client)).resolves.toEqual({ text: "Reviewed the settled parent." });
+      } finally {
+        await projection.ensureMaterialized();
+      }
+    });
+  });
+
   it("rejects another operator's session even when the agent is allowed", async () => {
     await withSession(async () => {
       const stranger = ensureProfileForEmail("fork-stranger@example.test");
@@ -150,60 +176,68 @@ describe("plugin session forks", () => {
     });
   });
 
-  it.each(["Gateway binding", "conversation access", "session identity", "session visibility"])(
-    "revalidates %s after side-question preparation before inference",
-    async (authority) => {
-      await withSession(async (client) => {
-        let caller = client;
-        if (authority === "session visibility") {
-          const role = config.gateway?.roles?.definitions?.limited;
-          if (!role) {
-            throw new Error("Missing fixture role");
-          }
-          role.sessions = { others: "view" };
-          caller = identifiedClient(ensureProfileForEmail("fork-viewer@example.test").id);
+  it.each([
+    "Gateway binding",
+    "conversation access",
+    "session identity",
+    "session lifecycle",
+    "session visibility",
+  ])("revalidates %s after side-question preparation before inference", async (authority) => {
+    await withSession(async (client) => {
+      let caller = client;
+      if (authority === "session visibility") {
+        const role = config.gateway?.roles?.definitions?.limited;
+        if (!role) {
+          throw new Error("Missing fixture role");
         }
-        const preparing = createDeferred();
-        const finishPreparation = createDeferred();
-        const inference = vi.fn();
-        sideQuestion.mockImplementationOnce(async (params) => {
-          preparing.resolve();
-          await finishPreparation.promise;
-          params.assertCurrent?.();
-          inference();
-          return { text: "must not be generated" };
-        });
-        const result = fork(caller);
-        const rejected = expect(result).rejects.toThrow(
-          /current gateway instance binding|allowConversationAccess|changed|not found/u,
-        );
-        try {
-          await awaitGateBeforeSettlement(
-            preparing.promise,
-            result,
-            "Session fork settled before side-question preparation",
-          );
-          if (authority === "Gateway binding") {
-            context = requestContext(config);
-          } else if (authority === "conversation access") {
-            config.plugins = {};
-          } else if (authority === "session visibility") {
-            await upsertSessionEntryCore(
-              { agentId: "research", sessionKey },
-              { visibility: "draft" },
-            );
-          } else {
-            await upsertSessionEntryCore(
-              { agentId: "research", sessionKey },
-              { sessionId: "replacement-session", updatedAt: 2 },
-            );
-          }
-        } finally {
-          finishPreparation.resolve();
-        }
-        await rejected;
-        expect(inference).not.toHaveBeenCalled();
+        role.sessions = { others: "view" };
+        caller = identifiedClient(ensureProfileForEmail("fork-viewer@example.test").id);
+      }
+      const preparing = createDeferred();
+      const finishPreparation = createDeferred();
+      const inference = vi.fn();
+      sideQuestion.mockImplementationOnce(async (params) => {
+        preparing.resolve();
+        await finishPreparation.promise;
+        params.assertCurrent?.();
+        inference();
+        return { text: "must not be generated" };
       });
-    },
-  );
+      const result = fork(caller);
+      const rejected = expect(result).rejects.toThrow(
+        /current gateway instance binding|allowConversationAccess|changed|not found/u,
+      );
+      try {
+        await awaitGateBeforeSettlement(
+          preparing.promise,
+          result,
+          "Session fork settled before side-question preparation",
+        );
+        if (authority === "Gateway binding") {
+          context = requestContext(config);
+        } else if (authority === "conversation access") {
+          config.plugins = {};
+        } else if (authority === "session visibility") {
+          await upsertSessionEntryCore(
+            { agentId: "research", sessionKey },
+            { visibility: "draft" },
+          );
+        } else if (authority === "session lifecycle") {
+          await upsertSessionEntryCore(
+            { agentId: "research", sessionKey },
+            { lifecycleRevision: "replacement-lifecycle" },
+          );
+        } else {
+          await upsertSessionEntryCore(
+            { agentId: "research", sessionKey },
+            { sessionId: "replacement-session", updatedAt: 2 },
+          );
+        }
+      } finally {
+        finishPreparation.resolve();
+      }
+      await rejected;
+      expect(inference).not.toHaveBeenCalled();
+    });
+  });
 });

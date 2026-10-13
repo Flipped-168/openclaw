@@ -75,16 +75,25 @@ async function prepareInProcessSessionRead(
         if (requireSessionRowProjection(resolved.context) !== projection) {
           throw new Error("Session read authority changed before inference.");
         }
-        const current = projection.describe(query, selected);
+        const current = projection.capture(query);
+        const entry =
+          current &&
+          projection.readCapabilityEntry({
+            agentId: current.agentId,
+            key: current.key,
+            storePath: current.storeTarget.storePath,
+          })?.entry;
         const visible = createSessionListEntryFilter({
-          cfg: projection.state.policyConfig,
+          cfg: projection.getPolicyConfig(),
           client: resolved.client,
         });
         if (
           !current ||
-          current.entry.sessionId !== selected.entry.sessionId ||
+          !entry ||
+          !projection.isCurrent(selected) ||
+          entry.sessionId !== selected.entry.sessionId ||
           current.storeTarget.storePath !== selected.storeTarget.storePath ||
-          visible?.(current.key, current.entry) === false
+          visible?.(current.key, entry) === false
         ) {
           throw new Error(`Session "${key}" was not found.`);
         }

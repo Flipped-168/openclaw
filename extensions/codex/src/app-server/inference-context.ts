@@ -27,15 +27,26 @@ function forgetRequest(prefix: PreparedPrefix | undefined) {
 }
 
 function retainRequest(prefix: PreparedPrefix, body: JsonObject) {
+  const previous = retained.requests.get(prefix)?.body;
   forgetRequest(prefix);
-  // A continuation contains only a delta; its server-side prefix is not in this snapshot.
-  if (body.previous_response_id != null) {
-    return;
-  }
+  const continuation = body.previous_response_id != null;
   const snapshot: JsonObject = {};
-  for (const key of ["instructions", "tools", "input"]) {
-    if (key in body) {
-      snapshot[key] = body[key];
+  for (const key of ["instructions", "tools", "input", "prompt_cache_key"]) {
+    // A WS delta cannot stand in for full history. Only declarations survive it.
+    if (continuation && key === "input") {
+      continue;
+    }
+    const value = body[key] ?? (continuation ? previous?.[key] : undefined);
+    if (value !== undefined) {
+      snapshot[key] = value;
+    }
+  }
+  if (continuation) {
+    const inputTools = Array.isArray(previous?.input)
+      ? previous.input.find((item) => isJsonObject(item) && item.type === "additional_tools")
+      : previous?.inputTools;
+    if (inputTools !== undefined) {
+      snapshot.inputTools = inputTools;
     }
   }
   const bytes = Buffer.byteLength(JSON.stringify(snapshot));
@@ -53,6 +64,7 @@ type Registration = {
   generation: string;
   text: string;
   forkPrefix?: JsonObject;
+  denyToolCalls: boolean;
   controller: AbortController;
   assertCurrent: () => void;
   release: () => void;
@@ -78,6 +90,7 @@ export function createCodexInferenceContext(assertClientCurrent: () => void) {
       assertCurrent: () => void;
       retainPrefix?: boolean;
       forkPrefix?: JsonObject;
+      denyToolCalls?: boolean;
     }) {
       assertOpen();
       params.signal.throwIfAborted();
@@ -101,6 +114,7 @@ export function createCodexInferenceContext(assertClientCurrent: () => void) {
         generation: randomUUID(),
         text: params.text,
         forkPrefix: params.forkPrefix,
+        denyToolCalls: params.denyToolCalls === true,
         controller,
         assertCurrent: () => {
           assertOpen();
@@ -155,6 +169,7 @@ export function createCodexInferenceContext(assertClientCurrent: () => void) {
         text: prefix.text,
         forkPrefix: request?.body,
         retainPrefix: false,
+        denyToolCalls: true,
         signal: params.signal,
         assertCurrent: params.assertCurrent,
       });
@@ -226,10 +241,31 @@ export function createCodexInferenceContext(assertClientCurrent: () => void) {
           for (const key of ["instructions", "tools", "input"]) {
             delete preparedBody[key];
           }
-          Object.assign(preparedBody, prefix);
+          for (const key of ["instructions", "tools", "input", "prompt_cache_key"]) {
+            const value = prefix[key];
+            if (value !== undefined) {
+              preparedBody[key] = value;
+            }
+          }
           preparedBody.input = [...prefix.input, question];
-          // Keep hosted tool declarations cache-identical, but never execute them.
-          preparedBody.tool_choice = "none";
+        } else if (prefix) {
+          // Native history remains authoritative after a WS delta; restore only
+          // declarations changed by disabling hosted search in the native fork.
+          const inputTools = prefix.inputTools;
+          preparedBody = {
+            ...preparedBody,
+            ...(prefix.tools !== undefined ? { tools: prefix.tools } : {}),
+            ...(isJsonObject(inputTools) && Array.isArray(body.input)
+              ? {
+                  input: body.input.map((item) =>
+                    isJsonObject(item) && item.type === "additional_tools" ? inputTools : item,
+                  ),
+                }
+              : {}),
+          };
+        }
+        if (registration.denyToolCalls) {
+          preparedBody = { ...preparedBody, tool_choice: "none" };
         }
         const retainedPrefix = metadata.threadId ? prefixes.get(metadata.threadId) : undefined;
         if (retainedPrefix) {

@@ -148,29 +148,29 @@ describe("parent session fork", () => {
     expect(binding?.clientId).toBe(harness.client.getInstanceId());
     const route = getCodexInferenceThread(harness.client, binding?.threadId ?? "thread-1");
     const parentTurn = harness.requests.find(({ method }) => method === "turn/start")?.params;
-    if (
-      !route ||
-      !isJsonObject(parentTurn) ||
-      !isJsonObject(parentTurn.responsesapiClientMetadata)
-    ) {
+    const parentGeneration =
+      isJsonObject(parentTurn) && isJsonObject(parentTurn.responsesapiClientMetadata)
+        ? parentTurn.responsesapiClientMetadata[CODEX_INFERENCE_GENERATION_KEY]
+        : undefined;
+    if (!route || !isJsonObject(parentTurn) || typeof parentGeneration !== "string") {
       throw new Error("Expected a prepared parent inference generation");
     }
-    const parentRequest = {
+    const parentInput: JsonObject[] = [
+      { role: "developer", content: "exact parent environment\n".repeat(12000) },
+      { role: "user", content: "parent task" },
+      { role: "assistant", content: "tool round" },
+      { type: "function_call_output", call_id: "parent-call", output: "exact tool result" },
+    ];
+    const parentRequest: JsonObject = {
       instructions: "native base",
       tools: [{ type: "function", name: "read", parameters: { type: "object" } }],
-      input: [
-        { role: "developer", content: "exact parent environment\n".repeat(12000) },
-        { role: "user", content: "parent task" },
-        { role: "assistant", content: "tool round" },
-        { type: "function_call_output", call_id: "parent-call", output: "exact tool result" },
-      ],
+      input: parentInput,
       client_metadata: {
         thread_id: binding?.threadId ?? "thread-1",
         "x-codex-turn-metadata": JSON.stringify({
           thread_id: binding?.threadId ?? "thread-1",
           request_kind: "turn",
-          [CODEX_INFERENCE_GENERATION_KEY]:
-            parentTurn.responsesapiClientMetadata[CODEX_INFERENCE_GENERATION_KEY],
+          [CODEX_INFERENCE_GENERATION_KEY]: parentGeneration,
         }),
       },
     };
@@ -231,7 +231,7 @@ describe("parent session fork", () => {
       expect(inferenceAdmitted).toBe(true);
       expect(sideRequest?.instructions).toBe(expectedRequest.instructions);
       expect(sideRequest?.tools).toEqual(expectedRequest.tools);
-      expect(sideRequest?.input).toEqual([...parentRequest.input, question]);
+      expect(sideRequest?.input).toEqual([...parentInput, question]);
       expect(sideRequest?.tool_choice).toBe("none");
       expect(
         await codexNativeSubagentMonitorRuntime.captureModelSource({
