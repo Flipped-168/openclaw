@@ -1,6 +1,4 @@
-import { initialState, Task, TaskStatus } from "@lit/task";
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
-import type { ReactiveControllerHost } from "lit";
 import { readOfflineStorageScope } from "../../app/boot-record.ts";
 import type { ApplicationContext } from "../../app/context.ts";
 import { hasOperatorWriteAccess } from "../../app/operator-access.ts";
@@ -9,7 +7,10 @@ import { registerNewSessionSetupEnglish } from "../../i18n/locales/en-new-sessio
 import { isGatewayMethodAdvertised } from "../../lib/gateway-methods.ts";
 import { normalizeAgentId } from "../../lib/sessions/session-key.ts";
 import { canReadSystemInfo, readSystemInfo } from "../../lib/system-info.ts";
-import { SubscriptionsController } from "../../lit/subscriptions-controller.ts";
+import {
+  SubscriptionsController,
+  type ControllerHost,
+} from "../../lit/subscriptions-controller.ts";
 import * as catalog from "./catalog-target.ts";
 import { CLOUD_PROFILE_RETRY_DELAYS_MS } from "./cloud-profile-discovery.ts";
 import { requestPlaceCatalog } from "./cloud-target.ts";
@@ -97,20 +98,24 @@ export class DraftGatewayState {
   private catalogRetryTimer: ReturnType<typeof globalThis.setTimeout> | undefined;
   private cloudProfileRetryAttempt = 0;
   private cloudProfileRefresh: Promise<void> | null = null;
-  private cloudProfileTaskHasClient = false;
   private cloudProfileRetryTimer: ReturnType<typeof globalThis.setTimeout> | undefined;
   private readonly preferences: DraftPreferenceState;
   private identityPreferences: PaletteIdentityPreferences | undefined;
   private stopPreferences: (() => void) | undefined;
 
-  private readonly gatewayNameTask: Task<readonly unknown[], string>;
-  private readonly cloudProfileTask: Task<
-    readonly unknown[],
-    Awaited<ReturnType<typeof requestPlaceCatalog>>
-  >;
+  private gatewayNameValue = "";
+  private gatewayNameArgs: readonly unknown[] = [];
+  private gatewayNameRequest: AbortController | undefined;
+  private cloudProfileArgs: readonly unknown[] = [];
+  private cloudProfileStatus: "initial" | "pending" | "complete" | "error" = "initial";
+  private cloudProfileRequest: object | undefined;
+  private cloudProfileComplete: Promise<void> = Promise.resolve();
 
   constructor(
-    host: ReactiveControllerHost,
+    host: Pick<
+      ControllerHost,
+      "addController" | "removeController" | "requestUpdate" | "updateComplete"
+    >,
     private readonly read: () => DraftGatewaySnapshot,
     private readonly callbacks: DraftGatewayCallbacks,
   ) {
@@ -129,28 +134,10 @@ export class DraftGatewayState {
       }),
       callbacks,
     );
-    this.gatewayNameTask = new Task(host, {
-      args: () =>
-        [
-          this.read().isConnected && this.gatewayConnectedValue ? this.gatewaySource : null,
-          canReadSystemInfo(this.read().context?.gateway.snapshot) &&
-            document.visibilityState !== "hidden",
-          this.gatewayConnectionEpochValue,
-        ] as const,
-      task: async ([gateway, available, _connectionEpoch], { signal }) => {
-        if (!gateway || !available) {
-          return "";
-        }
-        try {
-          const { value: result } = await readSystemInfo(gateway, signal, { fresh: true });
-          return (
-            normalizeOptionalString(result.machineName) ??
-            normalizeOptionalString(result.hostname)?.split(".", 1)[0] ??
-            ""
-          );
-        } catch {
-          return "";
-        }
+    host.addController({
+      hostUpdate: () => {
+        this.synchronizeGatewayName();
+        this.synchronizeCloudProfiles();
       },
     });
     // Shared system reads pause in background tabs; visibility must wake this one-shot task.
@@ -161,58 +148,119 @@ export class DraftGatewayState {
         return () => source.removeEventListener("visibilitychange", notify);
       },
     );
-    this.cloudProfileTask = new Task(host, {
-      args: () =>
-        [
-          this.read().isConnected && this.gatewayConnectedValue ? this.gatewayClientValue : null,
-          this.gatewayConnectionEpochValue,
-          hasOperatorWriteAccess(this.read().context?.gateway.snapshot.hello?.auth ?? null),
-          this.read().isAdmin,
-          this.gatewayRecoveryScopeValue,
-          this.read().runtimeId,
-          this.placementPolicy(),
-        ] as const,
-      task: async ([
-        client,
-        _connectionEpoch,
-        canWrite,
-        isAdmin,
-        _recoveryScope,
-        runtimeId,
-        policy,
-      ]) => {
-        this.cloudProfileTaskHasClient = client !== null;
-        if (!client || !policy) {
-          return initialState;
+  }
+
+  private synchronizeGatewayName() {
+    const gateway =
+      this.read().isConnected && this.gatewayConnectedValue ? this.gatewaySource : null;
+    const available =
+      canReadSystemInfo(this.read().context?.gateway.snapshot) &&
+      document.visibilityState !== "hidden";
+    const args = [gateway, available, this.gatewayConnectionEpochValue];
+    if (args.every((arg, index) => Object.is(arg, this.gatewayNameArgs[index]))) {
+      return;
+    }
+    this.gatewayNameArgs = args;
+    this.gatewayNameRequest?.abort();
+    this.gatewayNameRequest = undefined;
+    this.gatewayNameValue = "";
+    if (!gateway || !available) {
+      return;
+    }
+    const request = new AbortController();
+    this.gatewayNameRequest = request;
+    void readSystemInfo(gateway, request.signal, { fresh: true })
+      .then(({ value: result }) => {
+        if (!request.signal.aborted) {
+          this.gatewayNameValue =
+            normalizeOptionalString(result.machineName) ??
+            normalizeOptionalString(result.hostname)?.split(".", 1)[0] ??
+            "";
         }
-        const required = policy.requiredProfile;
-        if (required || !canWrite) {
-          return { profiles: readDraftCloudProfiles(required ? [required] : []), environments: [] };
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        if (this.gatewayNameRequest === request) {
+          this.gatewayNameRequest = undefined;
+          this.callbacks.requestUpdate();
         }
-        const result = await requestPlaceCatalog(client, runtimeId);
-        return {
-          ...result,
-          profiles: isAdmin ? result.profiles : [],
-        };
-      },
-      onComplete: (placeCatalog) => {
+      });
+  }
+
+  private cloudProfileInput() {
+    return [
+      this.read().isConnected && this.gatewayConnectedValue ? this.gatewayClientValue : null,
+      this.gatewayConnectionEpochValue,
+      hasOperatorWriteAccess(this.read().context?.gateway.snapshot.hello?.auth ?? null),
+      this.read().isAdmin,
+      this.gatewayRecoveryScopeValue,
+      this.read().runtimeId,
+      this.placementPolicy(),
+    ] as const;
+  }
+
+  private synchronizeCloudProfiles() {
+    const args = this.cloudProfileInput();
+    if (!args.every((arg, index) => Object.is(arg, this.cloudProfileArgs[index]))) {
+      void this.readCloudProfiles(args);
+    }
+  }
+
+  private readCloudProfiles(args = this.cloudProfileInput()): Promise<void> {
+    this.cloudProfileArgs = args;
+    const [client, _connectionEpoch, canWrite, isAdmin, _recoveryScope, runtimeId, policy] = args;
+    const request = {};
+    this.cloudProfileRequest = request;
+    this.cloudProfileStatus = client && policy ? "pending" : "initial";
+    this.callbacks.requestUpdate();
+    if (!client || !policy) {
+      return Promise.resolve();
+    }
+    const required = policy.requiredProfile;
+    const result =
+      required || !canWrite
+        ? Promise.resolve({
+            profiles: readDraftCloudProfiles(required ? [required] : []),
+            environments: [],
+          })
+        : requestPlaceCatalog(client, runtimeId).then((catalog) => ({
+            ...catalog,
+            profiles: isAdmin ? catalog.profiles : [],
+          }));
+    this.cloudProfileComplete = result
+      .then((catalog) => {
+        if (this.cloudProfileRequest !== request) {
+          return;
+        }
+        this.cloudProfileStatus = "complete";
         this.resetCloudProfileRetry();
-        this.environmentsValue = placeCatalog.environments;
-        this.applyCloudProfiles(placeCatalog.profiles);
+        this.environmentsValue = catalog.environments;
+        this.applyCloudProfiles(catalog.profiles);
         this.cloudProfilesReadyValue = true;
-      },
-      onError: () => {
-        // A failed refresh cannot invalidate this Gateway's last successful place catalog.
-        this.scheduleCloudProfileRetry();
-      },
-    });
+      })
+      .catch(() => {
+        if (this.cloudProfileRequest === request) {
+          this.cloudProfileStatus = "error";
+          // Keep this Gateway's last successful catalog while its retry is pending.
+          this.scheduleCloudProfileRetry();
+        }
+      })
+      .finally(() => {
+        if (this.cloudProfileRequest === request) {
+          this.callbacks.requestUpdate();
+        }
+      });
+    return this.cloudProfileComplete;
+  }
+
+  private retireCloudProfiles() {
+    this.cloudProfileRequest = undefined;
+    this.cloudProfileArgs = [];
+    this.cloudProfileStatus = "initial";
   }
 
   get gatewayName(): string {
-    // Recovery-scope discovery does not retire this connection's machine identity.
-    return this.gatewayNameTask.status === TaskStatus.COMPLETE
-      ? (this.gatewayNameTask.value ?? "")
-      : "";
+    return this.gatewayNameValue;
   }
 
   get cloudProfiles(): readonly DraftCloudProfile[] {
@@ -243,12 +291,12 @@ export class DraftGatewayState {
   }
 
   get cloudProfilesPending(): boolean {
-    return this.cloudProfileTask.status === TaskStatus.PENDING;
+    return this.cloudProfileStatus === "pending";
   }
 
   get deviceCatalogDisabledReason(): string | undefined {
     // Cached cloud profiles survive refresh failures; live node capacity does not.
-    return this.cloudProfilesReadyValue && this.cloudProfileTask.status === TaskStatus.COMPLETE
+    return this.cloudProfilesReadyValue && this.cloudProfileStatus === "complete"
       ? undefined
       : t("newSession.placementNotReady");
   }
@@ -297,11 +345,10 @@ export class DraftGatewayState {
   }
 
   refreshCloudProfiles(): Promise<void> {
-    // A retirement run returns Lit's initialState, which does not settle taskComplete.
-    if (this.cloudProfileTask.status === TaskStatus.PENDING && this.cloudProfileTaskHasClient) {
+    if (this.cloudProfileStatus === "pending") {
       const queued =
         this.cloudProfileRefresh ??
-        this.cloudProfileTask.taskComplete
+        this.cloudProfileComplete
           .catch(() => undefined)
           .then(() => {
             if (this.cloudProfileRefresh === queued) {
@@ -315,7 +362,7 @@ export class DraftGatewayState {
     }
     globalThis.clearTimeout(this.cloudProfileRetryTimer);
     this.cloudProfileRetryTimer = undefined;
-    return this.cloudProfileTask.run();
+    return this.readCloudProfiles();
   }
 
   /** A missing required worker is a policy fact, so Retry rereads the roster that owns it. */
@@ -423,8 +470,8 @@ export class DraftGatewayState {
 
   invalidateDiscovery(resetHostSelection: boolean, submissionOutcome: SubmissionOutcomeReason) {
     this.cloudProfileRefresh = null;
-    // Retire pending results synchronously; Lit may not run hostUpdate before they settle.
-    void this.cloudProfileTask.run([null, -1, false, false, ""]);
+    // Retire pending results synchronously before the next render can observe them.
+    this.retireCloudProfiles();
     this.cloudProfilesValue = [];
     this.cloudProfilesReadyValue = false;
     if (resetHostSelection) {
@@ -612,8 +659,11 @@ export class DraftGatewayState {
     this.catalogRetryAttempt = 0;
     globalThis.clearTimeout(this.catalogRetryTimer);
     this.catalogRetryTimer = undefined;
-    void this.gatewayNameTask.run([null, false, -1]);
-    void this.cloudProfileTask.run([null, -1, false, false, ""]);
+    this.gatewayNameRequest?.abort();
+    this.gatewayNameRequest = undefined;
+    this.gatewayNameArgs = [];
+    this.gatewayNameValue = "";
+    this.retireCloudProfiles();
     this.resetCloudProfileRetry();
   }
 
@@ -658,7 +708,7 @@ export class DraftGatewayState {
     this.cloudProfileRetryTimer = globalThis.setTimeout(() => {
       this.cloudProfileRetryTimer = undefined;
       if (this.gatewayConnectedValue) {
-        void this.cloudProfileTask.run();
+        void this.readCloudProfiles();
       }
     }, delayMs);
   }

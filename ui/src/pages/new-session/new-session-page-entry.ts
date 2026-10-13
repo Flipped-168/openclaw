@@ -1,7 +1,7 @@
-import { html } from "lit";
+import { solidContent } from "../../lit/solid-content.tsx";
 import { restoredInstantThreadPage } from "./instant-thread-restore.ts";
-import "./new-session-page.tsx";
+import type { NewSessionRouteData } from "./location.ts";
+import { NewSessionRoute } from "./new-session-page.tsx";
 
-export const render = (data: unknown) =>
-  restoredInstantThreadPage(data) ??
-  html`<openclaw-new-session-page .data=${data}></openclaw-new-session-page>`;
+export const render = (data: NewSessionRouteData) =>
+  restoredInstantThreadPage(data) ?? solidContent(NewSessionRoute, { data });

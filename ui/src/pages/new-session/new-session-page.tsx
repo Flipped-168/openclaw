@@ -35,6 +35,10 @@ import { AgentSelect, NewSessionPlaceControls } from "./target-controls-view.tsx
 
 registerNewSessionSetupEnglish();
 
+export function NewSessionRoute(props: { data: NewSessionRouteData }) {
+  return <openclaw-new-session-page prop:data={props.data} />;
+}
+
 const pageOwners = new WeakMap<PageHost, NewSessionPageOwner>();
 
 function DraftBlock(props: { page: () => NewSessionPageOwner; revision: () => object }) {
@@ -349,6 +353,9 @@ defineSolidBridge<
 declare module "@solidjs/web" {
   namespace JSX {
     interface IntrinsicElements {
+      "openclaw-new-session-page": HTMLAttributes<PageHost> & {
+        "prop:data"?: NewSessionRouteData;
+      };
       "openclaw-chat-detail-panel": HTMLAttributes<
         HTMLElementTagNameMap["openclaw-chat-detail-panel"]
       > & {
