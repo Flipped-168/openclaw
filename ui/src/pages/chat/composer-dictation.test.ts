@@ -17,7 +17,9 @@ type MockProcessor = {
 
 const listeners = new Set<GatewayListener>();
 const processors: MockProcessor[] = [];
-let request: ReturnType<typeof vi.fn>;
+let request: ReturnType<
+  typeof vi.fn<(method: string, params: Record<string, unknown>) => Promise<unknown>>
+>;
 let getUserMedia: ReturnType<typeof vi.fn>;
 
 class MockAudioContext {
@@ -310,7 +312,7 @@ describe("ComposerDictationController", () => {
     const closeStarted = createDeferred();
     const release = createDeferred();
     const implementation = request.getMockImplementation();
-    request.mockImplementation(async (method: string, params: { discard?: boolean }) => {
+    request.mockImplementation(async (method, params) => {
       if (method === "talk.session.close" && !params.discard) {
         closeStarted.resolve();
         await release.promise;
