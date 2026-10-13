@@ -228,7 +228,13 @@ function groupChatItems(
     }
 
     const { item, normalized } = prepared;
-    const role = normalizeRoleForGrouping(normalized.role);
+    const sourceRole = asRecord(item.message)?.role;
+    const hasAssistantText =
+      sourceRole === "assistant" &&
+      Boolean(resolveMessageDisplayMarkdown(item.message, normalized).trim());
+    // A tool call may share its source row with narration. The narration owns
+    // an assistant block, not the adjacent tools' collapsed disclosure.
+    const role = hasAssistantText ? "assistant" : normalizeRoleForGrouping(normalized.role);
     // Classify after content projection and keep the fact with its group; later
     // presentation passes reuse it; replacing a message refreshes its facts.
     const visibleContent = resolveMessageVisibleContent(item.message, normalized);
