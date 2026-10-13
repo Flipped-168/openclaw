@@ -72,6 +72,7 @@ type StreamMessageOptions = Pick<
   | "githubRepo"
   | "githubRepositories"
   | "onOpenWorkspaceFile"
+  | "onPermissionRetry"
 >;
 
 export type StreamGroupOptions = StreamMessageOptions & {
