@@ -25,7 +25,7 @@ import { sqliteWorkerOwnerProbe as probe } from "../infra/sqlite-worker-owner-pr
 import { createDeferredCore } from "../shared/deferred.js";
 import { preparePersonalGitHubSessionReceiptDeletion } from "../state/github-personal-publication-lifecycle.js";
 import { githubPublicationReceipts } from "../state/github-publication-receipts.js";
-import { readGitHubPublicationSessionLifecycle } from "../state/github-publication-session-lifecycles.js";
+import { readGitHubPublicationSessionLifecycle } from "../state/github-publication-session-lifecycles.worker.js";
 import { openOpenClawAgentDatabase } from "../state/openclaw-agent-db.js";
 import { openOpenClawStateDatabase } from "../state/openclaw-state-db.js";
 import * as stateWorker from "../state/openclaw-state-worker-store.js";
@@ -124,7 +124,7 @@ describe("personal publication session lifecycle", () => {
       published,
       receipt,
       binding,
-      lifecycle: readGitHubPublicationSessionLifecycle(binding),
+      lifecycle: readGitHubPublicationSessionLifecycle(binding, openOpenClawStateDatabase().db),
     };
   }
 
@@ -205,7 +205,9 @@ describe("personal publication session lifecycle", () => {
           requestId: published.requestId,
         }),
       ).toEqual(receipt);
-      expect(readGitHubPublicationSessionLifecycle(binding)).toEqual(lifecycle);
+      expect(
+        readGitHubPublicationSessionLifecycle(binding, openOpenClawStateDatabase().db),
+      ).toEqual(lifecycle);
     } finally {
       release.resolve();
       await deletion;
@@ -292,7 +294,9 @@ describe("personal publication session lifecycle", () => {
           requestId: published.requestId,
         }),
       ).toEqual(receipt);
-      expect(readGitHubPublicationSessionLifecycle(binding)).toEqual(lifecycle);
+      expect(
+        readGitHubPublicationSessionLifecycle(binding, openOpenClawStateDatabase().db),
+      ).toEqual(lifecycle);
       expect(nativeAbsent).toBe(true);
       expect(outcome.error).toMatchObject({
         message: expect.stringContaining(
@@ -346,10 +350,13 @@ describe("personal publication session lifecycle", () => {
         session_id: original.sessionId,
       });
       expect(
-        readGitHubPublicationSessionLifecycle({
-          publicationKind: "personal",
-          requestId: late.requestId,
-        })?.lifecycle_revision,
+        readGitHubPublicationSessionLifecycle(
+          {
+            publicationKind: "personal",
+            requestId: late.requestId,
+          },
+          openOpenClawStateDatabase().db,
+        )?.lifecycle_revision,
       ).toBe(original.lifecycleRevision);
       lateReceipt.resolve(late.requestId);
     });
@@ -388,7 +395,10 @@ describe("personal publication session lifecycle", () => {
         { requestId: published.requestId },
       );
       const binding = { publicationKind: "personal" as const, requestId: published.requestId };
-      const lifecycle = readGitHubPublicationSessionLifecycle(binding);
+      const lifecycle = readGitHubPublicationSessionLifecycle(
+        binding,
+        openOpenClawStateDatabase().db,
+      );
       expect(receipt).toMatchObject({ status: "published", session_id: successor.sessionId });
       expect(lifecycle?.lifecycle_revision).toBe(successor.lifecycleRevision);
       release.resolve();
@@ -399,24 +409,31 @@ describe("personal publication session lifecycle", () => {
           requestId: published.requestId,
         }),
       ).toEqual(receipt);
-      expect(readGitHubPublicationSessionLifecycle(binding)).toEqual(lifecycle);
+      expect(
+        readGitHubPublicationSessionLifecycle(binding, openOpenClawStateDatabase().db),
+      ).toEqual(lifecycle);
       expect(session.read()).toMatchObject(successor);
       expect(
         readPersonalGitHubPublicationInDatabase(openOpenClawStateDatabase().db, owner, {
           requestId: historical.requestId,
         }),
       ).toBeUndefined();
-      expect(readGitHubPublicationSessionLifecycle(oldBinding)).toBeUndefined();
+      expect(
+        readGitHubPublicationSessionLifecycle(oldBinding, openOpenClawStateDatabase().db),
+      ).toBeUndefined();
       expect(
         readPersonalGitHubPublicationInDatabase(openOpenClawStateDatabase().db, owner, {
           requestId: lateRequestId,
         }),
       ).toBeUndefined();
       expect(
-        readGitHubPublicationSessionLifecycle({
-          publicationKind: "personal",
-          requestId: lateRequestId,
-        }),
+        readGitHubPublicationSessionLifecycle(
+          {
+            publicationKind: "personal",
+            requestId: lateRequestId,
+          },
+          openOpenClawStateDatabase().db,
+        ),
       ).toBeUndefined();
     } finally {
       release.resolve();
@@ -479,7 +496,9 @@ describe("personal publication session lifecycle", () => {
         requestId: result.requestId,
       }),
     ).toEqual(receipt);
-    expect(readGitHubPublicationSessionLifecycle(binding)).toEqual(originalLifecycle);
+    expect(readGitHubPublicationSessionLifecycle(binding, openOpenClawStateDatabase().db)).toEqual(
+      originalLifecycle,
+    );
     const lostReply = probe.command(stateWorker, async (command, options, scope) => {
       const outcome = await scope.execute(command, options);
       if (command.type === "githubPublication.deleteSessionReceipts") {
@@ -501,7 +520,9 @@ describe("personal publication session lifecycle", () => {
         requestId: result.requestId,
       }),
     ).toBeUndefined();
-    expect(readGitHubPublicationSessionLifecycle(binding)).toBeUndefined();
+    expect(
+      readGitHubPublicationSessionLifecycle(binding, openOpenClawStateDatabase().db),
+    ).toBeUndefined();
     expect(installed.get(JSON.stringify(["personal", result.requestId]))).toEqual({
       kind: "absent",
     });

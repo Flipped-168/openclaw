@@ -1061,6 +1061,5 @@ shared-state worker before applying the existing provider selection rules.
 
 The synchronous `runtime.webSearch.listProviders({ config })` keeps its return
 shape for installed plugins and emits one bounded `DEP_PLUGIN_SDK` warning per
-plugin and capability family. It is scheduled for removal in the next Plugin SDK
-major. Native synchronous discovery remains for offline CLI/Doctor preparation
+plugin and capability family. It is scheduled for removal in a later stable release after deprecation. Native synchronous discovery remains for offline CLI/Doctor preparation
 and this compatibility method; Gateway web-search preparation uses the async owner.

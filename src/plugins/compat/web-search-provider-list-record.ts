@@ -7,7 +7,6 @@ export const WEB_SEARCH_PROVIDER_LIST_COMPAT_RECORD = {
   introduced: "2026-10-11",
   deprecated: "2026-10-11",
   warningStarts: "2026-10-11",
-  removalGate: "next-plugin-sdk-major",
   replacement:
     "Await runtime.webSearch.listProvidersAsync(params). The synchronous listProviders(params) retains its return shape until a later stable release.",
   docsPath: "/plugins/sdk-migration/compatibility-policy#web-search-provider-lists",

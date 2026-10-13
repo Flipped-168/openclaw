@@ -7,7 +7,6 @@ export const CRON_STORE_PATH_COMPAT_RECORD = {
   introduced: "2026-10-11",
   deprecated: "2026-10-11",
   warningStarts: "2026-10-11",
-  removalGate: "next-plugin-sdk-major",
   replacement:
     "Await resolveCronStorePathAsync(storePath) from openclaw/plugin-sdk/cron-store-runtime. The synchronous resolveCronStorePath(storePath) retains its existing return value until a later stable release.",
   docsPath: "/plugins/sdk-migration/compatibility-policy#cron-store-path-resolution",
