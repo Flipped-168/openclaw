@@ -22,6 +22,15 @@ const authRelocation = "src/infra/state-migrations.shared-auth-store.ts";
 const machineState = "src/state/config-machine-state-write.ts";
 const credentialAuthority = "src/state/user-model-account-authority.ts";
 const credentialCustody = "src/agents/auth-profiles/credential-write-custody.ts";
+const authSqlite = "src/agents/auth-profiles/sqlite.ts";
+const authStore = "src/agents/auth-profiles/store.ts";
+const authRuntime = "src/agents/auth-profiles/store-runtime.ts";
+const authUpdate = "src/agents/auth-profiles/store-update.ts";
+const authKernel = "src/agents/auth-profiles/store-update-kernel.ts";
+const authProfiles = "src/agents/auth-profiles/profiles.ts";
+const authStorage = "src/agents/sessions/auth-storage.ts";
+const catalogWorker = "src/agents/prepared-model-catalog.worker.ts";
+const factory = (name: string) => key(authStore, `createAuthProfileStoreRuntime/${name}`);
 const guardedTables = new Set([
   "secret_store_entries",
   "auth_profile_store",
@@ -87,18 +96,358 @@ const publicationWriters = new Map<string, readonly string[]>([
   ]),
 ]);
 
+const recommendationCallbacks = new Map(
+  (
+    [
+      ["writeOnboardingRecommendationsOffer", "onboardingRecommendations.writeOffer"],
+      ["acknowledgeOnboardingRecommendations", "onboardingRecommendations.acknowledge"],
+      ["updatePendingOnboardingRecommendations", "onboardingRecommendations.updatePending"],
+      ["clearPendingOnboardingRecommendations", "onboardingRecommendations.clearPending"],
+    ] as const
+  ).map(([name, operationName]) => [
+    key("src/state/onboarding-recommendations.kernel.ts", name),
+    key("src/state/onboarding-recommendations.kernel.ts", operationName),
+  ]),
+);
+
+// Native SDK compatibility has exact exported roots; workers must enter a host publication route.
+const authCredentialCallers = new Map<string, readonly string[]>([
+  [
+    key(authStorage, "AuthStorage"),
+    ["forAgent", "forAgentAsync", "fromStorage", "inMemory"].map((name) =>
+      key(authStorage, `AuthStorage/${name}`),
+    ),
+  ],
+  [key(authStorage, "AuthStorage/forAgent"), [key(authStorage, "AuthStorage/create")]],
+  [key(authStorage, "AuthStorage/create"), []],
+  [
+    key(authUpdate, "runPreparedAuthProfileStoreUpdate"),
+    [key(authUpdate, "runAuthProfileStoreUpdate")],
+  ],
+  [
+    key(authUpdate, "runAuthProfileStoreUpdate"),
+    [
+      key(authUpdate, "createAuthProfileStoreUpdater/updateAuthProfileStoreWithLock"),
+      key("src/agents/auth-profiles/upsert-with-lock.ts", "persistAuthProfileBatch"),
+      key("src/agents/auth-profiles/candidate-stores.ts", "runCandidateAuthProfileUpdate"),
+      key("src/agents/sessions/auth-storage.ts", "SqliteAuthStorageBackend/updateAsync"),
+      key(
+        "src/system-agent/setup-inference-credential-access.ts",
+        "activateSavedSetupCredential/replaceCredential",
+      ),
+    ],
+  ],
+  [
+    key(credentialCustody, "withAuthProfileCredentialOwner"),
+    [
+      key(credentialCustody, "withAuthProfileCredentialWriteCustody"),
+      key(authSqlite, "runAuthProfileWriteTransaction"),
+    ],
+  ],
+  [
+    key(authCells, "writeAuthProfileJsonCell"),
+    [
+      key(authSqlite, "mutateAuthProfileCell/write"),
+      key(authKernel, "updateAuthProfileStoreInDatabase"),
+      key("src/agents/auth-profiles/inline-usage-kernel.ts", "recordInlineAuthFailureInDatabase"),
+      key("src/agents/auth-profiles/usage-kernel.ts", "recordAuthProfileUsageInDatabase"),
+    ],
+  ],
+  [
+    key(authCells, "deleteAuthProfileJsonCell"),
+    [
+      key(authSqlite, "mutateAuthProfileCell/write"),
+      key(authKernel, "updateAuthProfileStoreInDatabase"),
+    ],
+  ],
+  [
+    key(authSqlite, "mutateAuthProfileCell"),
+    [
+      "writePersistedAuthProfileStoreRaw",
+      "deletePersistedAuthProfileStoreRaw",
+      "writePersistedAuthProfileStateRaw",
+    ].map((name) => key(authSqlite, name)),
+  ],
+  [
+    key(authSqlite, "writePersistedAuthProfileStoreRaw"),
+    [
+      key(authStore, "restoreAuthProfileStorePersistenceSnapshot"),
+      factory("saveAuthProfileStoreInTransaction"),
+      key(
+        "src/commands/doctor-auth-flat-profiles.ts",
+        "maybeRepairLegacyAuthProfileStores/migrate",
+      ),
+    ],
+  ],
+  [
+    key(authSqlite, "deletePersistedAuthProfileStoreRaw"),
+    [key(authStore, "restoreAuthProfileStorePersistenceSnapshot")],
+  ],
+  [
+    factory("saveAuthProfileStoreInTransaction"),
+    [
+      "maybeSyncPersistedExternalCliAuthProfiles",
+      "save",
+      "saveAuthProfileStore",
+      "saveAuthProfileStoreWithPreparedOwner",
+      "saveAuthProfileStoreIfPersistenceSnapshotMatches",
+    ].map(factory),
+  ],
+  [factory("maybeSyncPersistedExternalCliAuthProfiles"), [factory("loadAuthProfileStoreForAgent")]],
+  [factory("saveAuthProfileStoreWithPreparedOwner"), [factory("saveAuthProfileStore")]],
+  [factory("saveAuthProfileStore"), []],
+  [factory("saveAuthProfileStoreIfPersistenceSnapshotMatches"), []],
+  [
+    key(authStore, "createAuthProfileStoreRuntime"),
+    [key("src/plugins/loader-runtime-load.ts", "<module>")],
+  ],
+  [
+    key(authStore, "restoreAuthProfileStorePersistenceSnapshot"),
+    [
+      key(authProfiles, "removeAuthProfileTargetsWithLocks"),
+      key("src/secrets/apply.ts", "runSecretsApply"),
+    ],
+  ],
+  [
+    key(authRuntime, "saveAuthProfileStore"),
+    [
+      key(authProfiles, "upsertAuthProfile"),
+      key(
+        "src/commands/onboard-non-interactive/local/auth-choice.plugin-providers.ts",
+        "applyNonInteractivePluginProviderChoice",
+      ),
+    ],
+  ],
+  [
+    key(authRuntime, "saveAuthProfileStoreWithPreparedOwner"),
+    [
+      key("src/agents/auth-profiles/candidate-stores.ts", "runCandidateAuthProfileUpdate"),
+      key("src/agents/sessions/auth-storage.ts", "SqliteAuthStorageBackend/withLock"),
+      key("src/commands/doctor-auth-flat-profiles.ts", "maybeMigrateAuthProfileJsonStoresToSqlite"),
+    ],
+  ],
+  [
+    key(authRuntime, "saveAuthProfileStoreIfPersistenceSnapshotMatches"),
+    [
+      key(authProfiles, "removeAuthProfileTargetsWithLocks"),
+      key("src/secrets/apply.ts", "runSecretsApply"),
+    ],
+  ],
+  [
+    key(authProfiles, "upsertAuthProfile"),
+    [key("src/plugins/provider-auth-helpers.ts", "upsertApiKeyProfile")],
+  ],
+  [key("src/plugins/provider-auth-helpers.ts", "upsertApiKeyProfile"), []],
+  [
+    key(authKernel, "updateAuthProfileStoreInDatabase"),
+    [
+      key(authWorker, "authProfiles.update"),
+      key("src/agents/auth-profiles/inline-usage.worker.ts", "bindSqliteWorkerBackend/execute"),
+    ],
+  ],
+  [
+    key(authUpdate, "createAuthProfileStoreUpdater"),
+    [key(authStore, "createAuthProfileStoreRuntime")],
+  ],
+  [
+    key("src/agents/auth-profiles/runtime-scope.ts", "withWorkerAuthProfileWrites"),
+    [key(catalogWorker, "<module>")],
+  ],
+  [
+    key(credentialAuthority, "captureAuthProfileCredentialCommits"),
+    [key(catalogWorker, "<module>")],
+  ],
+  [
+    key(credentialAuthority, "beginAuthProfileCredentialBatch"),
+    [
+      key(
+        "src/agents/prepared-model-catalog-worker.ts",
+        "createPreparedModelCatalogWorker/request",
+      ),
+    ],
+  ],
+]);
+
+const genericCredentialCallers = new Map<string, readonly string[]>([
+  [
+    key(machineState, "upsertConfigMachineState"),
+    [
+      "writeConfigMachineState",
+      "writeConfigMachineStateInDatabase",
+      "updateConfigMachineStateInDatabase",
+    ].map((name) => key(machineState, name)),
+  ],
+  [
+    key(machineState, "writeConfigMachineStateInDatabase"),
+    [key("src/state/config-machine-state.worker.ts", "machineState.write")],
+  ],
+  [
+    key(machineState, "updateConfigMachineStateInDatabase"),
+    [key(machineState, "updateConfigMachineState")],
+  ],
+  // These keys are built by bounded prefixes in the reviewed owners, never copied from a command.
+  [
+    key(machineState, "writeConfigMachineState"),
+    [
+      key("src/state/openclaw-state-worker-runtime.ts", "executeSharedStateCommand"),
+      key("src/commands/doctor/shared/legacy-webhook-pins.ts", "recordUnwrittenWebhookCompletion"),
+    ],
+  ],
+  [
+    key(machineState, "updateConfigMachineState"),
+    [
+      key("src/tui/tui-last-session.kernel.ts", "clearRetiredTuiPointers"),
+      ...["beginLocalOnboarding", "completeLocalOnboarding"].map((name) =>
+        key("src/state/local-onboarding-state.ts", name),
+      ),
+      key("src/daemon/runtime-pin-state.ts", "commitDaemonRuntimePin"),
+      ...[
+        "writeOnboardingRecommendationsOffer",
+        "acknowledgeOnboardingRecommendations",
+        "updatePendingOnboardingRecommendations",
+        "clearPendingOnboardingRecommendations",
+      ].map((name) => key("src/state/onboarding-recommendations.kernel.ts", name)),
+    ],
+  ],
+  [
+    key(machineState, "deleteConfigMachineState"),
+    [key("src/state/onboarding-recommendations.kernel.ts", "onboardingRecommendations.clear")],
+  ],
+  [
+    key(machineState, "importConfigMachineState"),
+    [key("src/infra/state-migrations.config-machine-state.ts", "migrateLegacyConfigMachineState")],
+  ],
+]);
+
+// Native readers can synchronize external CLI credentials; their reviewed entries stay explicit.
+const nativeReadCallers = new Map<string, readonly string[]>([
+  [
+    key(authRuntime, "ensureAuthProfileStore"),
+    [
+      "extensions/codex/src/account-usage-runtime.ts:handleCodexAccountUsage/assertCurrent",
+      "extensions/codex/src/app-server/auth-profile-selection.ts:createCodexAuthProfileSelection/resolveCodexAppServerAuthProfileIdAtEffect",
+      "extensions/codex/src/command-diagnostics.ts:resolvePendingCodexDiagnosticsTargets",
+      "src/agents/embedded-agent-runner/cli-backend-dispatch-eligibility.ts:resolveEmbeddedCliBackendDispatchEligibility",
+      "src/agents/model-auth-label.ts:resolveModelAuthLabel",
+      "src/agents/model-auth-provider.ts:resolveScopedAuthProfileStore",
+      "src/commands/auth-choice.model-check.ts:resolveDefaultModelAuthStatus",
+      "src/commands/doctor-auth.ts:hasStoredCodexOAuthProfile",
+      "src/commands/models/auth-list.ts:modelsAuthListCommand",
+      "src/commands/models/auth-order.ts:modelsAuthOrderGetCommand",
+      "src/commands/models/auth-order.ts:modelsAuthOrderUpdateCommand",
+      "src/commands/models/list.probe.ts:buildProbeTargets",
+      "src/commands/models/list.status-command.ts:modelsStatusCommand",
+      "src/commands/onboard-non-interactive/api-keys.ts:resolveApiKeyFromProfiles",
+      "src/infra/provider-usage.auth.ts:resolveLegacyProviderApiKeyCandidatesFromConfigAndStore",
+      "src/plugin-sdk/provider-auth-runtime.ts:resolveProviderAuthProfileMetadata",
+      "src/plugins/provider-auth-availability-core.ts:createProviderAuthAvailability/isProviderApiKeyConfiguredFromStore",
+    ],
+  ],
+  [factory("ensureAuthProfileStore"), []],
+  [
+    key(
+      "src/agents/auth-profiles/store-read.ts",
+      "createAuthProfileStoreReadRuntime/ensureAuthProfileStore",
+    ),
+    [],
+  ],
+  [
+    key(authRuntime, "ensureAuthProfileStoreWithoutExternalProfiles"),
+    [
+      "src/agents/openclaw-tools.ts:createOpenClawTools",
+      "src/agents/tools/model-config.helpers.ts:loadLegacyToolAuthProfileStore",
+      "src/commands/doctor-auth-legacy-oauth.ts:maybeRepairLegacyOAuthProfileIds",
+      "src/commands/models/auth-api-key.ts:saveModelProviderApiKey",
+      "src/commands/models/auth-logout.ts:modelsAuthLogoutCommand",
+      "src/commands/models/list.status-command.ts:modelsStatusCommand",
+      "src/gateway/model-account-connect.ts:resolveSharedAuthProfileProvider",
+    ],
+  ],
+  [factory("ensureAuthProfileStoreWithoutExternalProfiles"), []],
+  [
+    key(
+      "src/agents/auth-profiles/store-read.ts",
+      "createAuthProfileStoreReadRuntime/ensureAuthProfileStoreWithoutExternalProfiles",
+    ),
+    [],
+  ],
+  [
+    key(authRuntime, "ensureAuthProfileStoreForLocalUpdate"),
+    ["src/agents/auth-profiles/profiles.ts:upsertAuthProfile"],
+  ],
+  [factory("ensureAuthProfileStoreForLocalUpdate"), []],
+  [
+    key(authRuntime, "loadAuthProfileStoreForRuntime"),
+    [
+      "src/cli/capability-cli/model.ts:runModelAuthLogout",
+      "src/cli/capability-cli/shared.ts:providerHasGenericConfig",
+      "src/commands/doctor-auth.ts:loadAuthProfileHealth",
+      "src/commands/doctor-auth.ts:noteCopilotAmbientToken",
+    ],
+  ],
+  [
+    factory("loadAuthProfileStoreForRuntime"),
+    [
+      factory("loadRuntimeAuthProfileStore"),
+      factory("captureAuthProfileStoreReadScope/read"),
+      factory("loadAuthProfileStoreForSecretsRuntime"),
+    ],
+  ],
+  [
+    key(
+      "src/agents/auth-profiles/runtime-read.ts",
+      "createAuthProfileStoreRuntimeReader/loadAuthProfileStoreForRuntime",
+    ),
+    [],
+  ],
+]);
+
+const nativeSdkExports = new Map<string, readonly string[]>([
+  [key(authStorage, "AuthStorage"), ["src/plugin-sdk/agent-sessions.ts"]],
+  [
+    key(authRuntime, "ensureAuthProfileStore"),
+    [
+      "src/agents/auth-profiles.runtime.ts",
+      "src/agents/auth-profiles.ts",
+      "src/agents/model-auth.ts",
+      "src/plugin-sdk/agent-runtime.ts",
+      "src/plugin-sdk/provider-auth.ts",
+    ],
+  ],
+  [
+    key(authRuntime, "ensureAuthProfileStoreWithoutExternalProfiles"),
+    ["src/agents/auth-profiles.ts", "src/agents/model-auth.ts"],
+  ],
+  [key(authRuntime, "ensureAuthProfileStoreForLocalUpdate"), ["src/plugin-sdk/provider-auth.ts"]],
+  [
+    key(authRuntime, "loadAuthProfileStoreForRuntime"),
+    ["src/agents/auth-profiles.ts", "src/plugin-sdk/agent-runtime.ts"],
+  ],
+
+  [
+    key(authRuntime, "saveAuthProfileStore"),
+    ["src/agents/auth-profiles.ts", "src/plugin-sdk/agent-runtime.ts"],
+  ],
+  [
+    key(authProfiles, "upsertAuthProfile"),
+    ["src/agents/auth-profiles.ts", "src/plugin-sdk/provider-auth.ts"],
+  ],
+  [
+    key("src/plugins/provider-auth-helpers.ts", "upsertApiKeyProfile"),
+    ["src/plugin-sdk/provider-auth.ts", "src/plugin-sdk/provider-auth-api-key.ts"],
+  ],
+]);
+
 // Exact edges, not worker-file exemptions: every new entry needs an owner audit.
 const callers = new Map<string, readonly string[]>([
   ...publicationWriters,
+  ...authCredentialCallers,
+  ...[...recommendationCallbacks.keys()].map((id): [string, string[]] => [id, []]),
+  ...nativeReadCallers,
+  ...genericCredentialCallers,
   [
     key(credentialCustody, "withAuthProfileCredentialWriteCustody"),
-    [
-      key(credentialAuthority, "withAuthProfileCredentialWrite"),
-      key(
-        "src/agents/auth-profiles/store.ts",
-        "createAuthProfileStoreRuntime/saveAuthProfileStore",
-      ),
-    ],
+    [key(credentialAuthority, "withAuthProfileCredentialWrite"), factory("saveAuthProfileStore")],
   ],
   [
     key(credentialAuthority, "withAuthProfileCredentialWrite"),
@@ -274,20 +623,24 @@ const rawMachineStateSinks = new Map([
   [key("src/state/openclaw-state-db-schema-v13-widerow.ts", "migrateJsonCanonicalWideRowsV13"), 2],
 ]);
 
+function mayIncludeAuthKey(
+  value: ts.Node,
+  checker: NativeTypeScriptProject["project"]["checker"],
+): boolean {
+  if (ts.isArrayLiteralExpression(value)) {
+    return value.elements.some((element) => mayIncludeAuthKey(element, checker));
+  }
+  const type = checker.getTypeAtLocation(value);
+  const variants = type.isUnionType() ? type.getTypes() : [type];
+  return variants.some((variant) =>
+    variant.isStringLiteralType() ? variant.value.trim() === "authProfiles.store" : true,
+  );
+}
+
 function mayWriteAuthMachineState(
   node: ts.CallExpression,
   checker: NativeTypeScriptProject["project"]["checker"],
 ): boolean {
-  const mayIncludeAuthKey = (value: ts.Node): boolean => {
-    if (ts.isArrayLiteralExpression(value)) {
-      return value.elements.some(mayIncludeAuthKey);
-    }
-    const type = checker.getTypeAtLocation(value);
-    const variants = type.isUnionType() ? type.getTypes() : [type];
-    return variants.some((variant) =>
-      variant.isStringLiteralType() ? variant.value === "authProfiles.store" : true,
-    );
-  };
   let selected = true;
   let changesKey = false;
   let query: ts.Node = node;
@@ -307,9 +660,9 @@ function mayWriteAuthMachineState(
           : undefined;
       if (property && ts.isPropertyAssignment(property)) {
         if (method === "set") {
-          changesKey ||= mayIncludeAuthKey(property.initializer);
+          changesKey ||= mayIncludeAuthKey(property.initializer, checker);
         } else {
-          selected = mayIncludeAuthKey(property.initializer);
+          selected = mayIncludeAuthKey(property.initializer, checker);
         }
       }
     } else if (
@@ -322,14 +675,38 @@ function mayWriteAuthMachineState(
       ["=", "in"].includes(call.arguments[1].text) &&
       call.arguments[2]
     ) {
-      selected &&= mayIncludeAuthKey(call.arguments[2]);
+      selected &&= mayIncludeAuthKey(call.arguments[2], checker);
     }
     query = call;
   }
   return selected || changesKey;
 }
 
+const credentialCommandOwners = new Map([
+  [
+    "machineState.write",
+    key("src/state/config-machine-state-async.ts", "writeConfigMachineStateAsync"),
+  ],
+  ["authProfiles.update", key(authUpdate, "runPreparedAuthProfileStoreUpdate")],
+]);
+
 const repeatedEdges = new Map([
+  [
+    `${key(authUpdate, "runAuthProfileStoreUpdate")}<-${key("src/agents/auth-profiles/upsert-with-lock.ts", "persistAuthProfileBatch")}`,
+    2,
+  ],
+  ...["writeAuthProfileJsonCell", "deleteAuthProfileJsonCell"].map((name): [string, number] => [
+    `${key(authCells, name)}<-${key(authKernel, "updateAuthProfileStoreInDatabase")}`,
+    2,
+  ]),
+  [
+    `${key(authCells, "writeAuthProfileJsonCell")}<-${key("src/agents/auth-profiles/inline-usage-kernel.ts", "recordInlineAuthFailureInDatabase")}`,
+    2,
+  ],
+  [
+    `${key(machineState, "writeConfigMachineStateInDatabase")}<-${key("src/state/config-machine-state.worker.ts", "machineState.write")}`,
+    2,
+  ],
   [
     `${key(sharedPublication, "createGitHubPublicationExecutionStoreInDatabase")}<-${key(publicationWorker, "sharedMutation")}`,
     3,
@@ -344,7 +721,13 @@ function operation(node: ts.Node): string {
   const scope: string[] = [];
   let property: string | undefined;
   for (let parent: ts.Node | undefined = node.parent; parent; parent = parent.parent) {
-    if ((ts.isFunctionDeclaration(parent) || ts.isMethodDeclaration(parent)) && parent.name) {
+    if (
+      (ts.isFunctionDeclaration(parent) ||
+        ts.isMethodDeclaration(parent) ||
+        ts.isClassDeclaration(parent) ||
+        (ts.isFunctionExpression(parent) && !ts.isVariableDeclaration(parent.parent))) &&
+      parent.name
+    ) {
       scope.push(parent.name.getText().replace(/^["']|["']$/g, ""));
     }
     if (
@@ -369,13 +752,28 @@ export function inspectPersonalCredentialWriters(
   const approvedCallers = new Map([...callers, ...exclusiveMaintenanceCallers]);
   const protectedDeclarations = new Map<ts.Node, string>();
   const names = new Set(
-    [...approvedCallers.keys()].map((entry) => entry.slice(entry.lastIndexOf(":") + 1)),
+    [...approvedCallers.keys()].map((entry) =>
+      entry.slice(Math.max(entry.lastIndexOf(":"), entry.lastIndexOf("/")) + 1),
+    ),
   );
   const aliases: [string, string][] = [];
   for (const { file, source } of sources) {
     const visit = (node: ts.Node) => {
-      if (ts.isFunctionDeclaration(node) && node.name) {
-        const id = key(file, node.name.text);
+      if (
+        (ts.isFunctionDeclaration(node) ||
+          ts.isFunctionExpression(node) ||
+          ts.isClassDeclaration(node) ||
+          ts.isMethodDeclaration(node) ||
+          ts.isVariableDeclaration(node) ||
+          ts.isBindingElement(node)) &&
+        node.name &&
+        ts.isIdentifier(node.name)
+      ) {
+        const enclosing = operation(node);
+        const id = key(
+          file,
+          [enclosing === "<module>" ? "" : enclosing, node.name.text].filter(Boolean).join("/"),
+        );
         if (approvedCallers.has(id)) {
           protectedDeclarations.set(node, id);
         }
@@ -416,6 +814,8 @@ export function inspectPersonalCredentialWriters(
     const direct = declaration && protectedDeclarations.get(declaration);
     if (direct) {
       found.push(direct);
+    } else if (declaration && ts.isShorthandPropertyAssignment(declaration)) {
+      found.push(...targets(checker.getShorthandAssignmentValueSymbol(declaration)));
     } else if (symbol.flags & SymbolFlags.Module) {
       for (const member of checker.getExportsOfModule(symbol)) {
         found.push(...targets(member));
@@ -443,20 +843,22 @@ export function inspectPersonalCredentialWriters(
         return;
       }
       if (
-        ts.isPropertyAssignment(node) &&
+        (ts.isPropertyAssignment(node) || ts.isShorthandPropertyAssignment(node)) &&
         (ts.isIdentifier(node.name) || ts.isStringLiteralLikeNode(node.name)) &&
         node.name.text === "type"
       ) {
-        const type = checker.getTypeAtLocation(node.initializer);
+        const type = checker.getTypeAtLocation(
+          ts.isPropertyAssignment(node) ? node.initializer : node.name,
+        );
         const variants = type.isUnionType() ? type.getTypes() : [type];
-        if (
-          variants.some(
-            (value) => value.isStringLiteralType() && value.value === "machineState.write",
-          ) &&
-          key(file, operation(node)) !==
-            key("src/state/config-machine-state-async.ts", "writeConfigMachineStateAsync")
-        ) {
-          fail(node, "machine-state credential writes require the host publication adapter");
+        for (const value of variants) {
+          if (!value.isStringLiteralType()) {
+            continue;
+          }
+          const owner = credentialCommandOwners.get(value.value);
+          if (owner && key(file, operation(node)) !== owner) {
+            fail(node, `${value.value} credential writes require the host publication adapter`);
+          }
         }
       }
       if (
@@ -543,8 +945,15 @@ export function inspectPersonalCredentialWriters(
             (!node.parent.exportClause || ts.isNamespaceExport(node.parent.exportClause))) ||
           (ts.isCallExpression(node.parent) &&
             node.parent.expression.kind === ts.SyntaxKind.ImportKeyword)) &&
-        !(ts.isFunctionDeclaration(node.parent) && node.parent.name === node) &&
-        !(ts.isVariableDeclaration(node.parent) && node.parent.name === node)
+        !(
+          (ts.isFunctionDeclaration(node.parent) ||
+            ts.isFunctionExpression(node.parent) ||
+            ts.isClassDeclaration(node.parent) ||
+            ts.isMethodDeclaration(node.parent) ||
+            ts.isVariableDeclaration(node.parent) ||
+            ts.isBindingElement(node.parent)) &&
+          node.parent.name === node
+        )
       ) {
         references.push(node);
       }
@@ -574,10 +983,82 @@ export function inspectPersonalCredentialWriters(
         (ts.isElementAccessExpression(node.parent) && node.parent.argumentExpression === node)
           ? node.parent
           : node;
-      const directCall =
-        ts.isCallExpression(expression.parent) && expression.parent.expression === expression;
+      const call =
+        (ts.isCallExpression(expression.parent) || ts.isNewExpression(expression.parent)) &&
+        expression.parent.expression === expression
+          ? expression.parent
+          : undefined;
+      const directCall = call !== undefined;
       for (const target of guarded) {
         const caller = key(file, operation(node));
+        const exported =
+          (ts.isExportSpecifier(node.parent) &&
+            nativeSdkExports.get(target)?.includes(file) &&
+            node.parent.name.text === target.slice(target.lastIndexOf(":") + 1)) ||
+          (target === key(authStorage, "AuthStorage") &&
+            file === "src/agents/sessions/index.ts" &&
+            ts.isExportDeclaration(node.parent) &&
+            node.parent.moduleSpecifier === node &&
+            !node.parent.exportClause);
+        // Static members retain their own checks; escaping the class bypasses that selection.
+        const selectedAuthStorageMember =
+          target === key(authStorage, "AuthStorage") &&
+          ((ts.isPropertyAccessExpression(expression.parent) &&
+            expression.parent.expression === expression) ||
+            (ts.isElementAccessExpression(expression.parent) &&
+              expression.parent.expression === expression &&
+              ts.isStringLiteral(expression.parent.argumentExpression)));
+        const runtimeMember =
+          target.startsWith(`${authStore}:createAuthProfileStoreRuntime/`) &&
+          (target.includes("/saveAuthProfileStore") || nativeReadCallers.has(target));
+        const readerMember =
+          target.startsWith(
+            "src/agents/auth-profiles/store-read.ts:createAuthProfileStoreReadRuntime/",
+          ) ||
+          target.startsWith(
+            "src/agents/auth-profiles/runtime-read.ts:createAuthProfileStoreRuntimeReader/",
+          );
+        const returnedMember =
+          (runtimeMember || readerMember) &&
+          target === `${caller}/${node.getText()}` &&
+          ts.isShorthandPropertyAssignment(node.parent) &&
+          ts.isObjectLiteralExpression(node.parent.parent) &&
+          ts.isReturnStatement(node.parent.parent.parent);
+        const forwarded =
+          returnedMember ||
+          (runtimeMember &&
+            ((file === authRuntime &&
+              ts.isPropertyAccessExpression(node.parent) &&
+              ts.isVariableDeclaration(node.parent.parent) &&
+              node.parent.parent.name.getText() === node.getText()) ||
+              (file === "src/plugins/loader-runtime-load.ts" &&
+                target === factory("ensureAuthProfileStore") &&
+                ts.isPropertyAccessExpression(node.parent) &&
+                ts.isPropertyAssignment(node.parent.parent) &&
+                node.parent.parent.name.getText() === "ensureAuthProfileStore")));
+        const boundedRecommendation =
+          recommendationCallbacks.get(target) === caller &&
+          ts.isCallExpression(expression.parent) &&
+          ts.isIdentifier(expression.parent.expression) &&
+          expression.parent.expression.text === "recommendationOperation" &&
+          expression.parent.arguments[0] === expression;
+        if (exported || forwarded || boundedRecommendation || selectedAuthStorageMember) {
+          continue;
+        }
+        if (call && ts.isCallExpression(call) && genericCredentialCallers.has(target)) {
+          const name = target.slice(target.lastIndexOf(":") + 1);
+          const argument =
+            call.arguments[
+              name.endsWith("InDatabase") || name === "upsertConfigMachineState" ? 1 : 0
+            ];
+          if (
+            name !== "importConfigMachineState" &&
+            argument &&
+            !mayIncludeAuthKey(argument, checker)
+          ) {
+            continue;
+          }
+        }
         const edge = `${target}<-${caller}`;
         const count = (edgeCounts.get(edge) ?? 0) + 1;
         edgeCounts.set(edge, count);
