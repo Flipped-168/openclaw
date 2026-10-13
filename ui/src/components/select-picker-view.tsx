@@ -58,12 +58,15 @@ export function PickerContent<Option extends PickerOption>(props: {
   const direction = () => (getComputedStyle(props.host).direction === "rtl" ? "rtl" : "ltr");
   const options = createMemo((): readonly Option[] => {
     const { value, options: configuredOptions } = props.params;
-    return value === null ||
+    if (
+      value === null ||
       value === "" ||
       configuredOptions.some((option) => option.value === value)
-      ? configuredOptions
-      : // SAFETY: Unknown selected references use only the base option fields, as before migration.
-        [...configuredOptions, { value, label: value } as Option];
+    ) {
+      return configuredOptions;
+    }
+    // SAFETY: Unknown selected references use only the base option fields, as before migration.
+    return [...configuredOptions, { value, label: value } as Option];
   });
   const sections = createMemo(() => {
     const terms = query().trim().toLocaleLowerCase().split(/\s+/u);
