@@ -1,6 +1,112 @@
+import { writeFileSync } from "node:fs";
 import path from "node:path";
+import { withTimeout } from "@openclaw/fs-safe/advanced";
 import type { Locator, Page } from "playwright";
 import { expect } from "vitest";
+import type { ApplicationContext } from "../app/context.ts";
+import { createControlUiE2eArtifactDir } from "../test-helpers/control-ui-e2e-artifacts.ts";
+
+/** Capture only synthetic fixture ownership and geometry after the original wait fails. */
+export async function captureNativeWorkspaceFailure(page: Page): Promise<void> {
+  const readBrowserState = page.evaluate(() => {
+    const facts = (node: unknown) => {
+      if (!(node instanceof Element)) {
+        return { present: Boolean(node), element: false };
+      }
+      const style = getComputedStyle(node);
+      const rect = node.getBoundingClientRect();
+      return {
+        present: true,
+        element: true,
+        tag: node.localName,
+        classes: [...node.classList],
+        connected: node.isConnected,
+        parentTag: node.parentElement?.localName ?? null,
+        parentClasses: node.parentElement ? [...node.parentElement.classList] : [],
+        childElementCount: node.childElementCount,
+        hidden: node.hasAttribute("hidden"),
+        inert: node.hasAttribute("inert"),
+        display: style.display,
+        visibility: style.visibility,
+        contentVisibility: style.contentVisibility,
+        rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+        rectCount: node.getClientRects().length,
+      };
+    };
+    const hosts = [...document.querySelectorAll("openclaw-plugin-view")];
+    const requestTarget =
+      hosts.find((host) => host.surface === "workspace") ??
+      document.querySelector("openclaw-app-shell");
+    let owner: unknown = null;
+    requestTarget?.dispatchEvent(
+      Object.assign(new Event("context-request", { bubbles: true, composed: true }), {
+        context: "openclaw.application",
+        contextTarget: requestTarget,
+        subscribe: false,
+        callback(context: ApplicationContext) {
+          const config = context.runtimeConfig.state;
+          const router = context.router.getState();
+          owner = {
+            registryStatus: context.plugins.registryStatus,
+            selected: (["workspace", "composer", "transcript"] as const).map((surface) => {
+              const selected = context.plugins.selectedReplacement(surface);
+              return {
+                surface,
+                key: selected?.key ?? null,
+                aborted: selected?.signal.aborted ?? null,
+              };
+            }),
+            errorCount: context.plugins.errors.length,
+            routeStatus: router.status,
+            routeIds: router.matches.map((match) => match.routeId),
+            config: {
+              loading: config.configLoading,
+              saving: config.configSaving,
+              applying: config.configApplying,
+              hash: config.configSnapshot?.hash ?? null,
+              revision: config.configSnapshot?.configRevisionHash ?? null,
+              appliedHash: config.configSnapshot?.appliedConfigHash ?? null,
+            },
+          };
+        },
+      }),
+    );
+    return {
+      route: location.pathname,
+      viewport: { width: innerWidth, height: innerHeight },
+      owner,
+      bridgeRegistered: Boolean(customElements.get("openclaw-plugin-view")),
+      hosts: hosts.map((host) =>
+        Object.assign(facts(host), {
+          kind: host.kind,
+          surface: host.surface,
+          presented: host.presented,
+          defaultView: facts(host.defaultView),
+          roots: [...host.querySelectorAll("[data-plugin-view-root]")].map(facts),
+        }),
+      ),
+      shell: facts(document.querySelector(".shell")),
+      customHeadings: [...document.querySelectorAll("h1")]
+        .filter((heading) => heading.textContent === "Custom workspace")
+        .map((heading) => {
+          const ancestors = [];
+          for (let node = heading.parentElement; node; node = node.parentElement) {
+            ancestors.push(facts(node));
+          }
+          return Object.assign(facts(heading), { ancestors });
+        }),
+    };
+  });
+  const observation = await withTimeout(readBrowserState, 5_000, "native workspace diagnostics");
+  const directory = createControlUiE2eArtifactDir(
+    "failure",
+    process.env.OPENCLAW_UI_E2E_DIAGNOSTIC_DIR?.trim() || undefined,
+  );
+  writeFileSync(
+    path.join(directory, "failure.public.json"),
+    `${JSON.stringify({ schemaVersion: 1, nativeWorkspace: observation }, null, 2)}\n`,
+  );
+}
 
 export async function captureNativePluginUiProof(
   owner: { readonly artifactDir: string },
