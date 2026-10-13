@@ -909,13 +909,17 @@ export function inspectPersonalCredentialWriters(
       return false;
     }
     for (const element of binding.elements) {
+      const bindingName = element.name;
+      if (!bindingName) {
+        return false;
+      }
       const name =
-        element.propertyName?.getText().replace(/^["']|["']$/g, "") ?? element.name.getText();
+        element.propertyName?.getText().replace(/^["']|["']$/g, "") ?? bindingName.getText();
       const member =
         module.flags & SymbolFlags.Module
           ? checker.getMemberInModuleExports(module, name)
           : checker.getTypeOfSymbolAtLocation(module, binding).getProperty(name);
-      if (member && !bindModule(element.name, member)) {
+      if (member && !bindModule(bindingName, member)) {
         return false;
       }
     }
@@ -951,7 +955,7 @@ export function inspectPersonalCredentialWriters(
       ) {
         for (const [index, element] of binding.elements.entries()) {
           const item = expression.arguments[0].elements[index];
-          if (item && ts.isBindingElement(element) && !element.dotDotDotToken) {
+          if (item && ts.isBindingElement(element) && element.name && !element.dotDotDotToken) {
             bindImports(item, element.name);
           }
         }
