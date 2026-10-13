@@ -40,6 +40,7 @@ it("retains the read failure classification when reader cleanup also fails", asy
     const failure = new SqliteWorkerError("source read closed", "closed");
     const prepare = vi.spyOn(readers, "prepareAgentAuthProfileRowsRead").mockReturnValue({
       identity: undefined,
+      captureCredentialAuthority: () => undefined,
       read: async () => {
         throw failure;
       },

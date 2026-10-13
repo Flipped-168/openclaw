@@ -13,6 +13,7 @@ import {
 } from "../../infra/sqlite-schema-facts.js";
 import type { DB as OpenClawAgentKyselyDatabase } from "../../state/openclaw-agent-db.generated.js";
 import type { DB as OpenClawStateKyselyDatabase } from "../../state/openclaw-state-db.generated.js";
+import { withAuthProfileCredentialWrite } from "../../state/user-model-account-authority.js";
 import {
   acquireAuthProfileReadDatabase,
   closeAuthProfileReadDatabase,
@@ -360,7 +361,12 @@ export function writeAuthProfileJsonCell(
             .onConflict((conflict) =>
               conflict.column("state_key").doUpdateSet({ state_json: value, updated_at: now }),
             );
-  executeSqliteQuerySync(database, query);
+  const write = () => executeSqliteQuerySync(database, query);
+  if (target === "store") {
+    withAuthProfileCredentialWrite(database, payload, write);
+  } else {
+    write();
+  }
 }
 
 export function deleteAuthProfileJsonCell(
@@ -378,5 +384,10 @@ export function deleteAuthProfileJsonCell(
       : getNodeSqliteKysely<AgentAuthProfileDatabase>(database)
           .deleteFrom(cell.table)
           .where(cell.key, "=", PRIMARY_ROW_KEY);
-  executeSqliteQuerySync(database, query);
+  const write = () => executeSqliteQuerySync(database, query);
+  if (target === "store") {
+    withAuthProfileCredentialWrite(database, undefined, write);
+  } else {
+    write();
+  }
 }
