@@ -361,7 +361,7 @@ describe("chat transcript scroll ownership", () => {
     }
   });
 
-  it("preserves following through an upward end retarget until real reader input takes over", async () => {
+  it("preserves following through an upward end retarget and no-op until real reader input takes over", async () => {
     const flushFrames = stubAnimationFrames();
     const { policy, transcript } = createPolicyTranscript("upward-end-retarget");
     const { container } = await mountTestTranscript(
@@ -403,6 +403,7 @@ describe("chat transcript scroll ownership", () => {
       scrollHeight = 1800;
       transcript.scrollToEnd({ source: "auto" });
       expect(container.scrollTop).toBe(1200);
+      transcript.scrollToEnd({ source: "auto" });
       // Retiring the completed command does not represent reader input.
       transcript.cancelScroll();
       scrollHeight = 1920;
