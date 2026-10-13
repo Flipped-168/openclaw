@@ -689,7 +689,14 @@ it.each(["SQLite writer fault injection", "public lifecycle predecessor"] as con
         expect.soft(await readMutationStorage(scope)).toEqual(before);
         expect(await mutation.error).toBeInstanceOf(SessionMutationAuthorizationChangedError);
         expect(await mutation.error).toMatchObject({
-          error: { details: { code: "SESSION_PARTICIPATION_REQUIRED" } },
+          error: {
+            details: {
+              code:
+                revocation === "public lifecycle predecessor"
+                  ? "SESSION_MUTATION_AUTHORIZATION_CHANGED"
+                  : "SESSION_PARTICIPATION_REQUIRED",
+            },
+          },
         });
         expect(mutation.respond).not.toHaveBeenCalledWith(true, expect.anything(), undefined);
       } finally {
