@@ -1,3 +1,4 @@
+import { resolveDirectBundledProviderPolicySurface } from "../plugins/provider-policy-surface.js";
 import { hasAnthropicDefaultSignal } from "./defaults.js";
 import type {
   ConfigSnapshotMetadataLoader,
@@ -36,7 +37,9 @@ export async function materializeConfigSnapshotDefaultsAsync(
 ): Promise<RuntimeConfig> {
   if (
     context.options.pluginValidation !== "core-only" &&
-    (config.models?.providers || hasAnthropicDefaultSignal(config, context.deps.env))
+    (config.models?.providers ||
+      (hasAnthropicDefaultSignal(config, context.deps.env) &&
+        !resolveDirectBundledProviderPolicySurface("anthropic")))
   ) {
     await metadata.loadAsync(config);
   }
