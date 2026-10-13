@@ -26,6 +26,9 @@ Installation inspection also reports the root, Git metadata, `node_modules`
 layout, and service unit target (or why it was not inspected). An unrecognized
 root skips target preflight and gives commands to locate the owning installation.
 
+Service-definition refresh recognizes Windows account aliases that resolve to the
+same SID. A different or unresolved account remains protected from automatic repair.
+
 An older updater that stops before staging cannot use this repair. For a known
 npm installation, supply its configured prefix explicitly for that update:
 `NPM_CONFIG_PREFIX="$(npm prefix -g)" openclaw update`.

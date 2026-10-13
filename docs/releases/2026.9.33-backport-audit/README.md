@@ -4,6 +4,8 @@ This directory preserves the original preparation audit merged in [PR #168346](h
 
 The subsequently authorized [update-backport round](https://docs.openclaw.ai/releases/2026.9.33-backport-audit/update-backports-20261010) records the extended-stable upgrade issue search, additional mainline audit, compatible product adaptations, and remaining qualification gaps. It includes four update-related groups from the original eleven proposals; the other seven remain outside that round. No tag or package has been published.
 
+The [October backport supplement](https://docs.openclaw.ai/releases/2026.9.33-backport-audit/october-backports-20261012) records the next September-targeted round: 25 selected October fix groups, six compatible newer core fixes and two native-source fixes, with explicit exclusions and qualification bounds. It does not recertify the historical inventory or advance the accepted audit cursor.
+
 ## Original preparation snapshot
 
 The preparation PR started from shipped **2026.9.9**, not a frozen or publishable release candidate. **Its eleven audit proposals were unapplied; one separately scoped, CI-required runtime repair was included.** It contained version metadata, the shipped-updater compatibility inventory, CI repairs, and the audit/proposal handoff below.

@@ -310,16 +310,10 @@ async function updateFinalizeCommandInternal(
   } = prepared;
   let { configSnapshot } = prepared;
   let doctorWarnings: string[] = [];
-  const doctorWarningTimes = new Map<string, number>();
   const onDoctorWarnings = (warnings: string[]) => {
     doctorWarnings = normalizeUpdatePostInstallDoctorWarnings([
       ...new Set([...doctorWarnings, ...warnings]),
     ]);
-    for (const warning of doctorWarnings) {
-      if (!doctorWarningTimes.has(warning)) {
-        doctorWarningTimes.set(warning, Date.now());
-      }
-    }
     lifecycle.recordWarnings(doctorWarnings);
   };
 
@@ -434,13 +428,7 @@ async function updateFinalizeCommandInternal(
         });
         const resolvedWarnings = await readResolvedDeferredPluginMigrationWarnings(doctorWarnings);
         phase.assertCurrent();
-        doctorWarnings = doctorWarnings.filter((warning) => {
-          const completedAtMs = resolvedWarnings.get(warning);
-          return (
-            completedAtMs === undefined ||
-            completedAtMs < (doctorWarningTimes.get(warning) ?? Infinity)
-          );
-        });
+        doctorWarnings = doctorWarnings.filter((warning) => !resolvedWarnings.has(warning));
         await persistValidatedDowngradeConfig(result.configSnapshot, phase.assertCurrent);
         return result;
       },

@@ -232,7 +232,7 @@ export async function readDeferredPluginMigrationsAsync(
   return pending ?? [];
 }
 
-/** Completion receipts resolve historical warnings without loading their retired reports. */
+/** Completion receipt projection retained for existing state-worker readers. */
 export function readDeferredPluginMigrationCompletions(
   options: Parameters<typeof readDeferredPluginMigrations>[0] = {},
 ) {
@@ -255,23 +255,6 @@ export function readDeferredPluginMigrationCompletions(
       );
     }, options) ?? []
   );
-}
-
-export async function readDeferredPluginMigrationCompletionsAsync(
-  options: Parameters<typeof readDeferredPluginMigrations>[0] = {},
-) {
-  const context = captureOpenClawStateWorkerContext(options);
-  const { runOpenClawStateWorkerOperation } =
-    await import("../state/openclaw-state-worker-store.js");
-  context.admission.assertCurrent();
-  const completed = await runOpenClawStateWorkerOperation(
-    context,
-    (scope) =>
-      scope.execute({ type: "plugins.deferredMigrations.completions.read", input: undefined }),
-    { existingOnly: true },
-  );
-  context.admission.assertCurrent();
-  return completed ?? [];
 }
 
 /** Bind asynchronous settlement to the same pending records, including newly added owners. */

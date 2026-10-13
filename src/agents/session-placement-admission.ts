@@ -290,6 +290,7 @@ export async function withLocalSessionPlacementTurnSettlement(
         return result;
       },
       {
+        abortSignal: options.abortSignal,
         priority: resolveEmbeddedRunSessionLanePolicy(options.trigger, options.inputProvenance)
           .priority,
         onQueued: () => {

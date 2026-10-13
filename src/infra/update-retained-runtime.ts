@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { resolvePathViaExistingAncestorSync } from "./boundary-path.js";
+import { resolveIdentityPathViaExistingAncestorSync } from "./boundary-path.js";
 import { hasErrnoCode } from "./errno.js";
 import { formatErrorMessage } from "./errors.js";
 import { resolveOpenClawPackageRoot } from "./openclaw-root.js";
@@ -71,7 +71,7 @@ export async function withRetainedUpdateRuntime<T>(
           const sourceRoot = await fs.realpath(root);
           assertCurrent();
           const mutations = mutationRoots.map((entry) =>
-            resolvePathViaExistingAncestorSync(path.resolve(entry)),
+            resolveIdentityPathViaExistingAncestorSync(path.resolve(entry)),
           );
           if (
             !mutations.some(
@@ -95,7 +95,7 @@ export async function withRetainedUpdateRuntime<T>(
             sourceRoot,
             ...mutations,
             ...(packageOwner
-              ? [resolvePathViaExistingAncestorSync(path.resolve(packageOwner))]
+              ? [resolveIdentityPathViaExistingAncestorSync(path.resolve(packageOwner))]
               : []),
           ];
           let parent = path.dirname(sourceRoot);
@@ -134,7 +134,7 @@ export async function withRetainedUpdateRuntime<T>(
             }
           }
           if (!directory) {
-            const temporary = resolvePathViaExistingAncestorSync(path.resolve(os.tmpdir()));
+            const temporary = resolveIdentityPathViaExistingAncestorSync(path.resolve(os.tmpdir()));
             if (!outsideMutation(temporary)) {
               throw new Error(
                 "Updater temporary directory is inside an installation being replaced",
@@ -180,6 +180,11 @@ export async function withRetainedUpdateRuntime<T>(
             targetStateDir: privateRoot,
             candidateRoot,
             retainedHostRoot: sourceRoot,
+            // Missing optional peers must not pull unrelated ancestor installations
+            // into a retained runtime. Explicit linked dependency owners still travel.
+            retainedDependencyRoot: packageOwner
+              ? resolveIdentityPathViaExistingAncestorSync(path.resolve(packageOwner))
+              : sourceRoot,
             onProgress: assertCurrent,
           });
           const inventoryMs = Math.round(performance.now() - inventoryStartedAt);
