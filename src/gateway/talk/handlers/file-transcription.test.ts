@@ -166,8 +166,8 @@ describe("configured file transcription through Talk RPCs", () => {
           transcribeAudioWithContext: async () => ({ ok: true, value: { text: "unused" } }),
           ...(withHook
             ? {
-                isAudioConfigured: async (context: AudioTranscriptionConfigContext) => {
-                  contexts.push(context);
+                isAudioConfigured: async (audioContext: AudioTranscriptionConfigContext) => {
+                  contexts.push(audioContext);
                   return configured;
                 },
               }
