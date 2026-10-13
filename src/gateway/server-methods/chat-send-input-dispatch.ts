@@ -177,7 +177,6 @@ export async function handleChatSendWithStorage(
   try {
     const assertCustodyLifetimeCurrent = () => {
       admission.assertWorkAdmissionCurrent();
-      admission.assertSessionTargetCurrent();
       if (sessionRoutingChanged(context.getRuntimeConfig())) {
         throw new Error("Session routing changed before input admission; refresh and retry.");
       }

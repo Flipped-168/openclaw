@@ -8,14 +8,12 @@ import type { WorkerTaskControl } from "@openclaw/worker-runtime/worker";
 import { materializeSessionArchiveForRead } from "../config/sessions/archive-compression.js";
 import type { SqliteSessionFileMarker } from "../config/sessions/legacy-sqlite-marker.js";
 import type { SessionTranscriptStats } from "../config/sessions/session-accessor.sqlite-contract.js";
-import { readTranscriptStatsBatchReadOnlySync } from "../config/sessions/session-accessor.sqlite-read.js";
 import {
   getSessionKysely,
   resolveSqliteReadScope,
   toDatabaseOptions,
 } from "../config/sessions/session-accessor.sqlite-scope.js";
-import { readSessionTranscriptHotWatermark } from "../config/sessions/session-accessor.sqlite-transcript-watermark-read.js";
-import { SessionTranscriptColdError } from "../config/sessions/session-cold-storage-state.js";
+import { readTranscriptStatsBatchFromDatabase } from "../config/sessions/session-accessor.sqlite-transcript-stats.js";
 import { transcriptEventJsonSql } from "../config/sessions/transcript-payload.js";
 import { buildUsageOverview } from "../shared/usage-overview.js";
 import {
@@ -23,6 +21,7 @@ import {
   withOpenClawAgentDatabaseReadOnly,
 } from "../state/openclaw-agent-db-readonly.js";
 import { encodeOpenClawStateWorkerError } from "../state/openclaw-state-worker-error.js";
+import { SessionMetadataUnavailableError } from "../state/session-metadata-unavailable-error.js";
 import { iterateSqliteQuerySync } from "./kysely-sync.js";
 import {
   readSessionCostUsageRollupRowsInDatabase,
@@ -120,6 +119,11 @@ export async function executeUsageCostWorker(
     const database = target(agentId, storePath);
     return control.runNativeSection(() => readDatabase(database, read));
   };
+  const transcriptFacts = new Map<string, { generation: string | null; cold: boolean }>();
+  const transcriptKey = (marker: SqliteSessionFileMarker) => {
+    const database = target(marker.agentId, marker.storePath);
+    return JSON.stringify([database.path, database.agentId, marker.sessionId]);
+  };
   const access: UsageCostCollectionAccess = {
     env,
     materializeArchive: (sourcePath) =>
@@ -144,9 +148,36 @@ export async function executeUsageCostWorker(
       }
       for (const group of groups.values()) {
         const marker = group[0]!.marker;
-        const stats = await readStore(marker.agentId, marker.storePath, () =>
-          readTranscriptStatsBatchReadOnlySync(group.map((item) => ({ ...item.marker, env }))),
-        );
+        const database = target(marker.agentId, marker.storePath);
+        const stats = await readStore(marker.agentId, marker.storePath, () => {
+          try {
+            const read = withOpenClawAgentDatabaseReadOnly(
+              (opened) =>
+                readTranscriptStatsBatchFromDatabase(
+                  opened,
+                  group.map((item) => item.marker.sessionId),
+                  { includeGeneration: true },
+                ),
+              { ...database, env },
+            );
+            if (!read.found) {
+              return [];
+            }
+            for (const [index, item] of group.entries()) {
+              const facts = read.value[index]!;
+              transcriptFacts.set(transcriptKey(item.marker), {
+                generation: facts.generation ?? null,
+                cold: facts.cold === true,
+              });
+            }
+            return read.value;
+          } catch (error) {
+            if (!(error instanceof SessionMetadataUnavailableError)) {
+              throw error;
+            }
+            return [];
+          }
+        });
         for (const [index, item] of group.entries()) {
           result[item.index] = stats[index] ?? undefined;
         }
@@ -256,26 +287,13 @@ export async function executeUsageCostWorker(
     );
   const resolveCosts = createUsageCostWorkerPriceResolver((pairs) => host("pricing", pairs));
   const readGeneration = async (marker: SqliteSessionFileMarker) => {
-    const database = target(marker.agentId, marker.storePath);
-    const read = () =>
-      readStore(marker.agentId, marker.storePath, () => {
-        const result = withOpenClawAgentDatabaseReadOnly(
-          (opened) =>
-            readSessionTranscriptHotWatermark(opened, marker.sessionId, { requireHot: true })
-              .generation,
-          { ...database, env },
-        );
-        return result.found ? result.value : undefined;
-      });
-    try {
-      return await read();
-    } catch (error) {
-      if (!(error instanceof SessionTranscriptColdError) || error.sessionId !== marker.sessionId) {
-        throw error;
-      }
+    const facts = transcriptFacts.get(transcriptKey(marker));
+    if (facts?.cold) {
       await host("restore", marker);
-      return read();
+      // Restore may replace the projection; rebuild this derived cache from the captured bounds.
+      return undefined;
     }
+    return facts?.generation;
   };
   const readRows = async (
     marker: SqliteSessionFileMarker,
