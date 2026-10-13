@@ -378,8 +378,9 @@ Steering requires `plugins.entries.<id>.hooks.allowPromptInjection` (enabled
 unless explicitly set to `false`) and a live plugin instance. Disabled prompt
 injection returns `steered: false`; an expired plugin instance cannot dispatch.
 The host rechecks the plugin instance immediately before runtime dispatch,
-including after transcript persistence. Disabling or disposing the plugin while
-guidance is pending rejects the steer rather than silently dropping it.
+including legacy runtime transport calls and after transcript persistence.
+Disabling or disposing the plugin while guidance is pending rejects the steer
+rather than silently dropping it.
 The input is hidden, plugin-authored internal context, with provenance
 `{ kind: "internal_system", sourceTool: "plugin:<id>" }`. It carries no sender or
 owner authority and never answers a pending user question.

@@ -439,6 +439,7 @@ export function resolveEmbeddedInjection(
           prepareQueueMessage: legacy?.prepareQueueMessage,
           queueMessage: (text, options) => {
             legacy?.assertQueueCurrent();
+            injectionOptions?.assertCurrent?.();
             return target.queueMessage(text, options);
           },
           claimPendingUserInputAnswer: handle.claimPendingUserInputAnswer?.bind(handle),
