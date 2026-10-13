@@ -452,8 +452,10 @@ export function scheduleRestartAbortedMainSessionRecovery(params: {
       .filter((refusal) => refusal.code === "agent-database-inspection-pending")
       .map((refusal) => refusal.agentId),
   );
+  const queuedPreparation = new Set<string>();
   const recoverPreparation = async (target: ExhaustedRestartRecoveryTarget) => {
     let exhausted = false;
+    let preparationPending = false;
     const recover = (observationOnly = false) =>
       runWithGatewayIndependentRootWorkAdmission(
         () =>
@@ -467,7 +469,9 @@ export function scheduleRestartAbortedMainSessionRecovery(params: {
             shouldContinue,
             observationOnly,
             signal: abortController.signal,
-            onPreparationPending: retainPendingPreparation,
+            onPreparationPending: () => {
+              preparationPending = true;
+            },
             onExhaustedTarget: () => {
               exhausted = true;
             },
@@ -482,6 +486,7 @@ export function scheduleRestartAbortedMainSessionRecovery(params: {
       signal: abortController.signal,
       attempt: async (finalAttempt) => {
         exhausted = false;
+        preparationPending = false;
         let result = await recover();
         if (finalAttempt && exhausted) {
           result = await recover(true);
@@ -499,6 +504,13 @@ export function scheduleRestartAbortedMainSessionRecovery(params: {
         }
       },
     });
+    if (!preparationPending) {
+      const stores = pendingPreparation.get(target.sessionKey);
+      stores?.delete(target.storePath);
+      if (stores?.size === 0) {
+        pendingPreparation.delete(target.sessionKey);
+      }
+    }
   };
   let run = Promise.resolve().then(async () => {
     await runRecovery();
@@ -509,7 +521,6 @@ export function scheduleRestartAbortedMainSessionRecovery(params: {
         pending.push(target);
       }
     }
-    pendingPreparation.clear();
     for (const target of pending) {
       await recoverPreparation(target);
     }
@@ -527,12 +538,19 @@ export function scheduleRestartAbortedMainSessionRecovery(params: {
         for (const [storePath, target] of stores) {
           // Publications can use a physical SQLite path instead of the captured logical store.
           // They only wake recovery; the exact reader and admission revalidate the target.
-          // Removing before queueing coalesces commits and avoids observing our own dispatch.
-          stores.delete(storePath);
-          run = run.then(() => recoverPreparation(target));
-        }
-        if (stores.size === 0) {
-          pendingPreparation.delete(change.sessionKey);
+          // Keep listening through reads; a preparation commit can follow their snapshot.
+          const key = JSON.stringify([change.sessionKey, storePath]);
+          if (queuedPreparation.has(key)) {
+            continue;
+          }
+          queuedPreparation.add(key);
+          run = run.then(async () => {
+            queuedPreparation.delete(key);
+            // A completed attempt also settles notifications from its own writes.
+            if (stores.has(storePath)) {
+              await recoverPreparation(target);
+            }
+          });
         }
         return;
       }

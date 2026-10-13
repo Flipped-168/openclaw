@@ -42,6 +42,7 @@ import { cleanupSessionStateForTest } from "../../test-utils/session-state-clean
 import { waitForFast } from "../subagent-test-fixtures.test-helpers.js";
 import { MAIN_SESSION_RECOVERY_WORK_ADMISSION_OWNER } from "./main-session-recovery-admission.js";
 import { createRecoveryRuntimeFixture } from "./main-session-recovery-runtime.test-support.js";
+import * as recoveryTargets from "./main-session-restart-recovery-exact-target.js";
 import { mainSessionRecoveryLog } from "./main-session-restart-recovery-shared.js";
 import {
   retryRestartAbortedMainSessionRecovery,
@@ -694,6 +695,77 @@ describe("startup recovery admission", () => {
         readSpy.mockRestore();
         admissionSpy.mockRestore();
         vi.useRealTimers();
+      }
+    },
+  );
+
+  it.for(["startup", "notification"] as const)(
+    "retains preparation commits during an in-flight %s recovery read",
+    async (source, { signal }) => {
+      const target = await makeMainSessionFixture({
+        pendingProjectGitUrl: "https://example.test/project.git",
+        pendingFinalDelivery: makePendingFinalDelivery(),
+      });
+      const captured = createDeferred();
+      const releaseRead = createDeferred();
+      const initialAttempt = createDeferred();
+      const resumed = createDeferred();
+      let holdRead = source === "startup";
+      const read = recoveryTargets.loadExpectedRestartRecoveryTarget;
+      const readSpy = vi
+        .spyOn(recoveryTargets, "loadExpectedRestartRecoveryTarget")
+        .mockImplementation(async (params) => {
+          const entry = await read(params);
+          if (holdRead) {
+            holdRead = false;
+            captured.resolve();
+            await releaseRead.promise;
+          }
+          return entry;
+        });
+      const admit = gatewayWorkAdmission.runWithGatewayIndependentRootWorkAdmission;
+      const admissionSpy = vi
+        .spyOn(gatewayWorkAdmission, "runWithGatewayIndependentRootWorkAdmission")
+        .mockImplementation(
+          async <T>(run: () => Promise<T>, origin?: string, admissionSignal?: AbortSignal) => {
+            try {
+              return await admit(run, origin, admissionSignal);
+            } finally {
+              if (origin === "main-session:preparation-recovery") {
+                initialAttempt.resolve();
+              }
+            }
+          },
+        );
+      vi.mocked(callGateway).mockImplementation(async () => {
+        resumed.resolve();
+        return { runId: "run-resumed" };
+      });
+      const recovery = scheduleRestartAbortedMainSessionRecovery({
+        getConfig: () => ({}),
+        delayMs: 0,
+        stateDir: tmpDir,
+        gatewayRuntime,
+      });
+      try {
+        if (source === "notification") {
+          await withinTest(initialAttempt.promise, signal);
+          holdRead = true;
+          await patchSessionEntryCore(target, () => ({ label: "preparing workspace" }));
+        }
+        await withinTest(captured.promise, signal);
+        // Commit after the real read captured the pending row, before recovery consumes it.
+        await patchSessionEntryCore(target, () => ({ pendingProjectGitUrl: undefined }));
+        releaseRead.resolve();
+        await withinTest(resumed.promise, signal);
+        await gatewayRuntime.expectAdmission(1, recovery, target);
+        expect(loadSessionEntry(target)?.abortedLastRun).toBe(false);
+      } finally {
+        releaseRead.resolve();
+        dispatchSettlement.resolve();
+        await recovery.stop();
+        readSpy.mockRestore();
+        admissionSpy.mockRestore();
       }
     },
   );
