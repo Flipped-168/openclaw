@@ -28,7 +28,6 @@ import {
   withQuestionDispatchAuthority,
   type AgentHarnessQuestionGatewayCall,
   type AgentQuestionDispatcher,
-  type RunAgentHarnessGatewayQuestionParams,
 } from "./gateway-question-dispatch.js";
 import {
   captureAgentQuestionAnswerAuthority,
@@ -43,6 +42,7 @@ import {
   buildAgentHarnessUserInputAnswers,
   deliverAgentHarnessQuestionPrompt,
   deliverAgentHarnessUserInputPrompt,
+  type RunAgentHarnessGatewayQuestionParams,
 } from "./user-input-bridge.js";
 import type { AgentHarnessUserInputQuestion } from "./user-input-types.js";
 

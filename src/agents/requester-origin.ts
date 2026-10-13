@@ -2,7 +2,6 @@ import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import { normalizeChatType, type ChatType } from "../channels/chat-type.js";
 import { normalizeAccountId, normalizeOptionalAccountId } from "../routing/account-id.js";
 import { normalizeMessageChannel } from "../utils/message-channel-core.js";
-import type { ConversationCapabilityProfileParams } from "./conversation-capability-profile.js";
 
 /** Host-captured requester facts, independent of execution authority and agent grants. */
 export type RequesterOrigin = Readonly<{
@@ -22,6 +21,13 @@ export type RequesterOrigin = Readonly<{
   senderUsername?: string | null;
   senderE164?: string | null;
 }>;
+
+type RequesterOriginCaptureInput = Omit<Partial<RequesterOrigin>, "accountId" | "chatType"> & {
+  requesterOrigin?: RequesterOrigin;
+  agentAccountId?: string | null;
+  messageChannel?: string | null;
+  chatType?: string;
+};
 
 type RequesterPrincipalFacts = {
   requesterOrigin?: RequesterOrigin;
@@ -68,7 +74,7 @@ const snapshotSet = (values: readonly string[] | undefined) =>
 
 /** Capture once at preparation; inherited facts never fall back to the receiver's route. */
 export function captureRequesterOrigin(
-  params: ConversationCapabilityProfileParams,
+  params: RequesterOriginCaptureInput,
 ): RequesterOrigin | undefined {
   const source = params.requesterOrigin;
   const sessionKey = source?.sessionKey ?? params.sessionKey?.trim();

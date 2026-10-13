@@ -1,9 +1,9 @@
 import { resolveActiveReplyOperationForSessionId } from "../../auto-reply/reply/reply-run-registry.js";
 import { getAttachedBackend } from "../../auto-reply/reply/reply-run-registry.state.js";
 import { createReplyTurnParticipants } from "../../auto-reply/reply/reply-run-registry.tool-authority.js";
+import type { ReplyToolAuthorityInput } from "../../auto-reply/reply/reply-tool-authority-inbound.js";
 import {
   prepareReplyToolAuthority,
-  type ReplyToolAuthorityInput,
   type ReplyToolAuthorityNarrow,
 } from "../../auto-reply/reply/reply-tool-authority.js";
 import { readChannelSourceTurnId } from "../../auto-reply/reply/source-turn-id.js";

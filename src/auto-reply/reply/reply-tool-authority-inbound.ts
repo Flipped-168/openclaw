@@ -1,6 +1,7 @@
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import { normalizeArrayBackedTrimmedStringList } from "@openclaw/normalization-core/string-normalization";
 import type { AdmittedRunOperatorAuthority } from "../../agents/admitted-run-context.js";
+import type { RequesterOrigin } from "../../agents/requester-origin.js";
 import { resolveRequesterConversationToolPolicy } from "../../agents/requester-tool-policy.js";
 import { normalizeChatType } from "../../channels/chat-type.js";
 import { resolveGroupSessionKey } from "../../config/sessions/group.js";
@@ -8,8 +9,62 @@ import type { SessionEntry } from "../../config/sessions/types.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import type { RuntimeMsgContext } from "../templating.js";
 import { resolveOriginMessageProvider } from "./origin-routing.js";
+import type { FollowupRun } from "./queue/types.js";
 import type { ReplyToolAuthorityOverlay } from "./reply-run-registry.contracts.js";
-import type { ReplyToolAuthorityInput } from "./reply-tool-authority.js";
+
+export type ReplyToolAuthorityInput = {
+  operatorAuthority?: AdmittedRunOperatorAuthority;
+  originatingChannel?: FollowupRun["originatingChannel"];
+  toolsAllow?: string[];
+  disableTools?: boolean;
+  run: Partial<
+    Pick<
+      FollowupRun["run"],
+      | "config"
+      | "sessionKey"
+      | "runtimePolicySessionKey"
+      | "agentId"
+      | "agentDir"
+      | "agentAccountId"
+      | "messageProvider"
+      | "chatType"
+      | "conversationToolPolicy"
+      | "conversationId"
+      | "messageThreadId"
+      | "groupId"
+      | "groupChannel"
+      | "groupSpace"
+      | "memberRoleIds"
+      | "spawnedBy"
+      | "senderId"
+      | "senderName"
+      | "senderUsername"
+      | "senderE164"
+      | "senderIsOwner"
+      | "cwd"
+      | "inputProvenance"
+      | "trustedInternalHandoff"
+      | "scheduledToolPolicy"
+      | "runtimePluginToolGrant"
+      | "permissionMode"
+      | "toolOverrides"
+      | "execOverrides"
+      | "elevatedLevel"
+      | "bashElevated"
+      | "traceAuthorized"
+      | "approvalReviewerDeviceId"
+      | "authProfileId"
+      | "authProfileIdSource"
+      | "clientCaps"
+      | "gatewayUiCommandTarget"
+      | "toolBindings"
+    >
+  > &
+    Pick<
+      FollowupRun["run"],
+      "sessionId" | "sessionFile" | "workspaceDir" | "provider" | "model"
+    > & { requesterOrigin?: RequesterOrigin };
+};
 
 /** Projects current inbound facts against the active run's frozen authority snapshot. */
 export function resolveInboundReplyToolAuthorityOverlay(params: {

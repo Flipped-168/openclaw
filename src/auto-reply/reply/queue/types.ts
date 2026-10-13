@@ -30,6 +30,7 @@ import type { ReplyPayload } from "../../reply-payload.js";
 import type { OriginatingChannelType } from "../../templating.js";
 import type { ThinkingCatalogEntry } from "../../thinking.js";
 import type { ElevatedLevel, ThinkLevel, TraceLevel, VerboseLevel } from "../directives.js";
+import type { FollowupQueueDisposition } from "../queue-policy.js";
 import type { ReplyOperationRunState } from "../reply-operation-run-state.js";
 import type { SessionEventExecution } from "../session-event-contract.js";
 
@@ -59,8 +60,6 @@ export type EnqueueFollowupRunOptions = {
   position?: QueueInsertPosition;
   steerCandidate?: boolean;
 };
-
-export type FollowupQueueDisposition = "queue-cap" | "queue-cap-old" | "queue-cap-new";
 
 export type QueuedFollowupReplyBatch = {
   kind: "queued-followup";

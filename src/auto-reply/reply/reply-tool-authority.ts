@@ -23,7 +23,6 @@ import { readOperatorModelPolicyMembership } from "../../agents/operator-model-p
 import {
   captureRequesterOrigin,
   resolveRequesterPrincipalKey,
-  type RequesterOrigin,
 } from "../../agents/requester-origin.js";
 import { resolveSandboxRuntimeStatus } from "../../agents/sandbox/runtime-status.js";
 import {
@@ -49,7 +48,6 @@ import { isIncognitoSessionKey } from "../../routing/session-key.js";
 import { GATEWAY_OWNER_ONLY_CORE_TOOLS } from "../../security/dangerous-tools.js";
 import { resolveGlobalSingleton } from "../../shared/global-singleton.js";
 import { MessageInjectionRequesterMismatchError } from "./message-injection-authority.js";
-import type { FollowupRun } from "./queue/types.js";
 import type {
   ReplyToolAuthorityOverlay,
   ReplyToolAuthorityRoute,
@@ -61,63 +59,12 @@ import {
   withReplyToolAuthorityCohort,
   type CapturedReplyToolAuthoritySession,
 } from "./reply-tool-authority-cohort.js";
-import { applyReplyToolAuthorityOverlay } from "./reply-tool-authority-inbound.js";
+import {
+  applyReplyToolAuthorityOverlay,
+  type ReplyToolAuthorityInput,
+} from "./reply-tool-authority-inbound.js";
 import { prepareMemoryReplyToolAuthorityCaller } from "./reply-tool-authority-memory.js";
 import { prepareNativeReplyToolAuthorityRead } from "./reply-tool-authority.native-read.js";
-
-export type ReplyToolAuthorityInput = {
-  operatorAuthority?: AdmittedRunOperatorAuthority;
-  originatingChannel?: FollowupRun["originatingChannel"];
-  toolsAllow?: string[];
-  disableTools?: boolean;
-  run: Partial<
-    Pick<
-      FollowupRun["run"],
-      | "config"
-      | "sessionKey"
-      | "runtimePolicySessionKey"
-      | "agentId"
-      | "agentDir"
-      | "agentAccountId"
-      | "messageProvider"
-      | "chatType"
-      | "conversationToolPolicy"
-      | "conversationId"
-      | "messageThreadId"
-      | "groupId"
-      | "groupChannel"
-      | "groupSpace"
-      | "memberRoleIds"
-      | "spawnedBy"
-      | "senderId"
-      | "senderName"
-      | "senderUsername"
-      | "senderE164"
-      | "senderIsOwner"
-      | "cwd"
-      | "inputProvenance"
-      | "trustedInternalHandoff"
-      | "scheduledToolPolicy"
-      | "runtimePluginToolGrant"
-      | "permissionMode"
-      | "toolOverrides"
-      | "execOverrides"
-      | "elevatedLevel"
-      | "bashElevated"
-      | "traceAuthorized"
-      | "approvalReviewerDeviceId"
-      | "authProfileId"
-      | "authProfileIdSource"
-      | "clientCaps"
-      | "gatewayUiCommandTarget"
-      | "toolBindings"
-    >
-  > &
-    Pick<
-      FollowupRun["run"],
-      "sessionId" | "sessionFile" | "workspaceDir" | "provider" | "model"
-    > & { requesterOrigin?: RequesterOrigin };
-};
 
 export { resolveInboundReplyToolAuthorityOverlay } from "./reply-tool-authority-inbound.js";
 
