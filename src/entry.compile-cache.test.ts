@@ -17,6 +17,10 @@ import {
 } from "vitest";
 import { awaitGateBeforeSettlement } from "../test/helpers/promise.js";
 import { useAutoCleanupTempDirTracker } from "../test/helpers/temp-dir.js";
+import {
+  WINDOWS_TASK_SUPERVISOR_CHILD_FLAG,
+  WINDOWS_TASK_SUPERVISOR_FLAG,
+} from "./daemon/windows-task-supervisor-contract.js";
 import { createDeferredCore } from "./shared/deferred.js";
 import { captureEnv, deleteTestEnvValue, setTestEnvValue } from "./test-utils/env.js";
 import { withMockedPlatform } from "./test-utils/vitest-spies.js";
@@ -176,6 +180,15 @@ describe("entry compile cache", () => {
       expect(enableCompileCache).toHaveBeenCalledTimes(1);
     },
   );
+
+  it.each([
+    ["gateway", WINDOWS_TASK_SUPERVISOR_FLAG],
+    ["gateway", "run", `${WINDOWS_TASK_SUPERVISOR_CHILD_FLAG}=65536`],
+  ])("keeps automatic caching for Windows service arguments: %j", (...args) => {
+    argv = [process.execPath, entryFile, ...args];
+    enableOpenClawCompileCache({ currentFile: entryFile, env: {}, installRoot: root });
+    expect(enableCompileCache).toHaveBeenCalledOnce();
+  });
 
   it("leaves source entry compilation uncached", async () => {
     await markSourceCheckout();
