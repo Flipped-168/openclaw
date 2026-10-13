@@ -16,7 +16,7 @@ import os, { tmpdir } from "node:os";
 import path from "node:path";
 import { PassThrough } from "node:stream";
 import { setImmediate as nextTurn } from "node:timers/promises";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   buildChildEnv,
   clonePersistentCacheSlots,
@@ -38,6 +38,7 @@ import { resolveLocalVitestScheduling } from "../../scripts/lib/vitest-local-sch
 import * as workerOwner from "../../scripts/lib/vitest-worker-run.mts";
 import * as groupOwner from "../../scripts/vitest-process-group.mts";
 import { createDeferred, withTestTimeout } from "../helpers/promise.js";
+import { testRunnerFixtureEnv } from "./prepared-script-wrapper.test-support.js";
 
 const nativeQualificationFixtures = vi.hoisted(() => ({
   first: "packages/markdown-core/src/chunk-text.test.ts",
@@ -97,7 +98,15 @@ function makeScratchDir(): string {
   return dir;
 }
 
+beforeEach(() => {
+  const env = testRunnerFixtureEnv();
+  for (const name of ["CI", "GITHUB_ACTIONS", "OPENCLAW_NODE_TEST_PLAN_CONTINUE_ON_FAILURE"]) {
+    vi.stubEnv(name, env[name]);
+  }
+});
+
 afterEach(() => {
+  vi.unstubAllEnvs();
   vi.restoreAllMocks();
   for (const dir of scratchDirs.splice(0)) {
     rmSync(dir, { force: true, recursive: true });

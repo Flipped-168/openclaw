@@ -16,6 +16,7 @@ import { createDeferred, withTestTimeout } from "../helpers/promise.js";
 import { useAutoCleanupTempDirTracker } from "../helpers/temp-dir.js";
 import { createInfraVitestConfig } from "../vitest/vitest.infra.config.ts";
 import { createToolingVitestConfig } from "../vitest/vitest.tooling.config.ts";
+import { testRunnerFixtureEnv } from "./prepared-script-wrapper.test-support.js";
 import { createControlledWorkerCompiler } from "./vitest-worker-artifacts.test-support.js";
 
 const commands = vi.hoisted(() => ({
@@ -75,6 +76,10 @@ const testProjectsUrl = new URL("../../scripts/test-projects.mts", import.meta.u
 let startCount = 0;
 
 beforeEach(() => {
+  const env = testRunnerFixtureEnv();
+  for (const name of ["CI", "GITHUB_ACTIONS", "OPENCLAW_NODE_TEST_PLAN_CONTINUE_ON_FAILURE"]) {
+    vi.stubEnv(name, env[name]);
+  }
   commands.prepare.mockReset().mockResolvedValue(0);
   commands.prepareE2e.mockReset().mockResolvedValue({ OPENCLAW_E2E_USE_PREBUILT_DIST: "1" });
   commands.uiAssets.mockReset().mockReturnValue({ kind: "ready", indexPath: "fixture-index" });
@@ -104,7 +109,6 @@ beforeEach(() => {
   originalExitCode = process.exitCode;
   process.exitCode = 0;
   vi.stubEnv("OPENCLAW_TEST_PROJECTS_PARALLEL", "");
-  vi.stubEnv("OPENCLAW_NODE_TEST_PLAN_CONTINUE_ON_FAILURE", "");
   vi.stubEnv("OPENCLAW_BUILD_PRIVATE_QA", "");
   vi.stubEnv("OPENCLAW_E2E_SKIP_BUILD", "");
   vi.stubEnv("OPENCLAW_E2E_USE_PREBUILT_DIST", "");
@@ -205,6 +209,7 @@ syncFixtureBuiltinExports();\n`,
           runCliCommand({
             bin: process.execPath,
             args: ["--import", preload, "scripts/run-vitest.mts", ...configArgs, ...args],
+            env: testRunnerFixtureEnv(),
             stdio: "ignore",
             signal,
             requireProcessTreeExit: true,
@@ -308,7 +313,7 @@ syncFixtureBuiltinExports();\n`,
             const preload = path.join(root, "preload.mjs");
             const workerCompiler = createControlledWorkerCompiler(
               root,
-              { ...process.env, OPENCLAW_EXTENSION_BATCH_PARALLEL: "2" },
+              testRunnerFixtureEnv({ OPENCLAW_EXTENSION_BATCH_PARALLEL: "2" }),
               process.versions.bun ? "bun" : "node",
             );
             fs.writeFileSync(

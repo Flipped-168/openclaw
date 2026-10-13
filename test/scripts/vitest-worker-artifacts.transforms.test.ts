@@ -4,6 +4,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { describe, expect, vi } from "vitest";
 import * as managedChild from "../../scripts/lib/managed-child-process.mts";
 import { createVitestWorkerRun } from "../../scripts/lib/vitest-worker-run.mts";
+import { testRunnerFixtureEnv } from "./prepared-script-wrapper.test-support.js";
 import {
   createControlledWorkerCompiler,
   createWorkerArtifactTest,
@@ -34,7 +35,7 @@ describe("fresh compiled subprocess invocation", { concurrent: false }, () => {
     workerArtifacts.fixtureLifetime.run(async () => {
       const { runtime } = workerArtifacts.createFixtureCommands();
       const directory = workerArtifacts.fixtureDirectory();
-      const controlled = createControlledWorkerCompiler(directory, process.env);
+      const controlled = createControlledWorkerCompiler(directory, testRunnerFixtureEnv());
       const [compiler, first, input, receipt] = controlled.args(path.join(directory, "first"));
       const result = await runtime([
         "--input-type=module",
@@ -65,7 +66,7 @@ describe("fresh compiled subprocess invocation", { concurrent: false }, () => {
         );
         const controlled = createControlledWorkerCompiler(
           directory,
-          process.env,
+          testRunnerFixtureEnv(),
           process.versions.bun ? "bun" : "node",
         );
         const readLines = (name: string) =>

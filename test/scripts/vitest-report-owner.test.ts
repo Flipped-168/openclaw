@@ -272,7 +272,7 @@ describe.skipIf(process.platform === "win32")("native multi-invocation report ow
     { timeout: 60000 },
     async ({ expect, reports }) => {
       const root = reports.make("oc-report-automatic-");
-      const result = await reports.fixture(root)("automatic");
+      const result = await reports.fixture(root)("automatic", { env: { CI: "1" } });
       expect(result.code, result.stderr).toBe(0);
       expect(result.stderr).toContain("2 exact-target plans with parallelism 2");
       expect(inventory(json(result.output))).toEqual(expected);
@@ -300,6 +300,7 @@ describe.skipIf(process.platform === "win32")("native multi-invocation report ow
     async ({ expect, reports }) => {
       const root = reports.make("oc-report-config-output-");
       const result = await reports.fixture(root)("automatic", {
+        env: { CI: "1" },
         report: false,
         configOutput: true,
         nativeArgs: ["--reporter=dot", "--coverage.enabled=false"],
@@ -558,10 +559,15 @@ describe.skipIf(process.platform === "win32")("native multi-invocation report ow
     },
   );
 
-  reportTest.for(["--outputFile.blob", "--outputFile.blob="])(
-    "preserves native no-tests refusal after %s",
+  reportTest.for([
+    { option: "--outputFile.blob", ci: false },
+    { option: "--outputFile.blob=", ci: false },
+    { option: "--outputFile.blob", ci: true },
+    { option: "--outputFile.blob=", ci: true },
+  ])(
+    "preserves native no-tests refusal after $option (CI=$ci)",
     { timeout: 60000 },
-    async (option, { expect, reports }) => {
+    async ({ option, ci }, { expect, reports }) => {
       const root = reports.make("oc-report-following-option-");
       const output = path.join(root, "reports", "result.json");
       const nativeArgs = [
@@ -579,6 +585,7 @@ describe.skipIf(process.platform === "win32")("native multi-invocation report ow
         entry: "projects",
         report: false,
         nativeArgs,
+        env: ci ? { CI: "1" } : {},
       });
       const index = json(path.join(result.reportSet!, "index.json"));
       const attempt = index.entries[0].attempts[0];
@@ -588,14 +595,20 @@ describe.skipIf(process.platform === "win32")("native multi-invocation report ow
       expect(capture.modules).toEqual([]);
       expect(capture.ended?.reason).toBe("failed");
       expect(attempt.outcome).toMatchObject({ code: 1, signal: null });
-      expect(result.code, result.stderr).toBe(2);
+      expect(result.code, result.stderr).toBe(ci ? 1 : 2);
       expect(result.signal).toBeNull();
-      expect(index.complete).toBe(true);
-      expect(index.entries[1].attempts).toHaveLength(1);
-      expect(index.entries[1].attempts[0].outcome).toMatchObject({ code: 1, signal: null });
-      expect(fs.existsSync(output)).toBe(true);
-      expect(json(output).numTotalTests).toBe(0);
-      expect(json(output).success).toBe(false);
+      expect(index.complete).toBe(ci);
+      if (ci) {
+        expect(index.entries[1].attempts).toHaveLength(1);
+        expect(index.entries[1].attempts[0].outcome).toMatchObject({ code: 1, signal: null });
+        expect(index).toMatchObject({ error: "", merge: { code: 1, signal: null } });
+        expect(json(output).numTotalTests).toBe(0);
+        expect(json(output).success).toBe(false);
+      } else {
+        expect(index.entries[1].attempts).toEqual([]);
+        expect(index.merge).toBeNull();
+        expect(fs.existsSync(output)).toBe(false);
+      }
     },
   );
 
@@ -603,7 +616,9 @@ describe.skipIf(process.platform === "win32")("native multi-invocation report ow
     "publishes complete evidence without erasing native failure: %s",
     { timeout: 60000 },
     async (mode, { expect, reports }) => {
-      const result = await reports.run(mode);
+      const result = await reports.fixture(reports.make("oc-report-complete-failure-"))(mode, {
+        env: mode === "fail-fast" ? { CI: "1" } : {},
+      });
       expect(result.code, result.stderr).toBe(1);
       const cases = expected.map((entry) => [...entry]);
       if (mode === "failure" || mode === "batch-failure") {

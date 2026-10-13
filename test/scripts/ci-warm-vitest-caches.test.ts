@@ -6,6 +6,7 @@ import { createVitestCacheWarmGroups } from "../../scripts/lib/ci-node-test-plan
 import { BUN_UI_TEST_ENV } from "../../scripts/lib/ci-test-runtime.mts";
 import { runManagedCommand } from "../../scripts/lib/managed-child-process.mts";
 import { useAutoCleanupTempDirTracker } from "../helpers/temp-dir.js";
+import { testRunnerFixtureEnv } from "./prepared-script-wrapper.test-support.js";
 
 vi.mock(import("../../scripts/lib/managed-child-process.mts"), async (importOriginal) => ({
   ...(await importOriginal()),
@@ -56,6 +57,10 @@ describe("protected Vitest cache collection", () => {
   it.each(["linux", "linux-hosted"])(
     "preserves Node and compatible Bun seeds before final UI pruning after a failure (%s)",
     async (platform) => {
+      const fixtureEnv = testRunnerFixtureEnv();
+      for (const name of ["CI", "GITHUB_ACTIONS", "OPENCLAW_NODE_TEST_PLAN_CONTINUE_ON_FAILURE"]) {
+        vi.stubEnv(name, fixtureEnv[name]);
+      }
       const root = tempDirs.make("openclaw-cache-warm-test-");
       const cacheRoot = join(root, "transforms");
       const compileRoot = join(root, "compile");
