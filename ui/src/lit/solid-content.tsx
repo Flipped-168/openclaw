@@ -5,8 +5,8 @@ import type { Part } from "lit/directive.js";
 import {
   createComponent,
   createContext,
-  createRoot,
   createEffect,
+  createRoot,
   createSignal,
   flush,
   getOwner,
@@ -226,9 +226,9 @@ class SolidContent extends AsyncDirective {
     if (!component || !element) {
       return;
     }
-    // The directive controls connection; its creator owns resources mounted by later effects.
-    const withinOwner = Boolean(getOwner()) || Boolean(currentLitRoots);
+    const owner = this.owner ?? getOwner();
     const view = () => {
+      // A legacy host can publish props during its parent's Solid commit.
       const [props, setProps] = createSignal(this.props, { ownedWrite: true });
       const [presented, setPresented] = createSignal(this.isConnected, { ownedWrite: true });
       this.updateProps = (next) => setProps(() => next);
@@ -248,8 +248,9 @@ class SolidContent extends AsyncDirective {
         </SolidContentPresentation>
       );
     };
-    this.dispose = runWithOwner(this.owner ?? getOwner(), () =>
-      withinOwner
+    // Nested top-level rendering can flush effects under the parent's render owner.
+    this.dispose = runWithOwner(owner, () =>
+      owner || currentLitRoots
         ? createRoot((dispose) => {
             insert(element, view());
             return () => {

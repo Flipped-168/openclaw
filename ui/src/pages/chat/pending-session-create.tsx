@@ -10,11 +10,8 @@ import { parseAgentSessionKey } from "../../lib/sessions/session-key.ts";
 import { generateUUID } from "../../lib/uuid.ts";
 import { defineSolidBridge } from "../../lit/solid-bridge.ts";
 import { emptyLegacyContent, LitContent } from "../../lit/solid-content.tsx";
-import { CreationComposerView } from "../new-session/creation-composer-render.tsx";
-import {
-  renderNewSessionBody,
-  renderNewSessionReconnectStatus,
-} from "../new-session/draft-body.ts";
+import { CreationComposer } from "../new-session/creation-composer-render.tsx";
+import { NewSessionBody } from "../new-session/draft-body.solid.tsx";
 import { chatStartupStatusLabel } from "./chat-run-startup.ts";
 import { ChatComposer, resetChatComposerState } from "./components/chat-composer.tsx";
 import { renderChatImageLightbox } from "./components/chat-image-lightbox.ts";
@@ -156,7 +153,7 @@ function PendingSessionCreateContent(props: PendingSessionCreateProps) {
         onOpenParentSession: noAction,
         onBranchSelect: noAction,
       }),
-      body: renderNewSessionBody({
+      body: {
         inChat: true,
         error: failed
           ? (startup.error ??
@@ -182,9 +179,9 @@ function PendingSessionCreateContent(props: PendingSessionCreateProps) {
                 label: t(checking ? "chat.queue.deliveryUnconfirmed" : "chat.queue.notSent"),
               }
             : undefined,
-        renderDraft: renderNewSessionReconnectStatus,
+        renderDraft: () => <div role="status">{t("connection.reconnecting")}</div>,
         onOpenImage: openImage,
-      }),
+      },
       creationComposer: composer?.canDisplay() ? composer : undefined,
       renderRevision: {},
       composer: {
@@ -219,7 +216,7 @@ function PendingSessionCreateContent(props: PendingSessionCreateProps) {
         <section class="chat" data-region="main" aria-busy={view()?.submitting ? "true" : "false"}>
           <div class="chat-main__conversation-frame">
             <div class="chat-main__conversation">
-              <LitContent value={view()?.body} />
+              <Show when={view()?.body}>{(body) => <NewSessionBody {...body()} />}</Show>
               <div class="chat-footer">
                 <Show when={view()}>
                   {(current) => (
@@ -234,7 +231,7 @@ function PendingSessionCreateContent(props: PendingSessionCreateProps) {
                       }
                     >
                       {(composer) => (
-                        <CreationComposerView
+                        <CreationComposer
                           composer={composer}
                           onOpenImage={openImage}
                           renderRevision={current().renderRevision}

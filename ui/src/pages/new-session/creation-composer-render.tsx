@@ -2,17 +2,16 @@ import { createMemo, Show } from "solid-js";
 import type { ImageLightboxItem } from "../../components/image-lightbox.types.ts";
 import type { HumanMention } from "../../lib/chat/chat-types.ts";
 import { t } from "../../lib/reactive/i18n.ts";
-import { solidContent } from "../../lit/solid-content.tsx";
 import { resolveChatAttachmentLimits } from "../chat/components/chat-attachment-admission.ts";
 import { getChatComposerState } from "../chat/components/chat-composer-state.ts";
-import type { ChatComposerProps } from "../chat/components/chat-composer-types.ts";
 import { ChatComposer, resetChatComposerState } from "../chat/components/chat-composer.tsx";
-import type { CreationComposer } from "./creation-composer.ts";
+import type { CreationComposer as CreationComposerOwner } from "./creation-composer.ts";
 
-function creationComposerProps(
-  composer: CreationComposer,
+/** This view has no Gateway client: it can compose and stage, never execute session controls. */
+function prepareCreationComposer(
+  composer: CreationComposerOwner,
   onOpenImage: (item: ImageLightboxItem) => void,
-): ChatComposerProps {
+): Parameters<typeof ChatComposer>[0] {
   const { context, attachmentDraft } = composer;
   const reads = attachmentDraft.reads;
   const signal = reads.readSignal;
@@ -72,46 +71,49 @@ function creationComposerProps(
   };
 }
 
-/** This view has no Gateway client: it can compose and stage, never execute session controls. */
-export function CreationComposerView(props: {
-  composer: CreationComposer | undefined;
+export function CreationComposer(props: {
+  composer: CreationComposerOwner | undefined;
   onOpenImage: (item: ImageLightboxItem) => void;
   renderRevision?: object;
 }) {
-  const active = createMemo(() => {
+  const visible = createMemo(() => {
     void props.renderRevision;
     return props.composer?.canDisplay() ? props.composer : undefined;
   });
   return (
-    <Show when={active()} keyed>
-      {(composer) => {
-        const input = createMemo(() => {
-          void props.renderRevision;
-          return {
-            fields: creationComposerProps(composer, props.onOpenImage),
-            error: composer.error,
-          };
-        });
-        return (
-          <section class="creation-composer" aria-label={t("newSession.followUps")}>
-            <Show when={input().error}>
-              {(error) => (
-                <div class="callout danger" role="alert">
-                  {error()}
-                </div>
-              )}
-            </Show>
-            <ChatComposer {...input().fields} renderRevision={props.renderRevision} />
-          </section>
-        );
-      }}
+    <Show when={visible()}>
+      {(composer) => (
+        <CreationComposerContent
+          composer={composer()}
+          onOpenImage={props.onOpenImage}
+          renderRevision={props.renderRevision}
+        />
+      )}
     </Show>
   );
 }
 
-export function renderCreationComposer(
-  composer: CreationComposer | undefined,
-  onOpenImage: (item: ImageLightboxItem) => void,
-) {
-  return solidContent(CreationComposerView, { composer, onOpenImage, renderRevision: {} });
+function CreationComposerContent(props: {
+  composer: CreationComposerOwner;
+  onOpenImage: (item: ImageLightboxItem) => void;
+  renderRevision?: object;
+}) {
+  const prepared = createMemo(() => {
+    void props.renderRevision;
+    return prepareCreationComposer(props.composer, props.onOpenImage);
+  });
+  const error = createMemo(() => {
+    void props.renderRevision;
+    return props.composer.error;
+  });
+  return (
+    <section class="creation-composer" aria-label={t("newSession.followUps")}>
+      <Show when={error()}>
+        <div class="callout danger" role="alert">
+          {props.composer.error}
+        </div>
+      </Show>
+      <ChatComposer {...prepared()} renderRevision={props.renderRevision} />
+    </section>
+  );
 }
