@@ -85,7 +85,6 @@ export function withSessionCleanupStore<T>(
               birthtime: snapshot.source.databaseBirthtime,
             };
           }
-          source.identity = identity;
           assertCurrent();
           return snapshot;
         },
