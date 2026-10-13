@@ -3641,6 +3641,8 @@ expiry pruning, and capacity check in the existing agent executor. Prepared shar
 and target predicates run in that transaction; host grants retain current caller
 authority without rereading the same database. The existing native receipt publishes
 entry facts before releasing FIFO custody, and close joins accepted persistence.
+Receipt insertion checks capacity in the same SQL statement; rejection rolls back
+the Goal and turn without evicting a still-valid retry receipt.
 Incognito, maintenance, and opaque or cross-store SDK guards retain native atomicity.
 Receipt validity, retry behavior, schemas, retention, and update behavior are unchanged.
 
