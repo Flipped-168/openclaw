@@ -100,10 +100,13 @@ export function createComputerTool(options?: {
           COMPUTER_TOOL_ACTIONS.includes(action) || preparedPairedActions.actions.includes(action),
       )
     : COMPUTER_TOOL_ACTIONS;
-  const parameterSchema = createComputerToolSchema(
-    availableActions(options?.transport?.computerUse?.actions ?? initialPairedActions),
-    targetScope,
-  );
+  // Finalized wrappers share this attempt's live envelope; cached fields stay immutable.
+  const parameterSchema = {
+    ...createComputerToolSchema(
+      availableActions(options?.transport?.computerUse?.actions ?? initialPairedActions),
+      targetScope,
+    ),
+  };
   // Serialize execute() per tool instance. This runtime can dispatch parallel
   // tool calls (some providers enable it by default), but desktop input and the
   // shared target/frame/button state must apply in model order, not completion
@@ -126,9 +129,12 @@ export function createComputerTool(options?: {
     transport: options?.transport,
     gatewayStatus: options?.pairedNodeComputerUse?.gateway,
     onCapabilitiesChanged: (capabilities) => {
-      tool.parameters = createComputerToolSchema(
-        availableActions(capabilities?.actions ?? COMPUTER_TOOL_ACTIONS),
-        targetScope,
+      Object.assign(
+        parameterSchema,
+        createComputerToolSchema(
+          availableActions(capabilities?.actions ?? COMPUTER_TOOL_ACTIONS),
+          targetScope,
+        ),
       );
       tool.description = buildComputerToolDescription(capabilities, targetScope);
     },
