@@ -208,7 +208,11 @@ export function currentConfigObject(
 
 /** Read-only display facts cannot become an editor's base or write revision. */
 export function currentDisplayConfig(state: RuntimeConfigState): Record<string, unknown> | null {
-  return currentConfigObject(state) ?? state.bootstrapConfig ?? null;
+  return (
+    (!staleConfigSnapshots.has(state) ? asConfigRecord(state.configSnapshot?.config) : null) ??
+    state.bootstrapConfig ??
+    null
+  );
 }
 
 export function currentDisplayRuntimeConfig(

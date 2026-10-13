@@ -19,7 +19,7 @@ import {
   type RouteId,
 } from "../app-routes.ts";
 import { sessionRefFromPath } from "../app-session-route-paths.ts";
-import { i18n } from "../i18n/index.ts";
+import { i18n, isSupportedLocale } from "../i18n/index.ts";
 import { createAgentIdentityCapability } from "../lib/agents/identity.ts";
 import { createAgentCapability } from "../lib/agents/index.ts";
 import { createChannelCapability } from "../lib/channels/index.ts";
@@ -282,7 +282,7 @@ export function bootstrapApplication(): ApplicationRuntime {
       navigationConfirmed: entries !== undefined,
       onApplied: (patch) => Object.assign(settings, patch),
     });
-    if (settings.locale) {
+    if (isSupportedLocale(settings.locale)) {
       void i18n.setLocale(settings.locale);
     }
   }

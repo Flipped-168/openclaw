@@ -482,7 +482,7 @@ export abstract class ChatPaneBoard extends ChatPaneHistory {
           return;
         }
         const swarmEnabled = isSwarmEnabledInConfig(
-          currentDisplayConfig(context.runtimeConfig.state),
+          context.runtimeConfig ? currentDisplayConfig(context.runtimeConfig.state) : null,
           agentId,
         );
         if (this.swarmEnabled !== swarmEnabled) {

@@ -3,11 +3,9 @@ import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { getCanonicalUserPreferences } from "../state/user-preferences.js";
 import { prepareControlUiBootstrapPreferences } from "./control-ui-bootstrap-preferences.js";
 
+// mock-isolation: the projection uses synthetic preferences without a Gateway/SQLite owner.
 vi.mock("../state/user-preferences.js", () => ({
   getCanonicalUserPreferences: vi.fn(async () => ({ entries: { "ui.themeMode": "light" } })),
-}));
-vi.mock("./server-methods/config.js", () => ({
-  loadGatewayConfigSchema: () => ({ uiHints: {} }),
 }));
 
 it("includes only the viewer's presentation data and redacts MCP credentials", async () => {

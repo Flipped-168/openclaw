@@ -251,7 +251,11 @@ export class ShellGatewayOwner {
       void this.host.context?.config.refresh();
       // A local settings draft owns config conflicts; external snapshots must not overwrite it.
       const runtimeConfig = this.host.context?.runtimeConfig;
-      if (runtimeConfig?.state.configSnapshot && !runtimeConfig.state.configFormDirty) {
+      if (
+        runtimeConfig &&
+        !runtimeConfig.state.configFormDirty &&
+        (runtimeConfig.state.configSnapshot || !runtimeConfig.state.bootstrapConfig)
+      ) {
         // Save notifications reconcile in place so active editors keep focus and stay interactive.
         void runtimeConfig.refresh({ background: true });
       }
