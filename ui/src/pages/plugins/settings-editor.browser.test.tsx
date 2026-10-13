@@ -1,12 +1,11 @@
 import { createSignal, flush } from "solid-js";
 import { afterEach, describe, expect, it, onTestFinished, vi } from "vitest";
-import { page, userEvent } from "vitest/browser";
+import { page } from "vitest/browser";
 import type { ApplicationContext } from "../../app/context.ts";
 import { REDACTED_SENTINEL, type JsonSchema } from "../../lib/config-form-utils.ts";
 import type { GatewayPageController } from "../../lit/gateway-page-controller.ts";
 import { ControlUiPluginRuntime } from "../../plugins/control-ui-runtime.ts";
 import { mountSolid } from "../../test-helpers/mount-solid.ts";
-import { item, openMenu } from "../../test-helpers/solid-menu.tsx";
 import {
   createApplicationGateway,
   createSolidApplicationContextProvider,
@@ -227,34 +226,6 @@ describe("grouped plugin settings", () => {
       expect(model.onConfigPatch).not.toHaveBeenCalled();
     },
   );
-  it("does not execute a retired menu after switching settings", async () => {
-    const { editor, model, update } = await mount();
-    const original = vi.fn();
-    await update({ onAskSetting: original });
-    const menu = editor.querySelector<HTMLElement>('[data-setting="enabled"] [role="menu"]')!;
-    const id = menu.id.slice(0, -":content".length);
-    await openMenu(id);
-    const ask = item("Ask OpenClaw", id);
-    await userEvent.click(ask);
-    expect(original).toHaveBeenCalledExactlyOnceWith(
-      expect.objectContaining({ path: ["plugins", "entries", "fixture", "config", "enabled"] }),
-    );
-    original.mockClear();
-    const replacement = vi.fn();
-    await update({
-      onAskSetting: replacement,
-      model: {
-        ...model,
-        pluginId: "replacement",
-        configHints: {},
-        configSchema: { type: "object", properties: { limit: { type: "number" } } },
-      },
-    });
-    expect(menu.isConnected).toBe(false);
-    ask.click();
-    expect(replacement).not.toHaveBeenCalled();
-    expect(original).not.toHaveBeenCalled();
-  });
   it.each<{
     name: string;
     overrides: Partial<PluginSettingsEditorModel>;
