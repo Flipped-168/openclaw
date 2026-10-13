@@ -1,3 +1,4 @@
+import { onSettled } from "solid-js";
 import { composedParent } from "../lib/navigation-click.ts";
 import { promoteToPopoverTopLayer } from "./menu-surface.ts";
 import { resolveTransientContainer } from "./transient-container.ts";
@@ -37,14 +38,15 @@ export class PortaledHovercardController {
     }
   };
   private readonly handleCardFocusIn = (event: FocusEvent) => {
-    if (event.currentTarget === this.card) {
+    // A nested Solid root rewrites currentTarget while dispatching delegated focus events.
+    if (this.card && event.composedPath().includes(this.card)) {
       this.cardFocusInside = true;
       this.clearClose();
     }
   };
   private readonly handleCardFocusOut = (event: FocusEvent) => {
     const card = this.card;
-    if (!card || event.currentTarget !== this.card) {
+    if (!card || !event.composedPath().includes(card)) {
       return;
     }
     if (event.relatedTarget instanceof Node && card.contains(event.relatedTarget)) {
@@ -102,9 +104,12 @@ export class PortaledHovercardController {
   renderContents(card: HTMLDivElement, update: () => void): void {
     const focused = card.contains(document.activeElement) ? document.activeElement : null;
     update();
-    // A card update can join an in-progress Solid commit; check after its DOM writes.
-    queueMicrotask(() => {
-      if (!focused || card !== this.card || card.contains(document.activeElement)) {
+    if (!focused) {
+      return;
+    }
+    // Solid commits roster updates after the caller returns.
+    onSettled(() => {
+      if (this.card !== card || document.activeElement !== document.body) {
         return;
       }
       // Live session links can move between sections or disappear after a roster update.
@@ -268,9 +273,8 @@ export class PortaledHovercardController {
     this.card = card;
     card.addEventListener("keydown", this.handleCardKeyDown);
     card.addEventListener("pointerenter", this.handleCardPointerEnter);
-    // Capture before Solid's delegated root retargets currentTarget during bubbling.
-    card.addEventListener("focusin", this.handleCardFocusIn, true);
-    card.addEventListener("focusout", this.handleCardFocusOut, true);
+    card.addEventListener("focusin", this.handleCardFocusIn);
+    card.addEventListener("focusout", this.handleCardFocusOut);
     this.placement = placement;
     this.unmountContents = unmountContents ?? null;
     const trigger = this.trigger ?? anchor;

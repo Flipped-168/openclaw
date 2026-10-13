@@ -18,9 +18,9 @@ import { useOptionalApplication } from "../lib/reactive/context.ts";
 import { t } from "../lib/reactive/i18n.ts";
 import { projectSource } from "../lib/reactive/projection.ts";
 import { defineSolidBridge, type SolidBridgeElement } from "../lit/solid-bridge.ts";
+import { renderLegacyTemplate } from "../lit/solid-content.tsx";
 import type { ControlUiRegistration } from "./control-ui-capability.ts";
 import { scopeControlUiHost } from "./control-ui-scope.ts";
-import { renderPluginTemplate } from "./control-ui-view.runtime.ts";
 import type { ViewKind } from "./control-ui-view.ts";
 
 type ViewRegistration = ControlUiRegistration<{ mount: ControlUiView<unknown> }>;
@@ -84,11 +84,11 @@ function MountedContent(props: {
       if (mount) {
         return mount(container);
       }
-      runWithOwner(owner, () => renderPluginTemplate(value, container, host));
+      runWithOwner(owner, () => renderLegacyTemplate(value, container, host));
       return undefined;
     },
   );
-  onCleanup(() => renderPluginTemplate(undefined, container));
+  onCleanup(() => renderLegacyTemplate(undefined, container));
   return (
     <div
       style={{ display: "contents" }}
@@ -240,7 +240,7 @@ function PluginViewContent(props: PluginViewProps, host: PluginViewElement) {
       handle?.update?.(viewContext);
       if (!host.mountDefaultView) {
         for (const target of defaultContainers.keys()) {
-          renderPluginTemplate(host.defaultView, target, host.defaultHost ?? host);
+          renderLegacyTemplate(host.defaultView, target, host.defaultHost ?? host);
         }
       }
     } catch (failure) {
@@ -310,8 +310,8 @@ function PluginViewContent(props: PluginViewProps, host: PluginViewElement) {
           if (host.mountDefaultView) {
             dispose = host.mountDefaultView(target);
           } else {
-            renderPluginTemplate(host.defaultView, target, host.defaultHost ?? host);
-            dispose = () => renderPluginTemplate(undefined, target);
+            renderLegacyTemplate(host.defaultView, target, host.defaultHost ?? host);
+            dispose = () => renderLegacyTemplate(undefined, target);
           }
           defaultContainers.set(target, dispose);
           notify();

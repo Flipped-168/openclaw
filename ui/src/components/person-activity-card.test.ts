@@ -1,24 +1,22 @@
 /* @vitest-environment jsdom */
 import { getQueriesForElement } from "@solidjs/testing-library";
+import { createRoot, flush } from "solid-js";
 import { afterEach, expect, it, vi } from "vitest";
 import type { GatewaySessionRow } from "../api/types.ts";
-import { mountPersonActivityCard } from "./person-activity-card.tsx";
+import { updatePersonActivityCard } from "./person-activity-card.tsx";
 import type { PersonActivityData } from "./person-activity-data.ts";
 
-const disposers: (() => void)[] = [];
-function createCard() {
+const containers: HTMLElement[] = [];
+function createContainer() {
   const container = document.createElement("div");
   document.body.append(container);
-  const card = mountPersonActivityCard(container, { status: "" });
-  disposers.push(() => {
-    card.dispose();
-    container.remove();
-  });
-  return { container, ...card };
+  containers.push(container);
+  return container;
 }
 afterEach(() => {
-  for (const dispose of disposers.splice(0)) {
-    dispose();
+  for (const container of containers.splice(0)) {
+    updatePersonActivityCard(container);
+    container.remove();
   }
 });
 
@@ -53,9 +51,9 @@ function data(rows: GatewaySessionRow[]): PersonActivityData {
 it("retains the open card's recent selection and focused link while fresh roster facts update", () => {
   const initial = [session("one", 3), session("two", 2), session("three", 1), session("four", 0)];
   const openSession = vi.fn();
-  const { container, update } = createCard();
+  const container = createContainer();
   const show = (sessionData?: PersonActivityData) =>
-    update({
+    updatePersonActivityCard(container, {
       user: alice,
       sessionData,
       watchAgentId: "main",
@@ -66,7 +64,13 @@ it("retains the open card's recent selection and focused link while fresh roster
     });
   show();
   expect(container.querySelectorAll(".person-activity-card__session")).toHaveLength(0);
-  show(data(initial));
+  // A portal retains its card after the caller's render scope is replaced.
+  const disposeCaller = createRoot((dispose) => {
+    updatePersonActivityCard(container);
+    show(data(initial));
+    return dispose;
+  });
+  flush();
   const links = () => [
     ...container.querySelectorAll<HTMLAnchorElement>(".person-activity-card__session"),
   ];
@@ -78,7 +82,9 @@ it("retains the open card's recent selection and focused link while fresh roster
   const focused = links()[1]!;
   const title = focused.querySelector(".person-activity-card__session-name")!;
   focused.focus();
+  disposeCaller();
   show(data([{ ...initial[1]!, label: "two updated", updatedAt: 4 }, initial[2]!, initial[3]!]));
+  flush();
   expect(links()).toHaveLength(2);
   expect(links()[0]).toBe(focused);
   expect(focused.querySelector(".person-activity-card__session-name")).toBe(title);
@@ -97,8 +103,8 @@ it("retains the open card's recent selection and focused link while fresh roster
 it("keeps native modified-click navigation and exposes activity when presence is offline", () => {
   const navigate = vi.fn();
   const openSession = vi.fn();
-  const { container, update } = createCard();
-  update({
+  const container = createContainer();
+  updatePersonActivityCard(container, {
     user: { ...alice, entries: [] },
     sessionData: data([session("one", 1)]),
     watchAgentId: "main",

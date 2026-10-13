@@ -25,7 +25,7 @@ import {
   resolveUiDefaultAgentId,
 } from "../../lib/sessions/session-key.ts";
 import { defineSolidBridge, type SolidBridgeElement } from "../../lit/solid-bridge.ts";
-import { mountPersonActivityCard, type PersonActivitySurface } from "../person-activity-card.tsx";
+import { updatePersonActivityCard } from "../person-activity-card.tsx";
 import { observePersonActivityData } from "../person-activity-data.ts";
 import { personActivityRouting } from "../person-activity-link.ts";
 import { createPortaledHovercard, PortaledHovercardController } from "../portaled-hovercard.ts";
@@ -53,7 +53,6 @@ export function PersonReferenceContent(props: PersonReferenceProps) {
   let stopRoute: (() => void) | undefined;
   let person: PresenceViewer | null | undefined;
   let activity: ReturnType<typeof observePersonActivityData> | undefined;
-  let cardView: ReturnType<typeof mountPersonActivityCard> | undefined;
   const activityExpiry = createPresenceActivityLifecycle(
     () =>
       projectPresencePayload(activity?.data?.presencePayload).users.filter((user) =>
@@ -75,7 +74,6 @@ export function PersonReferenceContent(props: PersonReferenceProps) {
     document.removeEventListener("focusin", outside, true);
     document.removeEventListener("keydown", escape, true);
     portal.reset();
-    cardView = undefined;
     person = undefined;
     trigger?.setAttribute("aria-expanded", "false");
     trigger?.setAttribute("aria-haspopup", "dialog");
@@ -143,9 +141,7 @@ export function PersonReferenceContent(props: PersonReferenceProps) {
     );
     portal.markTrigger(trigger);
     card.addEventListener("pointerleave", portal.handleCardPointerLeave);
-    const view = mountPersonActivityCard(card, { status: t("common.loading") });
-    cardView = view;
-    portal.mount(trigger, card, "vertical", true, () => view.dispose());
+    portal.mount(trigger, card, "vertical", true, () => updatePersonActivityCard(card));
     document.addEventListener("pointerdown", outside, true);
     document.addEventListener("focusin", outside, true);
     document.addEventListener("keydown", escape, true);
@@ -223,57 +219,64 @@ export function PersonReferenceContent(props: PersonReferenceProps) {
       };
       const scope = connection.capture();
       const route = context?.router.getState().location;
-      const input: PersonActivitySurface =
-        user && context
-          ? {
-              user,
-              sessionData: data,
-              watchAgentId: resolveUiDefaultAgentId(defaults),
-              mainKey: resolveUiConfiguredMainKey(defaults),
-              globalScope: isUiGlobalScopeConfigured(defaults),
-              routing: personActivityRouting(context, close),
-              openSession: (row, agentId) => {
-                const face = resolveSessionPreferredFace(row);
-                const target = sessionNavigationTarget({
-                  face,
-                  sessionKey: row.key,
-                  row,
-                  fallbackAgentId: agentId,
-                  basePath: context.basePath,
+      portal.renderContents(card, () =>
+        untrack(() =>
+          updatePersonActivityCard(
+            card,
+            user && context
+              ? {
+                  user,
+                  sessionData: data,
+                  watchAgentId: resolveUiDefaultAgentId(defaults),
                   mainKey: resolveUiConfiguredMainKey(defaults),
-                });
-                close();
-                runSessionNavigationIntent(props.host, {
-                  agentId,
-                  face,
-                  sessionKey: row.key,
-                  commit: () => {
-                    if (
-                      !scope ||
-                      context.router.getState().location !== route ||
-                      !connection.isCurrent(scope)
-                    ) {
-                      return false;
-                    }
-                    prepareSessionNavigationHandoff(
-                      context.gateway,
-                      target.options.pathname,
-                      row.key,
-                    );
-                    context.navigate(face, target.options);
-                    selectApplicationSession({
-                      selection: context.agentSelection,
-                      gateway: context.gateway,
+                  globalScope: isUiGlobalScopeConfigured(defaults),
+                  routing: personActivityRouting(context, close),
+                  openSession: (row, agentId) => {
+                    const face = resolveSessionPreferredFace(row);
+                    const target = sessionNavigationTarget({
+                      face,
                       sessionKey: row.key,
-                      agentId,
+                      row,
+                      fallbackAgentId: agentId,
+                      basePath: context.basePath,
+                      mainKey: resolveUiConfiguredMainKey(defaults),
                     });
-                    return true;
+                    close();
+                    runSessionNavigationIntent(props.host, {
+                      agentId,
+                      face,
+                      sessionKey: row.key,
+                      commit: () => {
+                        if (
+                          !scope ||
+                          context.router.getState().location !== route ||
+                          !connection.isCurrent(scope)
+                        ) {
+                          return false;
+                        }
+                        prepareSessionNavigationHandoff(
+                          context.gateway,
+                          target.options.pathname,
+                          row.key,
+                        );
+                        context.navigate(face, target.options);
+                        selectApplicationSession({
+                          selection: context.agentSelection,
+                          gateway: context.gateway,
+                          sessionKey: row.key,
+                          agentId,
+                        });
+                        return true;
+                      },
+                    });
                   },
-                });
-              },
-            }
-          : { status: person === undefined ? t("common.loading") : t("chat.mentions.unavailable") };
-      portal.renderContents(card, () => cardView?.update(input));
+                }
+              : person === undefined
+                ? t("common.loading")
+                : t("chat.mentions.unavailable"),
+          ),
+        ),
+      );
       portal.position();
     });
   }

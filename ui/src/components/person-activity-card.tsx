@@ -1,5 +1,5 @@
 import { render } from "@solidjs/web";
-import { createMemo, createSignal, flush, For, Show } from "solid-js";
+import { createMemo, createSignal, For, onCleanup, runWithOwner, Show } from "solid-js";
 import type { GatewaySessionRow } from "../api/types.ts";
 import { i18n } from "../i18n/index.ts";
 import { shouldHandleNavigationClick } from "../lib/navigation-click.ts";
@@ -26,11 +26,11 @@ import { HoverMarquee } from "../lib/solid/hover-marquee.tsx";
 import type { PersonActivityData } from "./person-activity-data.ts";
 import { personActivityLink, type PersonActivityRouting } from "./person-activity-link.ts";
 import { Icon } from "./solid/icon.tsx";
-import { ViewerAvatar } from "./solid/viewer-facepile.tsx";
 import "./elapsed-time.tsx";
+import "./viewer-facepile.ts";
 
 type ScopedSession = { row: GatewaySessionRow; agentId: string };
-export type PersonCardInput = {
+type PersonCardInput = {
   user: PresenceViewer;
   sessionData: PersonActivityData | undefined;
   watchAgentId: string;
@@ -39,6 +39,19 @@ export type PersonCardInput = {
   routing: PersonActivityRouting;
   openSession: (row: GatewaySessionRow, agentId: string) => void;
 };
+
+/** Loaded, caller-visible roster facts, paired with their owning list scope. */
+function loadedPresenceSessions(input: PersonCardInput): Map<string, ScopedSession> {
+  const sessions = new Map<string, ScopedSession>();
+  for (const row of input.sessionData?.sessionsResult?.sessions ?? []) {
+    const agentId = parseAgentSessionKey(row.key)?.agentId ?? row.agentId ?? input.watchAgentId;
+    const key = sessionIdentity(row.key, agentId, input);
+    if (!sessions.has(key)) {
+      sessions.set(key, { row, agentId });
+    }
+  }
+  return sessions;
+}
 
 function sessionIdentity(key: string, agentId: string, input: PersonCardInput): string {
   const scope = parseAgentSessionKey(key)?.agentId ?? normalizeAgentId(agentId);
@@ -54,22 +67,12 @@ function sessionIdentity(key: string, agentId: string, input: PersonCardInput): 
   );
   return `${scope}\u0000${canonical}`;
 }
-function loadedPresenceSessions(input: PersonCardInput): Map<string, ScopedSession> {
-  const sessions = new Map<string, ScopedSession>();
-  for (const row of input.sessionData?.sessionsResult?.sessions ?? []) {
-    const agentId = parseAgentSessionKey(row.key)?.agentId ?? row.agentId ?? input.watchAgentId;
-    const key = sessionIdentity(row.key, agentId, input);
-    if (!sessions.has(key)) {
-      sessions.set(key, { row, agentId });
-    }
-  }
-  return sessions;
-}
+
 function Elapsed(props: {
   timestamp: number;
   display?: "compact" | "minute-compact" | "single-unit";
 }) {
-  const date = createMemo(() => new Date(props.timestamp));
+  const date = () => new Date(props.timestamp);
   return (
     <time
       datetime={date().toISOString()}
@@ -86,6 +89,7 @@ function Elapsed(props: {
     </time>
   );
 }
+
 function Sessions(props: {
   sessions: readonly ScopedSession[];
   input: PersonCardInput;
@@ -104,13 +108,11 @@ function Sessions(props: {
           <div class="person-activity-card__sessions">
             <For
               each={props.sessions.slice(0, 3)}
-              keyed={(session) => sessionIdentity(session.row.key, session.agentId, props.input)}
+              keyed={({ row, agentId }) => sessionIdentity(row.key, agentId, props.input)}
             >
               {(session) => {
-                const displayName = createMemo(() =>
-                  resolveSessionDisplayName(session().row.key, session().row),
-                );
-                const target = createMemo(() =>
+                const name = () => resolveSessionDisplayName(session().row.key, session().row);
+                const target = () =>
                   sessionNavigationTarget({
                     face: resolveSessionPreferredFace(session().row),
                     sessionKey: session().row.key,
@@ -118,8 +120,7 @@ function Sessions(props: {
                     basePath: props.input.routing.basePath,
                     row: session().row,
                     mainKey: props.input.mainKey,
-                  }),
-                );
+                  });
                 return (
                   <a
                     class="person-activity-card__session session-row-host"
@@ -140,12 +141,12 @@ function Sessions(props: {
                         when={props.recent}
                         fallback={
                           <span class="person-activity-card__session-name person-activity-card__session-name--multiline">
-                            {displayName()}
+                            {name()}
                           </span>
                         }
                       >
                         <HoverMarquee
-                          content={displayName()}
+                          content={name()}
                           class="person-activity-card__session-name"
                           options={{ delay: 250, speed: 80 }}
                         />
@@ -167,31 +168,45 @@ function Sessions(props: {
   );
 }
 
-export function PersonActivityCard(props: PersonCardInput) {
-  // Keep the initial recent identities while this card is open; retire stale rows without backfilling.
+function PersonActivityCard(props: { input: PersonCardInput }) {
   let recentSessionKeys: string[] | undefined;
-  const model = createMemo(() => {
-    const user = props.user;
+  const view = createMemo(() => {
+    const input = props.input;
+    const { user } = input;
     const label = presenceUserLabel(user, t("presence.card.person"));
+    const activityLink = personActivityLink(user.identity?.id, input.routing, label.name);
+    // Undefined means presence has not been observed; an empty snapshot means offline.
+    const observed = user.entries !== undefined;
+    const offline = user.entries?.length === 0;
     const entries = user.entries ?? [];
     const onlineTimes = entries.flatMap((entry) =>
       entry.onlineSince === undefined ? [] : [entry.onlineSince],
     );
+    const onlineSince = onlineTimes.length ? Math.min(...onlineTimes) : undefined;
+    const lastActivityAt = presenceViewerLastActivity(user);
+    const activity = presenceViewerActivity(user);
+    const where = presenceConnectionDescriptions(entries);
+    const zones = [
+      ...new Set(
+        entries.flatMap((entry) => (entry.timeZone?.trim() ? [entry.timeZone.trim()] : [])),
+      ),
+    ].toSorted();
     const watched = new Set(
-      user.watchedSessions.map((key) => sessionIdentity(key, props.watchAgentId, props)),
+      user.watchedSessions.map((key) => sessionIdentity(key, input.watchAgentId, input)),
     );
-    const unique = loadedPresenceSessions(props);
+    const unique = loadedPresenceSessions(input);
     const newestFirst = (a: ScopedSession, b: ScopedSession) =>
       (b.row.updatedAt ?? 0) - (a.row.updatedAt ?? 0) ||
-      sessionIdentity(a.row.key, a.agentId, props).localeCompare(
-        sessionIdentity(b.row.key, b.agentId, props),
+      sessionIdentity(a.row.key, a.agentId, input).localeCompare(
+        sessionIdentity(b.row.key, b.agentId, input),
       );
     const viewing = [...watched].flatMap((key) => unique.get(key) ?? []).toSorted(newestFirst);
+    const { sessionData } = input;
     const recent = (
       recentSessionKeys?.flatMap((key) => unique.get(key) ?? []) ?? [...unique.values()]
     ).filter(
       ({ row, agentId }) =>
-        !watched.has(sessionIdentity(row.key, agentId, props)) &&
+        !watched.has(sessionIdentity(row.key, agentId, input)) &&
         [row.owner?.actor, row.createdActor].some((actor) =>
           presenceMatchesProfile(user, actor?.identity),
         ),
@@ -199,25 +214,25 @@ export function PersonActivityCard(props: PersonCardInput) {
     if (!recentSessionKeys) {
       recent.sort(newestFirst);
     }
-    if (recentSessionKeys || props.sessionData?.sessionsResult) {
+    // Capture once a roster exists; thereafter retire ineligible identities without backfilling.
+    if (recentSessionKeys || sessionData?.sessionsResult) {
       recentSessionKeys = recent
         .slice(0, 3)
-        .map(({ row, agentId }) => sessionIdentity(row.key, agentId, props));
+        .map(({ row, agentId }) => sessionIdentity(row.key, agentId, input));
     }
+
     return {
+      input,
+      user,
       label,
-      activityLink: personActivityLink(user.identity?.id, props.routing, label.name),
-      observed: user.entries !== undefined,
-      offline: user.entries?.length === 0,
-      onlineSince: onlineTimes.length ? Math.min(...onlineTimes) : undefined,
-      lastActivityAt: presenceViewerLastActivity(user),
-      activity: presenceViewerActivity(user),
-      where: presenceConnectionDescriptions(entries),
-      zones: [
-        ...new Set(
-          entries.flatMap((entry) => (entry.timeZone?.trim() ? [entry.timeZone.trim()] : [])),
-        ),
-      ].toSorted(),
+      activityLink,
+      observed,
+      offline,
+      onlineSince,
+      lastActivityAt,
+      activity,
+      where,
+      zones,
       viewing,
       recent: recentSessionKeys ? recent : [],
     };
@@ -225,49 +240,52 @@ export function PersonActivityCard(props: PersonCardInput) {
   return (
     <div class="person-activity-card">
       <header class="person-activity-card__header">
-        <ViewerAvatar user={props.user} markAsViewer={false} variant="footer" aria-hidden="true" />
+        <openclaw-viewer-avatar
+          prop:user={view().user}
+          prop:markAsViewer={false}
+          variant="footer"
+          aria-hidden="true"
+        />
         <div>
-          <h2>{model().label.name}</h2>
-          <Show when={model().observed}>
+          <h2>{view().label.name}</h2>
+          <Show when={view().observed}>
             <span
               class={[
                 "person-activity-card__status",
-                model().offline
-                  ? "person-activity-card__status--offline"
-                  : `person-activity-card__status--${model().activity}`,
+                `person-activity-card__status--${view().offline ? "offline" : view().activity}`,
               ]}
             >
               <span aria-hidden="true" />
-              {model().offline ? (
+              {view().offline ? (
                 t("presence.offline")
-              ) : model().onlineSince === undefined ? (
+              ) : view().onlineSince === undefined ? (
                 t("presence.rosterTitle")
               ) : (
                 <>
                   {t("presence.card.onlineFor")}{" "}
-                  <Elapsed timestamp={model().onlineSince!} display="minute-compact" />
+                  <Elapsed timestamp={view().onlineSince!} display="minute-compact" />
                 </>
               )}
-              {!model().offline && model().activity !== "unknown" ? (
-                <> · {t(model().activity === "active" ? "presence.active" : "presence.idle")}</>
+              {!view().offline && view().activity !== "unknown" ? (
+                <> · {t(view().activity === "active" ? "presence.active" : "presence.idle")}</>
               ) : undefined}
             </span>
           </Show>
         </div>
       </header>
-      <Show when={model().label.isSharedOwner}>
+      <Show when={view().label.isSharedOwner}>
         <p class="person-activity-card__hint person-activity-card__muted">
           {t("presence.sharedOwner.hint")}
         </p>
       </Show>
-      <Show when={model().observed && !model().offline}>
+      <Show when={view().observed && !view().offline}>
         <dl class="person-activity-card__facts">
-          <Show when={model().where.length > 0 || model().zones.length > 0}>
+          <Show when={view().where.length > 0 || view().zones.length > 0}>
             <div>
               <dt>{t("presence.card.where")}</dt>
               <dd>
-                <For each={model().where}>{(description) => <span>{description}</span>}</For>
-                <For each={model().zones}>
+                <For each={view().where}>{(description) => <span>{description}</span>}</For>
+                <For each={view().zones}>
                   {(zone) => <small>{t("presence.card.reportedTimeZone", { zone })}</small>}
                 </For>
               </dd>
@@ -276,21 +294,20 @@ export function PersonActivityCard(props: PersonCardInput) {
           <div>
             <dt>{t("presence.card.lastActivity")}</dt>
             <dd>
-              <Show
-                when={model().lastActivityAt !== undefined}
-                fallback={t("presence.card.notObserved")}
-              >
+              {view().lastActivityAt === undefined ? (
+                t("presence.card.notObserved")
+              ) : (
                 <span>
-                  <Elapsed timestamp={model().lastActivityAt!} /> {t("presence.card.ago")}
+                  <Elapsed timestamp={view().lastActivityAt!} /> {t("presence.card.ago")}
                 </span>
-              </Show>
+              )}
             </dd>
           </div>
         </dl>
       </Show>
-      <Sessions sessions={model().viewing} input={props} recent={false} />
-      <Sessions sessions={model().recent} input={props} recent={true} />
-      <Show when={model().activityLink}>
+      <Sessions sessions={view().viewing} input={view().input} recent={false} />
+      <Sessions sessions={view().recent} input={view().input} recent={true} />
+      <Show when={view().activityLink}>
         {(link) => (
           <footer>
             <a href={link().href} onClick={(event) => link().open(event)}>
@@ -306,37 +323,47 @@ export function PersonActivityCard(props: PersonCardInput) {
   );
 }
 
-export type PersonActivitySurface = PersonCardInput | { status: string };
-/** Both portal owners keep one Solid root for the card's retained recent-session selection. */
-export function mountPersonActivityCard(container: HTMLElement, initial: PersonActivitySurface) {
-  let update: (next: PersonActivitySurface) => void = () => {};
-  const dispose = render(() => {
-    const [input, setInput] = createSignal(initial);
-    update = (next) => {
-      setInput(next);
-      // The portal restores a displaced link immediately after this update.
-      flush();
-    };
-    const card = createMemo(() => {
-      const current = input();
-      return "user" in current ? current : null;
-    });
-    const status = createMemo(() => {
-      const current = input();
-      return "status" in current ? current.status : "";
-    });
-    return (
-      <Show
-        when={card()}
-        fallback={
-          <div class="person-reference__status" role="status">
-            {status()}
-          </div>
-        }
-      >
-        {(value) => <PersonActivityCard {...value()} />}
-      </Show>
+type CardValue = PersonCardInput | string;
+const cards = new WeakMap<
+  HTMLElement,
+  { update: (value: CardValue) => void; dispose: () => void }
+>();
+
+/** The portal owns one Solid root and retires its retained selection when closed. */
+export function updatePersonActivityCard(container: HTMLElement, input?: CardValue) {
+  const existing = cards.get(container);
+  if (input === undefined) {
+    existing?.dispose();
+    cards.delete(container);
+  } else if (existing) {
+    existing.update(input);
+  } else {
+    const initial: CardValue = input;
+    // The portal outlives the caller’s transient render scope.
+    const dispose = runWithOwner(null, () =>
+      render(() => {
+        const [value, setValue] = createSignal<CardValue>(initial, { ownedWrite: true });
+        cards.set(container, { update: setValue, dispose: () => dispose() });
+        onCleanup(() => cards.delete(container));
+        return (
+          <Show
+            when={(() => {
+              const current = value();
+              return typeof current === "object" ? current : undefined;
+            })()}
+            fallback={
+              <div class="person-reference__status" role="status">
+                {(() => {
+                  const current = value();
+                  return typeof current === "string" ? current : "";
+                })()}
+              </div>
+            }
+          >
+            {(current) => <PersonActivityCard input={current()} />}
+          </Show>
+        );
+      }, container),
     );
-  }, container);
-  return { update, dispose };
+  }
 }
