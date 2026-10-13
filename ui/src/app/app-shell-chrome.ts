@@ -377,7 +377,7 @@ export class ShellChromeOwner {
     if (event.defaultPrevented || !matchesShortcutCombo(KEYBOARD_SHORTCUT_COMBOS.escape, event)) {
       return;
     }
-    if (host.navDrawerOpen && isMobileNavLayout() && !document.openClawModalLayers?.size) {
+    if (host.navDrawerOpen && isMobileNavLayout() && !this.shouldIgnoreSettingsEscape(event)) {
       event.preventDefault();
       host.closeNavDrawer({ restoreFocus: true });
     } else if (
@@ -469,7 +469,7 @@ export class ShellChromeOwner {
       matchesShortcutCombo(KEYBOARD_SHORTCUT_COMBOS.escape, event) &&
       isSettingsTakeover(host.routeState.routeId)
     ) {
-      if (host.navDrawerOpen) {
+      if (host.navDrawerOpen && !this.shouldIgnoreSettingsEscape(event)) {
         event.preventDefault();
         host.closeNavDrawer({ restoreFocus: true });
         return;

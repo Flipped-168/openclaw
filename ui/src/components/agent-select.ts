@@ -1,17 +1,10 @@
-import { html, nothing, type TemplateResult } from "lit";
-import type { AgentIdentityResult, GatewayAgentRow } from "../api/types.ts";
+import { html, nothing } from "lit";
+import type { AgentIdentityResult } from "../api/types.ts";
 import { resolveAgentTextAvatar } from "../lib/agents/display.ts";
+import type { AgentSelectOption } from "./agent-select-types.ts";
 import { renderAgentIdentityAvatar } from "./identity-avatar-view.ts";
 
-export type AgentSelectOption = {
-  value: string;
-  label: string;
-  agent?: GatewayAgentRow;
-  icon?: TemplateResult;
-  description?: string;
-  badge?: string;
-  disabled?: boolean;
-};
+export type { AgentSelectOption } from "./agent-select-types.ts";
 
 export function renderAgentSelectAvatar(
   option: AgentSelectOption,

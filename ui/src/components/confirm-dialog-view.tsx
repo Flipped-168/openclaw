@@ -1,6 +1,6 @@
 import { createSignal, untrack } from "solid-js";
 import { t } from "../lib/reactive/i18n.ts";
-import type { ConfirmDialogOptions } from "./confirm-dialog.ts";
+import type { ConfirmDialogOptions } from "./confirm-dialog-types.ts";
 
 export function ConfirmDialogView(props: {
   options: ConfirmDialogOptions;

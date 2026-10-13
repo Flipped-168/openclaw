@@ -1,7 +1,6 @@
-import type { TemplateResult } from "lit";
 import { createMemo } from "solid-js";
 import { Icon } from "../components/solid/icon.tsx";
-import { LitContent } from "../lit/solid-bridge.ts";
+import { LitContent } from "../lit/solid-content.tsx";
 import { formatUiExternalText } from "./format-error.ts";
 import { t } from "./reactive/i18n.ts";
 import { resolveToastAnchorRect, type ToastOptions, type ToastDismissReason } from "./toast.ts";
@@ -9,7 +8,7 @@ import { resolveToastAnchorRect, type ToastOptions, type ToastDismissReason } fr
 /** Unported callers may still supply a Lit template; this span is its only renderer. */
 function ToastContent(props: {
   class: string;
-  content: string | TemplateResult;
+  content: ToastOptions["message"];
   hidden?: boolean;
 }) {
   return (
@@ -17,7 +16,7 @@ function ToastContent(props: {
       {typeof props.content === "string" ? (
         formatUiExternalText(props.content)
       ) : (
-        <LitContent render={() => props.content} />
+        <LitContent value={props.content} />
       )}
     </span>
   );

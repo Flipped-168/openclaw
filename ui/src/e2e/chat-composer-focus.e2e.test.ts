@@ -48,15 +48,8 @@ suite.define(() => {
         .poll(() => picker.locator(".agent-select__label").textContent())
         .toBe("research");
       await expect.poll(() => page.locator(".new-session-page__message").inputValue()).toBe("");
-      await expect
-        .poll(() =>
-          picker
-            .locator("wa-dropdown")
-            .evaluate((element) => (element as HTMLElement & { open: boolean }).open),
-        )
-        .toBe(false);
-      // The open property clears before the closing popup retires.
-      await picker.locator('wa-dropdown-item[aria-label="research"]').waitFor({ state: "hidden" });
+      await expect.poll(() => trigger.getAttribute("aria-expanded")).toBe("false");
+      await option.waitFor({ state: "hidden" });
 
       await trigger.focus();
       await page.keyboard.press("Enter");
@@ -91,21 +84,24 @@ suite.define(() => {
       await composer.waitFor({ state: "visible" });
 
       const result = await page.evaluate(() => {
-        const dropdown = document.querySelector<HTMLElement & { open: boolean }>(
-          ".new-session-page__select--agent wa-dropdown",
+        const trigger = document.querySelector<HTMLButtonElement>(
+          ".new-session-page__select--agent .agent-select__trigger",
+        );
+        const menu = document.querySelector<HTMLElement>(
+          ".new-session-page__select--agent .agent-select__menu",
         );
         const main = document.querySelector<HTMLElement>("main");
-        if (!dropdown || !main) {
+        if (!trigger || !menu || !main) {
           throw new Error("missing real agent dropdown fixture");
         }
-        dropdown.open = true;
+        trigger.click();
         main.focus();
         main.dispatchEvent(
           new KeyboardEvent("keydown", { key: " ", bubbles: true, composed: true }),
         );
         return {
           activeTag: document.activeElement?.localName,
-          dropdownOpen: dropdown.open,
+          dropdownOpen: menu.matches(":popover-open"),
         };
       });
 

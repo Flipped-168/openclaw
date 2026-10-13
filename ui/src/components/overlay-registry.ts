@@ -227,16 +227,11 @@ export function registerOverlay(
 ): () => void {
   const entry: RegisteredOverlay = { ...registration, roots: new Map() };
   registry.members.set(overlay, entry);
-  const surface = overlay.surface;
-  const events = (registry.events ??= createRegistryEvents(registry));
-  // Consume nested Escape before an outer drawer's document listener sees it.
-  surface.addEventListener("keydown", events.keydown);
   return () => {
     if (registry.members.get(overlay) !== entry) {
       return;
     }
     registry.members.delete(overlay);
-    surface.removeEventListener("keydown", events.keydown);
     const releaseSurface = entry.releaseSurfaceRoot;
     entry.releaseSurfaceRoot = undefined;
     entry.surfaceRoot = undefined;

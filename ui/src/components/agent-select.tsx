@@ -6,7 +6,7 @@ import { IdentityAvatarController } from "../lib/identity-avatar-loader.ts";
 import { t } from "../lib/reactive/i18n.ts";
 import { generateUUID } from "../lib/uuid.ts";
 import { defineSolidBridge, type SolidBridgeElement } from "../lit/solid-bridge.ts";
-import type { AgentSelectOption } from "./agent-select.ts";
+import type { AgentSelectOption } from "./agent-select-types.ts";
 import { avatarArtwork } from "./identity-avatar-view.ts";
 import { revealInScrollRegion } from "./scroll-state.ts";
 import { Icon } from "./solid/icon.tsx";

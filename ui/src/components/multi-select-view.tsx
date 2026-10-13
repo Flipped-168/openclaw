@@ -11,7 +11,7 @@ import {
 } from "solid-js";
 import { acquireNativeOverlaySurface } from "../lib/native-overlay-occlusion.ts";
 import { t } from "../lib/reactive/i18n.ts";
-import type { MultiSelectOption, MultiSelectProps } from "./multi-select.ts";
+import type { MultiSelectOption, MultiSelectProps } from "./multi-select-types.ts";
 import { createOverlayAnchor } from "./overlay-anchor.ts";
 import { createOverlay, findOverlayParent } from "./overlay-lifecycle.ts";
 import { revealInScrollRegion } from "./scroll-state.ts";

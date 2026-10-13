@@ -3291,6 +3291,12 @@ td.data-table-key-col {
   color: var(--text);
 }
 
+@starting-style {
+  .agent-select__menu.oc-menu:popover-open {
+    opacity: 1;
+  }
+}
+
 .agent-select__trigger {
   display: flex;
   align-items: center;
@@ -3326,10 +3332,7 @@ td.data-table-key-col {
 }
 
 .agent-select__trigger > .oc-menu-item__label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
+  display: contents;
 }
 
 .agent-select__option[data-create-agent] {

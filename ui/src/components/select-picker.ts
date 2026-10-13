@@ -1,43 +1,10 @@
 import type { JSX } from "@solidjs/web";
 import { html } from "lit";
 import { defineSolidBridge, type SolidBridgeElement } from "../lit/solid-bridge.ts";
+import type { PickerOption, PickerParams } from "./select-picker-types.ts";
 import { PickerContent } from "./select-picker-view.tsx";
+export type { PickerGroup, PickerOption, PickerParams } from "./select-picker-types.ts";
 import "../styles/select-picker.css";
-
-export type PickerOption = {
-  value: string;
-  label: string;
-  description?: string;
-  labelStyle?: string;
-  disabled?: boolean;
-};
-
-export type PickerGroup = { id: string; label: string; leading?: unknown };
-export type PickerParams<Option extends PickerOption> = {
-  id?: string;
-  label: string;
-  value: string | null;
-  options: readonly Option[];
-  disabled?: boolean;
-  invalid?: boolean;
-  describedBy?: string;
-  className?: string;
-  title?: string;
-  placement?: "top" | "bottom";
-  variant?: "submenu";
-  /** Show the choices as a page of the enclosing sheet instead of a floating popup. */
-  sheet?: boolean;
-  /** `true` searches long lists; `"always"` keeps the field for short lists too. */
-  searchable?: boolean | "always";
-  searchPlaceholder?: string;
-  groupBy?: (option: Option) => PickerGroup | undefined;
-  showOptionTooltips?: boolean;
-  showSelectedDescription?: boolean;
-  onOpen?: () => void;
-  onChange: (value: string) => void;
-  onChangeTarget?: (value: string, select: HTMLElement) => void;
-  renderLeading?: (option: Option) => unknown;
-};
 
 export type SelectPicker<Option extends PickerOption = PickerOption> = SolidBridgeElement<{
   params: PickerParams<Option>;

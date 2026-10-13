@@ -7,7 +7,7 @@ import { i18n, t } from "../i18n/index.ts";
 import { setAvatarGatewayOrigin } from "../lib/identity-avatar-context.ts";
 import { waitForSolid } from "../test-helpers/solid-settle.ts";
 import { waitForFast } from "../test-helpers/wait-for.ts";
-import type { AgentSelectOption } from "./agent-select.ts";
+import type { AgentSelectElement, AgentSelectOption } from "./agent-select.ts";
 import "./agent-select-registration.ts";
 
 const AGENT_SELECT_TEST_TAG = "openclaw-agent-select";
@@ -24,17 +24,6 @@ afterEach(async () => {
     setTimeout(resolve, 0);
   });
 });
-
-type AgentSelectElement = HTMLElement & {
-  options: AgentSelectOption[];
-  value: string;
-  accessibleLabel: string;
-  identityById: Record<string, AgentIdentityResult>;
-  disabled: boolean;
-  onSelect: (value: string) => void;
-  onCreateAgent: (() => void) | null;
-  updateComplete: Promise<boolean>;
-};
 
 const agents: GatewayAgentRow[] = [
   { id: "alpha", name: "Alpha agent" },
@@ -61,7 +50,7 @@ function createIdentity(
 async function createAgentSelect(
   overrides: Partial<Omit<AgentSelectElement, keyof HTMLElement>> = {},
 ): Promise<AgentSelectElement> {
-  const element = document.createElement(AGENT_SELECT_TEST_TAG) as AgentSelectElement;
+  const element = document.createElement(AGENT_SELECT_TEST_TAG);
   element.options = options;
   element.value = "alpha";
   element.onCreateAgent = vi.fn();

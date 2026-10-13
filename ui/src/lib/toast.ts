@@ -1,7 +1,4 @@
 import type { TemplateResult } from "lit";
-import { createComponent, createEffect, lazy, Loading, Show } from "solid-js";
-import { defineSolidBridge, type SolidBridgeElement } from "../lit/solid-bridge.ts";
-const ToastView = lazy(() => import("./toast-view.tsx"), { export: "ToastView" });
 
 export type ToastDismissReason = "action" | "dismiss" | "disconnected" | "replaced" | "timeout";
 
@@ -200,64 +197,17 @@ class ToastController {
   }
 }
 
-type ToastProperties = { toast: ToastOptions | null; active: boolean };
-type ToastMethods = { show(options: ToastOptions): void };
-type OpenClawToastHost = SolidBridgeElement<ToastProperties, ToastMethods>;
+export type ToastProperties = { toast: ToastOptions | null; active: boolean };
+export type ToastMethods = { show(options: ToastOptions): void };
+type OpenClawToastHost = HTMLElement & ToastProperties & ToastMethods;
 const controllers = new WeakMap<OpenClawToastHost, ToastController>();
-function controllerFor(host: OpenClawToastHost) {
+export function toastControllerFor(host: OpenClawToastHost) {
   let controller = controllers.get(host);
   if (!controller) {
     controller = new ToastController(host);
     controllers.set(host, controller);
   }
   return controller;
-}
-
-// Service imports also run in Node; only the browser registers the tag owner.
-if (typeof customElements !== "undefined") {
-  defineSolidBridge<ToastProperties, ToastMethods>(
-    "openclaw-toast-host",
-    (props, host) => {
-      const controller = controllerFor(host);
-      createEffect(
-        () => [props.toast, props.active],
-        () => controller.updated(),
-      );
-      return createComponent(Show, {
-        get when() {
-          return Boolean(props.toast);
-        },
-        children: (_shown) => {
-          return createComponent(Loading, {
-            get children() {
-              return createComponent(ToastView, {
-                get toast() {
-                  return props.toast;
-                },
-                get active() {
-                  return props.active;
-                },
-                host,
-                hover: (hovered) => controller.hover(hovered),
-                focus: (focused) => controller.syncDismissTimer(focused),
-                dismiss: (reason) => controller.dismiss(reason),
-                transitionEnd: () => controller.transitionEnd(),
-              });
-            },
-          });
-        },
-      });
-    },
-    {
-      properties: {
-        toast: { default: null, attribute: false },
-        active: { default: false, attribute: false },
-      },
-      connected: (host) => controllerFor(host).connect(),
-      disconnected: (host) => controllerFor(host).disconnect(),
-      methods: { show: (host, options) => controllerFor(host).show(options) },
-    },
-  );
 }
 
 export function showToast(options: ToastOptions): boolean {
@@ -290,10 +240,4 @@ export function showToast(options: ToastOptions): boolean {
   }
   host.show(options);
   return true;
-}
-
-declare global {
-  interface HTMLElementTagNameMap {
-    "openclaw-toast-host": OpenClawToastHost;
-  }
 }

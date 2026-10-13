@@ -1,4 +1,3 @@
-import { nothing } from "lit";
 import {
   For,
   Show,
@@ -11,7 +10,7 @@ import {
 } from "solid-js";
 import { acquireNativeOverlaySurface } from "../lib/native-overlay-occlusion.ts";
 import { t } from "../lib/reactive/i18n.ts";
-import { LitContent } from "../lit/solid-bridge.ts";
+import { emptyLegacyContent, LitContent } from "../lit/solid-content.tsx";
 import { createOverlayAnchor } from "./overlay-anchor.ts";
 import {
   createOverlay,
@@ -19,7 +18,7 @@ import {
   type OverlayNativeAdapter,
 } from "./overlay-lifecycle.ts";
 import { revealInScrollRegion } from "./scroll-state.ts";
-import type { PickerOption, PickerParams, PickerGroup } from "./select-picker.ts";
+import type { PickerOption, PickerParams, PickerGroup } from "./select-picker-types.ts";
 import { Icon } from "./solid/icon.tsx";
 import { useMenuMachine } from "./solid/menu-machine.ts";
 import "./solid/overlay.css";
@@ -59,12 +58,12 @@ export function PickerContent<Option extends PickerOption>(props: {
   const direction = () => (getComputedStyle(props.host).direction === "rtl" ? "rtl" : "ltr");
   const options = createMemo((): readonly Option[] => {
     const { value, options: configuredOptions } = props.params;
-    // SAFETY: Unknown selected references use only the base option fields, as before migration.
     return value === null ||
       value === "" ||
       configuredOptions.some((option) => option.value === value)
       ? configuredOptions
-      : [...configuredOptions, { value, label: value } as Option];
+      : // SAFETY: Unknown selected references use only the base option fields, as before migration.
+        [...configuredOptions, { value, label: value } as Option];
   });
   const sections = createMemo(() => {
     const terms = query().trim().toLocaleLowerCase().split(/\s+/u);
@@ -356,9 +355,11 @@ export function PickerContent<Option extends PickerOption>(props: {
   const Leading = (row: { option?: Option }) => {
     const content = createMemo(() => row.option && props.params.renderLeading?.(row.option));
     return (
-      <Show when={content() !== undefined && content() !== null && content() !== nothing}>
+      <Show
+        when={content() !== undefined && content() !== null && content() !== emptyLegacyContent}
+      >
         <span class="picker-select__leading">
-          <LitContent render={content} />
+          <LitContent value={content()} />
         </span>
       </Show>
     );
@@ -574,7 +575,7 @@ export function PickerContent<Option extends PickerOption>(props: {
                         })
                       }
                     >
-                      <LitContent render={() => group().leading} />
+                      <LitContent value={group().leading} />
                       <span class="picker-select__group-label">{group().label}</span>
                       <span>{section().options.length}</span>
                       <span class="picker-select__chevron" aria-hidden="true">

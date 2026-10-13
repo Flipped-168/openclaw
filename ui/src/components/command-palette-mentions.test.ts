@@ -1,5 +1,6 @@
 /* @vitest-environment jsdom */
 import type { UsersMentionableResult } from "@openclaw/gateway-protocol";
+import { flush } from "solid-js";
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { createDeferred } from "../../../test/helpers/promise.js";
 import { createWebPushCapability } from "../app/web-push.ts";
@@ -473,15 +474,13 @@ describe("command palette people mentions", () => {
         const agent = f.palette.querySelector("openclaw-agent-select")!;
         await agent.updateComplete;
         expect(agent.value).toBe("main");
-        const reviewer = agent.querySelector('wa-dropdown-item[aria-label="Reviewer"]')!;
+        agent.querySelector<HTMLButtonElement>(".agent-select__trigger")!.click();
+        flush();
+        const reviewer = agent.querySelector<HTMLElement>(
+          '.agent-select__option[aria-label="Reviewer"]',
+        )!;
         expect(reviewer).not.toBeNull();
-        agent.querySelector("wa-dropdown")!.dispatchEvent(
-          new CustomEvent("wa-select", {
-            bubbles: true,
-            cancelable: true,
-            detail: { item: reviewer },
-          }),
-        );
+        reviewer.click();
         await f.palette.updateComplete;
         await agent.updateComplete;
         expect(agent.value).toBe("reviewer");

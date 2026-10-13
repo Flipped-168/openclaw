@@ -1,7 +1,7 @@
 import { createMemo, createSignal, untrack } from "solid-js";
 import { formatUiError } from "../lib/format-error.ts";
 import { t } from "../lib/reactive/i18n.ts";
-import type { InputDialogOptions } from "./input-dialog.ts";
+import type { InputDialogOptions } from "./input-dialog-types.ts";
 
 export function InputDialogView(props: {
   options: InputDialogOptions;
