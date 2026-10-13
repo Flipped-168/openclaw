@@ -1,8 +1,8 @@
-import { For } from "solid-js";
+import { For, createSignal } from "solid-js";
 import type { CronJobsScheduleKindFilter } from "../../api/types.ts";
 import type { PickerOption } from "../../components/select-picker.ts";
 import { Icon } from "../../components/solid/icon.tsx";
-import { syncPopoverExpanded, syncPopoverLabel } from "../../components/web-awesome-popover.ts";
+import { Popover } from "../../components/solid/popover.tsx";
 import { registerCronEnglish } from "../../i18n/locales/en-cron.ts";
 import { registerEnglishCatalog, t } from "../../lib/reactive/i18n.ts";
 import type { CronProps } from "./view-types.ts";
@@ -53,28 +53,34 @@ export function JobsFilterPopover(
     active: boolean;
   },
 ) {
+  let trigger!: HTMLButtonElement;
+  const [open, setOpen] = createSignal(false);
   return (
     <>
       <button
+        ref={(node) => {
+          trigger = node;
+        }}
         id="cron-jobs-filter-trigger"
         type="button"
         class={["btn btn--sm cron-filter-popover__trigger", { active: props.active }]}
         title={t("cron.list.filters")}
         aria-label={t("cron.list.filters")}
         aria-haspopup="dialog"
-        aria-expanded="false"
+        aria-controls="cron-jobs-filter-popover"
+        aria-expanded={open() ? "true" : "false"}
+        onClick={() => setOpen(!open())}
       >
         <Icon name="listFilter" />
       </button>
-      <wa-popover
-        ref={syncPopoverLabel}
+      <Popover
+        id="cron-jobs-filter-popover"
         class="cron-filter-popover"
-        for="cron-jobs-filter-trigger"
-        aria-label={t("cron.list.filters")}
+        label={t("cron.list.filters")}
+        anchor={trigger}
         placement="bottom-end"
-        without-arrow
-        onWa-show={syncPopoverExpanded}
-        onWa-hide={syncPopoverExpanded}
+        open={open()}
+        onOpenChange={setOpen}
       >
         <div class="cron-filter-popover__panel">
           <JobsFilter
@@ -144,7 +150,7 @@ export function JobsFilterPopover(
             {t("cron.jobs.reset")}
           </button>
         </div>
-      </wa-popover>
+      </Popover>
     </>
   );
 }
