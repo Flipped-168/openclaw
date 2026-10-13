@@ -120,7 +120,6 @@ export function readSessionEntryCohort(
     runtimeTarget ||
     includeAuthProfileSource ||
     includeColdMetadata ||
-    input.lifecycleSessionKey ||
     input.replyInitializationSessionKey,
   );
   if (expected && source.incarnation !== expected.incarnation) {
@@ -130,25 +129,26 @@ export function readSessionEntryCohort(
   const read = (): SessionEntryCohortResult => {
     const sharedHeader =
       transcript?.includeHeader && transcript.sessionKey === input.lifecycleSessionKey;
-    const result: SessionExactEntriesWorkerResult = requiresSnapshot
-      ? readEntries({
-          ...selection,
-          kind: "session-exact-entries",
-          database: { agentId: database.agentId, path: database.path },
-          env: {},
-          projection: "full",
-          includeAuthorization: true,
-          ...(sharedHeader ? { lifecycleSessionKey: undefined } : {}),
-        })
-      : {
-          kind: "session-exact-entries",
-          ...readExactSessionEntryFactsInDatabase(
-            database,
-            input.sessionKeys,
-            input.snapshotFields ?? "full",
-          ),
-          lifecycleTimestamps: {},
-        };
+    const result: SessionExactEntriesWorkerResult =
+      requiresSnapshot || input.lifecycleSessionKey
+        ? readEntries({
+            ...selection,
+            kind: "session-exact-entries",
+            database: { agentId: database.agentId, path: database.path },
+            env: {},
+            projection: "full",
+            includeAuthorization: true,
+            ...(sharedHeader ? { lifecycleSessionKey: undefined } : {}),
+          })
+        : {
+            kind: "session-exact-entries",
+            ...readExactSessionEntryFactsInDatabase(
+              database,
+              input.sessionKeys,
+              input.snapshotFields ?? "full",
+            ),
+            lifecycleTimestamps: {},
+          };
     for (const selected of expected?.sessions ?? []) {
       const entry = result.entries.find(
         ({ sessionKey }) => sessionKey === selected.sessionKey,
@@ -186,6 +186,9 @@ export function readSessionEntryCohort(
     const preparedRuntimeTarget = runtimeTarget && {
       ...runtimeTarget,
       sessionKey:
+        result.entries.find(
+          ({ entry: selectedEntry }) => selectedEntry.sessionId === runtimeTarget.sessionId,
+        )?.sessionKey ??
         readSessionKeyBySessionIdInDatabase(database, runtimeTarget.sessionId) ??
         runtimeTarget.sessionKey,
       storePath: database.path,
