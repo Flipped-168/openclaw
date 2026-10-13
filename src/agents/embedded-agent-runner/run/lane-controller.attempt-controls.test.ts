@@ -83,7 +83,6 @@ async function holdLane(controller: LaneController) {
 }
 
 beforeEach(() => {
-  setRuntimeConfigSnapshot({});
   resetAgentEventsForTest();
   resetCommandQueueStateForTest();
   setRuntimeConfigSnapshot({});
