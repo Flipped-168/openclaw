@@ -1,6 +1,5 @@
 /* @vitest-environment jsdom */
 import type { UsersMentionableResult } from "@openclaw/gateway-protocol";
-import { flush } from "solid-js";
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { createDeferred } from "../../../test/helpers/promise.js";
 import { createWebPushCapability } from "../app/web-push.ts";
@@ -9,6 +8,7 @@ import * as toast from "../lib/toast.ts";
 import { createDraftFixture } from "../pages/new-session/draft-submission-flow.test-support.ts";
 import { createApplicationGateway } from "../test-helpers/application-context.ts";
 import { installDialogPolyfill } from "../test-helpers/modal-dialog.ts";
+import { waitForSolid } from "../test-helpers/solid-settle.ts";
 import { mountPalette } from "./command-palette.test-support.ts";
 import "./command-palette.ts";
 
@@ -474,16 +474,19 @@ describe("command palette people mentions", () => {
         const agent = f.palette.querySelector("openclaw-agent-select")!;
         await agent.updateComplete;
         expect(agent.value).toBe("main");
+        for (const item of agent.querySelectorAll<HTMLElement>("[role='menuitemradio']")) {
+          item.scrollIntoView = vi.fn();
+        }
         agent.querySelector<HTMLButtonElement>(".agent-select__trigger")!.click();
-        flush();
+        await waitForSolid(() =>
+          expect(agent.querySelector(".agent-select__menu")?.matches(":popover-open")).toBe(true),
+        );
         const reviewer = agent.querySelector<HTMLElement>(
           '.agent-select__option[aria-label="Reviewer"]',
         )!;
         expect(reviewer).not.toBeNull();
         reviewer.click();
-        await f.palette.updateComplete;
-        await agent.updateComplete;
-        expect(agent.value).toBe("reviewer");
+        await waitForSolid(() => expect(agent.value).toBe("reviewer"));
         expect(f.context.agentSelection.state.selectedId).toBe("main");
         expect(f.menu()).toBeNull();
       } else {

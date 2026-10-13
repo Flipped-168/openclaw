@@ -63,7 +63,7 @@ suite.define(() => {
     });
   });
 
-  it("protects an open agent dropdown before an item receives focus", async () => {
+  it("keeps agent-menu activation keys out of the composer while its trigger retains focus", async () => {
     await suite.withPage({}, async ({ page }) => {
       await installMockGateway(page, {
         defaultAgentId: "main",
@@ -83,29 +83,27 @@ suite.define(() => {
       const composer = page.locator(".new-session-page__message");
       await composer.waitFor({ state: "visible" });
 
-      const result = await page.evaluate(() => {
-        const trigger = document.querySelector<HTMLButtonElement>(
-          ".new-session-page__select--agent .agent-select__trigger",
-        );
-        const menu = document.querySelector<HTMLElement>(
-          ".new-session-page__select--agent .agent-select__menu",
-        );
-        const main = document.querySelector<HTMLElement>("main");
-        if (!trigger || !menu || !main) {
-          throw new Error("missing real agent dropdown fixture");
-        }
-        trigger.click();
-        main.focus();
-        main.dispatchEvent(
-          new KeyboardEvent("keydown", { key: " ", bubbles: true, composed: true }),
-        );
-        return {
-          activeTag: document.activeElement?.localName,
-          dropdownOpen: menu.matches(":popover-open"),
-        };
-      });
+      const picker = page.locator(".new-session-page__select--agent openclaw-agent-select");
+      const trigger = picker.locator(".agent-select__trigger");
+      const menu = picker.locator(".agent-select__menu");
+      await trigger.click();
+      await menu.waitFor({ state: "visible" });
+      await trigger.focus();
+      await expect
+        .poll(() => trigger.evaluate((element) => document.activeElement === element))
+        .toBe(true);
+      await page.keyboard.press("Space");
 
-      expect(result).toEqual({ activeTag: "main", dropdownOpen: true });
+      await expect
+        .poll(() => menu.evaluate((element) => element.matches(":popover-open")))
+        .toBe(true);
+      await expect
+        .poll(() =>
+          picker
+            .getByRole("menuitemradio", { name: "research", exact: true })
+            .evaluate((element) => document.activeElement === element),
+        )
+        .toBe(true);
       await expect.poll(() => composer.inputValue()).toBe("");
     });
   });

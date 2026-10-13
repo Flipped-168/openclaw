@@ -136,6 +136,26 @@ export function useMenuMachine(
       },
       actions: {
         ...machine.implementations?.actions,
+        highlightFirstItem(params) {
+          // Keep Zag's queued opening focus aligned with the overlay's initial row.
+          if (options.surface !== "listbox" && params.event.type !== "HOME") {
+            const initial = [
+              ...overlay.surface.querySelectorAll<HTMLElement>(
+                "[data-initial-focus][data-menu-item]",
+              ),
+            ].find(
+              (item) =>
+                ownsTarget(item) &&
+                !item.matches(":disabled") &&
+                item.getAttribute("aria-disabled") !== "true",
+            );
+            if (initial) {
+              params.context.set("highlightedValue", initial.getAttribute("data-value"));
+              return;
+            }
+          }
+          machine.implementations?.actions?.highlightFirstItem?.(params);
+        },
         setHighlightedItem(params) {
           if (options.surface === "listbox") {
             const target = params.event.target;

@@ -87,6 +87,18 @@ describe("Agent select native menu", () => {
     await f.open();
     expect(document.activeElement).toBe(f.items[kind === "create" ? 0 : 1]);
   });
+  it("keeps the selected row focused after Enter opens and lets Home move to the first row", async () => {
+    const f = await fixture();
+    const shown = new Promise<void>((resolve) => {
+      f.menu.addEventListener("overlay-after-show", () => resolve(), { once: true });
+    });
+    f.trigger.focus();
+    await userEvent.keyboard("{Enter}");
+    await shown;
+    expect(document.activeElement).toBe(f.items[1]);
+    await userEvent.keyboard("{Home}");
+    expect(document.activeElement).toBe(f.items[0]);
+  });
   it("rejects disabled selection and closes when disabled while open", async () => {
     const f = await fixture();
     const onSelect = vi.fn();
