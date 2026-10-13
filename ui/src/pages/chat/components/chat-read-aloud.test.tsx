@@ -1,4 +1,6 @@
 /* @vitest-environment jsdom */
+
+import type { TtsSpeakResult } from "@openclaw/gateway-protocol";
 import { expectDefined } from "@openclaw/normalization-core/expect";
 import { nothing, render } from "lit";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -19,7 +21,7 @@ import {
 import { installTranscriptDomMocks } from "./chat-transcript.test-support.ts";
 
 const audio: HTMLAudioElement[] = [];
-const play = vi.fn(async () => undefined);
+const play = vi.fn<HTMLAudioElement["play"]>(async () => undefined);
 const pause = vi.fn();
 const revoke = vi.fn();
 const createUrl = vi.fn<(blob: Blob | MediaSource) => string>(() => "blob:synthetic-speech");
@@ -32,7 +34,8 @@ beforeEach(() => {
   createUrl.mockClear();
   vi.stubGlobal("Audio", function (src: string) {
     const element = document.createElement("audio");
-    element.src = src;
+    // Completion is driven by test events, not the browser decoding synthetic WAV bytes.
+    Object.defineProperty(element, "src", { value: src, writable: true });
     element.play = play;
     element.pause = pause;
     element.load = () => undefined;
@@ -59,8 +62,9 @@ function mount(
   const context = createContext(request, { methods: ["tts.speak"], runtimeConfig });
   if (gatewayListeners) {
     context.gateway.subscribe = (listener) => {
-      gatewayListeners.add(listener);
-      return () => gatewayListeners.delete(listener);
+      const notify = () => listener(context.gateway.snapshot);
+      gatewayListeners.add(notify);
+      return () => gatewayListeners.delete(notify);
     };
   }
   const provider = createSolidApplicationContextProvider(context);
@@ -74,7 +78,7 @@ function mount(
 }
 
 it("unlocks and reuses the same audio element before awaiting Gateway speech", async () => {
-  const pending = createDeferred();
+  const pending = createDeferred<TtsSpeakResult>();
   const request = vi.fn(() => pending.promise);
   let userActivation = true;
   const permitted = new WeakSet<HTMLAudioElement>();
@@ -106,7 +110,7 @@ it("unlocks and reuses the same audio element before awaiting Gateway speech", a
 });
 
 it("keeps speech through Gateway notifications that preserve connection and text", async () => {
-  const pending = createDeferred();
+  const pending = createDeferred<TtsSpeakResult>();
   const gatewayListeners = new Set<() => void>();
   const view = mount(
     vi.fn(() => pending.promise),
@@ -187,7 +191,7 @@ it("leaves unconfigured speech controls absent", () => {
 });
 
 it("does not play a synthesis result after the message is unmounted", async () => {
-  const pending = createDeferred();
+  const pending = createDeferred<TtsSpeakResult>();
   const view = mount(vi.fn(() => pending.promise));
   view.getByRole<HTMLButtonElement>("button", { name: "Read aloud" }).click();
   view.unmount();

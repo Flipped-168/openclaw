@@ -443,6 +443,9 @@ describe("renderChatComposer controls", () => {
     openMicrophoneMock.mockResolvedValue({ getTracks: () => [{ stop: vi.fn() }] });
     vi.stubGlobal("AudioContext", DictationAudioContext);
     const request = vi.fn(async (method: string) => {
+      if (method === "talk.config") {
+        return { config: {} };
+      }
       if (method === "talk.catalog") {
         return { transcription: { ready: true } };
       }
@@ -506,6 +509,9 @@ describe("renderChatComposer controls", () => {
     vi.useFakeTimers();
     discoverRealtimeTalkInputsMock.mockResolvedValue({ devices: [], issue: "none-found" });
     const request = vi.fn(async (method: string) => {
+      if (method === "talk.config") {
+        return { config: {} };
+      }
       if (method === "talk.catalog") {
         return { realtime: { ready: true }, transcription: { ready: false } };
       }
@@ -546,6 +552,9 @@ describe("renderChatComposer controls", () => {
     vi.useFakeTimers();
     openMicrophoneMock.mockRejectedValue(new DOMException("blocked", "NotAllowedError"));
     const request = vi.fn(async (method: string) => {
+      if (method === "talk.config") {
+        return { config: {} };
+      }
       if (method === "talk.catalog") {
         return { realtime: { ready: true }, transcription: { ready: true } };
       }

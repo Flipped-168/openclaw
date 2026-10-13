@@ -176,6 +176,9 @@ describe("composer microphone picker", () => {
       discoverRealtimeTalkInputsMock.mockResolvedValue({ devices: [], issue: "none-found" });
       patchSettings({ realtimeTalkInputDeviceId: "studio-mic" });
       const request = vi.fn(async (method: string) => {
+        if (method === "talk.config") {
+          return { config: {} };
+        }
         if (method === "talk.catalog") {
           return {
             realtime: { ready: realtimeReady, providers: [] },

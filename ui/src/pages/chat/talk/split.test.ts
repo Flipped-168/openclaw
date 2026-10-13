@@ -1,8 +1,15 @@
 // @vitest-environment jsdom
+
+import { expectDefined } from "@openclaw/normalization-core/expect";
+import { asOptionalRecord } from "@openclaw/normalization-core/record-coerce";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { createDeferred } from "../../../../../test/helpers/promise.js";
 import type { GatewayEventFrame } from "../../../api/gateway.ts";
 import { loadSettings } from "../../../app/settings.ts";
+import {
+  createGatewayRequestMock,
+  createTestGatewayClient,
+} from "../../../test-helpers/gateway-client.ts";
 import { createStorageMock } from "../../../test-helpers/storage.ts";
 import {
   attachChatRealtimeActions,
@@ -81,8 +88,8 @@ beforeEach(() => {
   vi.stubGlobal(
     "URL",
     class extends URL {
-      static createObjectURL = vi.fn(() => "blob:synthetic-speech");
-      static revokeObjectURL = vi.fn();
+      static override createObjectURL = vi.fn(() => "blob:synthetic-speech");
+      static override revokeObjectURL = vi.fn();
     },
   );
 });
@@ -108,7 +115,8 @@ function harness(provider?: string) {
       listener({ event, payload } as GatewayEventFrame);
     }
   };
-  const request = vi.fn(async (method: string, params?: Record<string, unknown>) => {
+  const request = createGatewayRequestMock(async (method, params) => {
+    const payload = asOptionalRecord(params);
     if (method === "talk.config") {
       return {
         config: { talk: { provider, realtime: { mode: "stt-tts" }, silenceTimeoutMs: 100 } },
@@ -126,16 +134,16 @@ function harness(provider?: string) {
     }
     if (method === "talk.session.close") {
       emit("talk.event", {
-        transcriptionSessionId: params?.sessionId,
+        transcriptionSessionId: payload?.sessionId,
         type: "transcript",
         text: "Tell me something local",
         final: true,
       });
-      emit("talk.event", { transcriptionSessionId: params?.sessionId, type: "close" });
+      emit("talk.event", { transcriptionSessionId: payload?.sessionId, type: "close" });
       return { ok: true };
     }
     if (method === "chat.send") {
-      runId = String(params?.idempotencyKey);
+      runId = String(payload?.idempotencyKey);
       return { runId, status: "started" };
     }
     if (method === "talk.speak" || method === "tts.speak") {
@@ -150,25 +158,42 @@ function harness(provider?: string) {
     }
     throw new Error(`Unexpected request: ${method}`);
   });
-  const state = {
-    client: {
-      request,
-      addEventListener: (listener: (event: GatewayEventFrame) => void) => {
-        listeners.add(listener);
-        return () => listeners.delete(listener);
-      },
-    },
+  const client = createTestGatewayClient(request);
+  client.addEventListener = (listener) => {
+    listeners.add(listener);
+    return () => listeners.delete(listener);
+  };
+  const state: ChatRealtimeState & ChatState = {
+    client,
     connected: true,
     sessionKey: "agent:local:main",
     settings: loadSettings(),
+    connectionEpoch: 0,
+    chatHistoryPagination: { hasMore: false },
+    chatLoading: false,
+    chatMessages: [],
+    chatThinkingLevel: null,
+    chatVerboseLevel: null,
+    chatSending: false,
+    chatMessage: "",
+    chatAttachments: [],
+    chatQueue: [],
+    chatRunId: null,
+    chatStream: null,
+    chatStreamStartedAt: null,
+    lastError: null,
+    hello: null,
     ...createInitialChatRealtimeState(),
     requestUpdate: vi.fn(),
-  } as unknown as ChatRealtimeState;
+    resetRealtimeTalkConversation: vi.fn(),
+    toggleRealtimeTalk: vi.fn(),
+    toggleRealtimeTalkCamera: vi.fn(),
+    switchRealtimeTalkCamera: vi.fn(),
+  };
   attachChatRealtimeActions(
     state,
     () => permitted,
-    (message, requestedRunId) =>
-      requestChatSend(state as ChatState, { message, runId: requestedRunId }),
+    (message, requestedRunId) => requestChatSend(state, { message, runId: requestedRunId }),
   );
   states.push(state);
   const utterance = () => {
@@ -211,7 +236,7 @@ it.each(["openai", undefined])(
     });
     h.utterance();
     await sent.promise;
-    expect(tracks[0].stop).toHaveBeenCalledOnce();
+    expect(expectDefined(tracks[0], "captured microphone track").stop).toHaveBeenCalledOnce();
     expect(h.request).toHaveBeenCalledWith(
       "chat.send",
       expect.objectContaining({
@@ -240,7 +265,7 @@ it.each(["openai", undefined])(
     });
     expect(audios).toHaveLength(1);
     expect(tracks).toHaveLength(1);
-    audios[0].dispatchEvent(new Event("ended"));
+    expectDefined(audios[0], "speech playback").dispatchEvent(new Event("ended"));
     await h.nextCapture.promise;
     expect(h.state.realtimeTalkConversationState.entries).toEqual([]);
     await h.state.toggleRealtimeTalk();
@@ -332,7 +357,7 @@ it.each(["text before", "empty before", "text after"])(
         });
       }
       sent.resolve();
-      return { ...result, status: "ok" };
+      return { runId: h.getRunId(), status: "ok" };
     });
     await h.state.toggleRealtimeTalk();
     h.utterance();
@@ -373,7 +398,7 @@ it("waits for buffered local STT to finish instead of dropping a slow final tran
   await closing.promise;
   await vi.advanceTimersByTimeAsync(20_000);
   expect(h.request.mock.calls.some(([method]) => method === "chat.send")).toBe(false);
-  expect(tracks[0].stop).toHaveBeenCalledOnce();
+  expect(expectDefined(tracks[0], "captured microphone track").stop).toHaveBeenCalledOnce();
   finalized.resolve();
   await sent.promise;
   expect(h.request).toHaveBeenCalledWith(
@@ -418,7 +443,7 @@ it("surfaces a rejected chat admission instead of waiting forever for a model re
   const impl = h.request.getMockImplementation()!;
   h.request.mockImplementation(async (method, params) => {
     const result = await impl(method, params);
-    return method === "chat.send" ? { ...result, status: "error" } : result;
+    return method === "chat.send" ? { runId: h.getRunId(), status: "error" } : result;
   });
   await h.state.toggleRealtimeTalk();
   h.utterance();

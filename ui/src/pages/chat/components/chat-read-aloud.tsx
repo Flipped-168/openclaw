@@ -11,8 +11,11 @@ import { GatewaySpeechPlayback } from "../../../lib/speech-playback.ts";
 
 export function ReadAloud(props: { text: string }) {
   const context = useOptionalApplication();
-  const gateway = context && projectGateway(context.gateway);
-  const config = context && projectRuntimeConfig(context.runtimeConfig);
+  if (!context) {
+    return null;
+  }
+  const gateway = projectGateway(context.gateway);
+  const config = projectRuntimeConfig(context.runtimeConfig);
   const playback = new GatewaySpeechPlayback();
   const [playing, setPlaying] = createSignal(false);
   const [error, setError] = createSignal("");
@@ -26,22 +29,22 @@ export function ReadAloud(props: { text: string }) {
     setPlaying(false);
   };
   const playbackIdentity = createMemo(
-    () => [gateway?.read().snapshot.client, gateway?.read().snapshot.phase, props.text] as const,
+    () => [gateway.read().snapshot.client, gateway.read().snapshot.phase, props.text] as const,
     { equals: (before, after) => before.every((value, index) => value === after[index]) },
   );
   createEffect(playbackIdentity, () => {
     stop();
     setError("");
     // The config capability coalesces this with the other chat consumers.
-    void context?.runtimeConfig.ensureLoaded().catch(() => undefined);
+    void context.runtimeConfig.ensureLoaded().catch(() => undefined);
   });
   onCleanup(cancelPlayback);
   const available = () => {
-    const snapshot = config?.read().state.configSnapshot;
+    const snapshot = config.read().state.configSnapshot;
     const runtime = snapshot?.runtimeConfig ?? snapshot?.config;
     return (
       Boolean(asOptionalRecord(runtime)?.tts) &&
-      canCallGatewayMethod(gateway?.read().snapshot, "tts.speak", "operator.write")
+      canCallGatewayMethod(gateway.read().snapshot, "tts.speak", "operator.write")
     );
   };
   const speak = async () => {
@@ -49,14 +52,14 @@ export function ReadAloud(props: { text: string }) {
       stop();
       return;
     }
-    const client = context?.gateway.snapshot.client;
+    const client = context.gateway.snapshot.client;
     if (!client || !available()) {
       return;
     }
     const current = ++generation;
     const isCurrent = () =>
       current === generation &&
-      context?.gateway.snapshot.client === client &&
+      context.gateway.snapshot.client === client &&
       context.gateway.snapshot.phase === "connected";
     setPlaying(true);
     setError("");

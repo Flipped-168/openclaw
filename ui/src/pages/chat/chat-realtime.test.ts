@@ -1,6 +1,5 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from "vitest";
-import { createDeferred } from "../../../../test/helpers/promise.js";
 import type { GatewayEventFrame } from "../../api/gateway.ts";
 import { loadSettings, saveSettings } from "../../app/settings.ts";
 import { GatewaySpeechPlayback } from "../../lib/speech-playback.ts";
@@ -15,12 +14,11 @@ import {
 import { RealtimeTalkSelectedMicrophoneError } from "./talk/input.ts";
 import { RealtimeTalkSession } from "./talk/session.ts";
 import type { RealtimeTalkCallbacks } from "./talk/shared.ts";
-import type { SplitTalkOptions } from "./talk/split.ts";
 
 type InspectableRealtimeTalkSession = {
   callbacks: RealtimeTalkCallbacks;
   options: { provider?: string; transport?: string };
-  localOptions: { inputDeviceId?: string; videoDeviceId?: string; split?: SplitTalkOptions };
+  localOptions: { inputDeviceId?: string; videoDeviceId?: string };
 };
 
 function inspectSession(state: ChatRealtimeState): InspectableRealtimeTalkSession {
@@ -53,13 +51,12 @@ describe("chat realtime actions", () => {
   // Capture the spy instead of re-reading it off the prototype so assertions do
   // not reference an unbound method (typescript/unbound-method).
   let startSpy: MockInstance<RealtimeTalkSession["start"]>;
-  let prepareSpy: MockInstance<GatewaySpeechPlayback["prepare"]>;
 
   beforeEach(() => {
     vi.stubGlobal("localStorage", createStorageMock());
-    prepareSpy = vi
-      .spyOn(GatewaySpeechPlayback.prototype, "prepare")
-      .mockImplementation(() => document.createElement("audio"));
+    vi.spyOn(GatewaySpeechPlayback.prototype, "prepare").mockImplementation(() =>
+      document.createElement("audio"),
+    );
     startSpy = vi.spyOn(RealtimeTalkSession.prototype, "start").mockResolvedValue(undefined);
     vi.spyOn(RealtimeTalkSession.prototype, "stop").mockResolvedValue(undefined);
     vi.spyOn(RealtimeTalkSession.prototype, "switchCamera").mockResolvedValue(undefined);
@@ -71,59 +68,6 @@ describe("chat realtime actions", () => {
     localStorage.clear();
     vi.unstubAllGlobals();
   });
-
-  it("prepares split speech before the configuration await and retains the same player", async () => {
-    const state = createState();
-    const configuration = createDeferred<unknown>();
-    const request = vi
-      .fn<NonNullable<ChatRealtimeState["client"]>["request"]>()
-      .mockReturnValue(configuration.promise);
-    state.client!.request = request;
-    attachChatRealtimeActions(
-      state,
-      () => true,
-      async (_message, runId) => ({
-        runId,
-        status: "started",
-      }),
-    );
-    const starting = state.toggleRealtimeTalk();
-    expect(prepareSpy).toHaveBeenCalledOnce();
-    expect(request).toHaveBeenCalledWith("talk.config", {});
-    expect(prepareSpy.mock.invocationCallOrder[0]).toBeLessThan(
-      request.mock.invocationCallOrder[0]!,
-    );
-    const playback = prepareSpy.mock.contexts[0];
-    configuration.resolve({ config: { talk: { realtime: { mode: "stt-tts" } } } });
-    await starting;
-    expect(inspectSession(state).localOptions.split?.playback).toBe(playback);
-  });
-
-  it.each(["realtime", "cancelled", "error"])(
-    "stops prepared split speech when configuration is %s",
-    async (outcome) => {
-      const state = createState();
-      const configuration = createDeferred<unknown>();
-      const stop = vi.spyOn(GatewaySpeechPlayback.prototype, "stop");
-      state.client!.request = vi
-        .fn<NonNullable<ChatRealtimeState["client"]>["request"]>()
-        .mockReturnValue(configuration.promise);
-      const starting = state.toggleRealtimeTalk();
-      if (outcome === "cancelled") {
-        await state.toggleRealtimeTalk();
-      }
-      if (outcome === "error") {
-        configuration.reject(new Error("configuration failed"));
-      } else {
-        configuration.resolve({ config: {} });
-      }
-      await starting;
-      expect(stop).toHaveBeenCalledOnce();
-      if (outcome !== "realtime") {
-        expect(state.realtimeTalkSession).toBeNull();
-      }
-    },
-  );
 
   it.each([false, true])(
     "changes only audio while retaining captions and effective microphone (default recovery: %s)",
