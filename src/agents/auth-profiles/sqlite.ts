@@ -437,11 +437,12 @@ export function runAuthProfileWriteTransaction<T>(
 ): T {
   const existing = options.existingDatabaseTarget;
   const env = existing?.env ?? prepareAuthProfileWriteEnvironment(options);
-  return withAuthProfileCredentialOwner(resolveOpenClawStateSqlitePath(env), () => {
+  return withAuthProfileCredentialOwner(resolveOpenClawStateSqlitePath(env), (retain) => {
     const { databaseTarget, sharedOwner } = existing
       ? { databaseTarget: existing, sharedOwner: prepareAuthProfileSharedOwner(env) }
       : prepareAuthProfileWriteTransaction(agentDir, options, env);
     const run = (database: AuthProfileDatabase) => {
+      retain?.(database.db);
       const previous = authProfileTransactions.get(database);
       const owner = previous ?? { ...sharedOwner, databasePath: database.path };
       authProfileTransactions.set(database, owner);

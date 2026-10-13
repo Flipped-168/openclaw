@@ -68,7 +68,17 @@ const store = (key: string) => ({ version: 1, profiles: { [profileId]: credentia
 function credentialFixture() {
   const options = { env: { ...process.env, OPENCLAW_STATE_DIR: tempDirs.make("machine-auth-") } };
   const database = openOpenClawStateDatabase(options);
-  leases.push(acquireGatewayStateOwner({ databasePath: database.path }));
+  leases.push(
+    acquireGatewayStateOwner({
+      databasePath: database.path,
+      payload: {
+        pid: process.pid,
+        createdAt: new Date().toISOString(),
+        configPath: `${options.env.OPENCLAW_STATE_DIR}/openclaw.json`,
+        role: "gateway",
+      },
+    }),
+  );
   writeConfigMachineState(authKey, store("original"), options);
   const context = captureOpenClawStateWorkerContext(options);
   const capture = () =>

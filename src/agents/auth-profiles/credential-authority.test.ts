@@ -6,8 +6,8 @@ import { afterAll, describe, expect, it, vi } from "vitest";
 import { createTempDirTracker } from "../../../test/helpers/temp-dir.js";
 import { readGatewayLockProcessNamespace } from "../../infra/gateway-lock-payload.js";
 import {
-  acquireGatewayStateOwner,
   GatewayStateOwnerContentionError,
+  getStateDatabaseSchemaLease,
   resolveGatewayStateOwnerPath,
   tryAcquireGatewayStateOwner,
 } from "../../infra/gateway-state-owner.js";
@@ -442,31 +442,49 @@ function expectRetainedCustody(databasePath: string) {
 }
 
 describe.each(["shared-state", "agent"] as const)("%s released SDK credential writes", (kind) => {
-  it.each(sdkWriters)(
-    "%s acquires offline custody, denies before commit, and publishes before releasing it",
-    (writer) => {
-      const current = fixture(kind);
-      const rootPath = current.context.admission.databasePath;
-      const marker = resolveGatewayStateOwnerPath(rootPath);
-      expect(fs.existsSync(marker)).toBe(false);
-      let observed: AuthProfileCredential | undefined;
-      const commit = observePhysicalCommit(current.database.db, () => {
-        expectRetainedCustody(rootPath);
-        expect(() => current.authority.readCurrentCredential()).toThrow("authority is unavailable");
-        deferSqlitePostCommitPublication(current.database.db, () => {
-          observed = current.authority.readCurrentCredential();
-        });
+  it.each(
+    sdkWriters.flatMap((writer) =>
+      (["commit", "rollback"] as const).map((outcome) => ({ writer, outcome })),
+    ),
+  )("$writer retains offline custody through a confirmed $outcome", ({ writer, outcome }) => {
+    const current = fixture(kind);
+    const rootPath = current.context.admission.databasePath;
+    const marker = resolveGatewayStateOwnerPath(rootPath);
+    expect(fs.existsSync(marker)).toBe(false);
+    let observed: AuthProfileCredential | undefined;
+    const commit = observePhysicalCommit(current.database.db, () => {
+      expectRetainedCustody(rootPath);
+      expect(() => current.authority.readCurrentCredential()).toThrow("authority is unavailable");
+      deferSqlitePostCommitPublication(current.database.db, () => {
+        observed = current.authority.readCurrentCredential();
       });
-      try {
-        writeThroughSdk(writer, current, "sdk-committed");
-      } finally {
-        commit.mockRestore();
+      if (outcome === "rollback") {
+        throw new Error("cancelled SDK commit");
       }
-      expect(observed).toEqual(credential("sdk-committed"));
-      expect(current.authority.readCurrentCredential()).toEqual(current.readPersisted());
-      expect(fs.existsSync(marker)).toBe(false);
-    },
-  );
+    });
+    try {
+      const write = () => writeThroughSdk(writer, current, "sdk-committed");
+      if (outcome === "rollback") {
+        expect(write).toThrow("cancelled SDK commit");
+      } else {
+        write();
+      }
+    } finally {
+      commit.mockRestore();
+    }
+    expect(observed).toEqual(outcome === "commit" ? credential("sdk-committed") : undefined);
+    expect(current.readPersisted()).toEqual(
+      credential(outcome === "commit" ? "sdk-committed" : "original"),
+    );
+    expect(current.authority.readCurrentCredential()).toEqual(current.readPersisted());
+    expect(fs.existsSync(marker)).toBe(false);
+    const nextOwner = tryAcquireGatewayStateOwner(rootPath);
+    try {
+      expect(nextOwner).not.toBeNull();
+    } finally {
+      nextOwner?.release();
+    }
+  });
 
   it("preserves credential authority throughout an SDK metadata-only save", () => {
     const current = fixture(kind);
@@ -633,43 +651,47 @@ describe.each(["shared-state", "agent"] as const)("%s released SDK credential wr
     },
   );
 
-  it("keeps an SDK commit with a lost acknowledgement denied", () => {
-    const current = fixture(kind);
-    // Reuse a real Gateway owner so unknown offline custody need not outlive this test worker.
-    const owner = acquireGatewayStateOwner({
-      databasePath: current.context.admission.databasePath,
-      payload: {
-        pid: process.pid,
-        createdAt: new Date().toISOString(),
-        configPath: path.join(current.env.OPENCLAW_STATE_DIR, "openclaw.json"),
-        role: "gateway",
-      },
-    });
-    const exec = current.database.db.exec.bind(current.database.db);
-    const commit = vi.spyOn(current.database.db, "exec").mockImplementation((sql) => {
-      if (sql === "COMMIT") {
+  it.each(sdkWriters)(
+    "%s retains offline custody after a lost commit acknowledgement",
+    (writer) => {
+      const current = fixture(kind);
+      const rootPath = current.context.admission.databasePath;
+      let lease: ReturnType<typeof getStateDatabaseSchemaLease>;
+      const exec = current.database.db.exec.bind(current.database.db);
+      const commit = vi.spyOn(current.database.db, "exec").mockImplementation((sql) => {
+        if (sql === "COMMIT") {
+          lease = getStateDatabaseSchemaLease(rootPath);
+          expect(lease).toBeDefined();
+          expectRetainedCustody(rootPath);
+          expect(() => current.authority.readCurrentCredential()).toThrow(
+            "authority is unavailable",
+          );
+          exec(sql);
+          throw new Error("lost SDK commit acknowledgement");
+        }
+        return exec(sql);
+      });
+      try {
+        expect(() => writeThroughSdk(writer, current, "unknown")).toThrow();
+        expectRetainedCustody(rootPath);
+        expect(lease).toBeDefined();
+        const persisted = lease?.run(() =>
+          inspectAuthProfileJsonCellReadOnly(
+            { kind, path: current.database.path, env: current.env },
+            "store",
+          ),
+        );
+        expect(persisted).toMatchObject({ status: "readable", raw: store("unknown") });
         expect(() => current.authority.readCurrentCredential()).toThrow("authority is unavailable");
-        exec(sql);
-        throw new Error("lost SDK commit acknowledgement");
+        const cold = current.capture();
+        cold.observe(credential("unknown"));
+        expect(() => cold.readCurrentCredential()).toThrow("authority is unavailable");
+      } finally {
+        commit.mockRestore();
+        lease?.release();
       }
-      return exec(sql);
-    });
-    try {
-      expect(() => writeThroughSdk("saveAuthProfileStore", current, "unknown")).toThrow();
-      const persisted = inspectAuthProfileJsonCellReadOnly(
-        { kind, path: current.database.path, env: current.env },
-        "store",
-      );
-      expect(persisted).toMatchObject({ status: "readable", raw: store("unknown") });
-      expect(() => current.authority.readCurrentCredential()).toThrow("authority is unavailable");
-      const cold = current.capture();
-      cold.observe(credential("unknown"));
-      expect(() => cold.readCurrentCredential()).toThrow("authority is unavailable");
-    } finally {
-      commit.mockRestore();
-      owner.release();
-    }
-  });
+    },
+  );
 
   it("matches the canonical worker's cold read after both released SDK writers", async () => {
     const current = fixture(kind);

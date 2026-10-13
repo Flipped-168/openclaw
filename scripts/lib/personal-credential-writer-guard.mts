@@ -92,7 +92,13 @@ const callers = new Map<string, readonly string[]>([
   ...publicationWriters,
   [
     key(credentialCustody, "withAuthProfileCredentialWriteCustody"),
-    [key(credentialAuthority, "withAuthProfileCredentialWrite")],
+    [
+      key(credentialAuthority, "withAuthProfileCredentialWrite"),
+      key(
+        "src/agents/auth-profiles/store.ts",
+        "createAuthProfileStoreRuntime/saveAuthProfileStore",
+      ),
+    ],
   ],
   [
     key(credentialAuthority, "withAuthProfileCredentialWrite"),

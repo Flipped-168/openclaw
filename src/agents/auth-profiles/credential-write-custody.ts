@@ -29,7 +29,7 @@ const retainedTransactions = resolveGlobalSingleton(
 /** Reuse native custody; standalone SDK callers take the existing exclusive offline lease. */
 export function withAuthProfileCredentialOwner<T>(
   databasePath: string,
-  operation: () => T,
+  operation: (retainTransaction?: (database: DatabaseSync) => void) => T,
   database?: DatabaseSync,
 ): T {
   const retained = database && retainedTransactions.get(database);
@@ -73,6 +73,27 @@ export function withAuthProfileCredentialOwner<T>(
   }
   const lease = acquireStateDatabaseSchemaLease(databasePath);
   let transactionOwnsLease = false;
+  const retainTransaction = (db: DatabaseSync) => {
+    if (!hasSqlitePostCommitScope(db)) {
+      return;
+    }
+    const owner = { lease, unknown: false };
+    const release = () => {
+      retainedTransactions.delete(db);
+      lease.release();
+    };
+    // Stage first so rollback releases after credential facts; commit release is an observer.
+    transactionOwnsLease = stageSqliteTransactionState(db, {
+      stage: () => retainedTransactions.set(db, owner),
+      commit() {},
+      rollback: release,
+      invalidate: () => {
+        // Unknown native outcomes retain exclusive custody until owner restart.
+        owner.unknown = true;
+      },
+    });
+    deferSqlitePostCommitPublication(db, release);
+  };
   return runWithSqliteCleanup(
     {
       release: () => {
@@ -84,25 +105,10 @@ export function withAuthProfileCredentialOwner<T>(
     "auth profile credential custody",
     () =>
       lease.run(() => {
-        if (database && hasSqlitePostCommitScope(database)) {
-          const owner = { lease, unknown: false };
-          const release = () => {
-            retainedTransactions.delete(database);
-            lease.release();
-          };
-          // Stage first so rollback releases after credential facts; commit release is an observer.
-          transactionOwnsLease = stageSqliteTransactionState(database, {
-            stage: () => retainedTransactions.set(database, owner),
-            commit() {},
-            rollback: release,
-            invalidate: () => {
-              // No known native outcome can release exclusive custody before owner restart.
-              owner.unknown = true;
-            },
-          });
-          deferSqlitePostCommitPublication(database, release);
+        if (database) {
+          retainTransaction(database);
         }
-        return operation();
+        return operation(retainTransaction);
       }),
   );
 }
