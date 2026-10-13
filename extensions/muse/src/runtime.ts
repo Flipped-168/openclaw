@@ -1,0 +1,237 @@
+import { createHash } from "node:crypto";
+import {
+  MspError,
+  Session,
+  readSessionDurability,
+  spawnMspConnection,
+  type SpawnedMspConnection,
+} from "@muse-code/sdk";
+import { isRecord } from "openclaw/plugin-sdk/string-coerce-runtime";
+import musePackage from "../package.json" with { type: "json" };
+
+export type MuseMcpServer =
+  | { transport: "stdio"; command: string; args?: string[]; env?: Record<string, string> }
+  | { transport: "streamableHttp"; url: string; headers?: Record<string, string> };
+export type MuseOpenSession = {
+  sessionId?: string;
+  workspace: string;
+  modelId: string;
+  approvalMode: "allowAll" | "promptUnmatched" | "denyUnmatched";
+  mcpServers: Record<string, MuseMcpServer>;
+};
+export type MuseRuntime = {
+  host: SpawnedMspConnection;
+  sessions: Map<string, Session>;
+  dead: boolean;
+  closing: boolean;
+  users: number;
+  timer?: ReturnType<typeof setTimeout>;
+  close: () => Promise<void>;
+};
+type MuseLease = { runtime: MuseRuntime; release: () => void };
+
+export function museEnvironment(apiKey?: string): NodeJS.ProcessEnv {
+  // Without an OpenClaw-selected key, Muse applies its own documented order:
+  // META_API_KEY, then a stored key, then a browser sign-in.
+  return {
+    ...process.env,
+    MUSE_NO_AUTO_UPDATE: "1",
+    ...(apiKey ? { META_API_KEY: apiKey } : {}),
+  };
+}
+
+export function credentialFingerprint(apiKey?: string): string {
+  return apiKey ? createHash("sha256").update(apiKey).digest("hex") : "cli-login";
+}
+
+export async function openMuseSession(runtime: MuseRuntime, options: MuseOpenSession) {
+  if (options.sessionId) {
+    const existing = runtime.sessions.get(options.sessionId);
+    if (existing) {
+      return existing;
+    }
+  }
+  const { connection } = runtime.host;
+  const config = Object.keys(options.mcpServers).length
+    ? { mcpServers: options.mcpServers }
+    : undefined;
+  if (config && !runtime.host.initializeResult.grantedCapabilities.includes("sessionMcp")) {
+    throw new Error(
+      "This Muse host does not support session MCP servers. Upgrade Muse or remove the MCP configuration.",
+    );
+  }
+  let result: Record<string, unknown>;
+  if (options.sessionId) {
+    try {
+      result = await connection.command("session/resume", {
+        sessionId: options.sessionId,
+        ...(config ? { config } : {}),
+        excludeItems: true,
+      });
+    } catch (error) {
+      // A definitive missing-session refusal permits a new root. Never retry an
+      // ambiguous transport failure or an authorization failure as a fresh turn.
+      if (!(error instanceof MspError) || error.kind !== "sessionNotFound") {
+        throw error;
+      }
+      result = await connection.command("session/start", {
+        workspaceRoot: options.workspace,
+        modelId: options.modelId,
+        providerId: "meta",
+        approvalMode: options.approvalMode,
+        ...(config ? { config } : {}),
+      });
+    }
+  } else {
+    result = await connection.command("session/start", {
+      workspaceRoot: options.workspace,
+      modelId: options.modelId,
+      providerId: "meta",
+      approvalMode: options.approvalMode,
+      ...(config ? { config } : {}),
+    });
+  }
+  if (!isRecord(result.session) || typeof result.session.sessionId !== "string") {
+    throw new Error("Muse returned an invalid session identity.");
+  }
+  const session = new Session({
+    sessionId: result.session.sessionId,
+    connection,
+    durability: readSessionDurability(runtime.host.initializeResult),
+  });
+  runtime.sessions.set(session.sessionId, session);
+  return session;
+}
+
+export class MusePool {
+  private readonly entries = new Map<string, Promise<MuseRuntime>>();
+  private disposed = false;
+  constructor(private readonly binaryPath = "muse") {}
+
+  async acquire(
+    workspace: string,
+    apiKey: string | undefined,
+    readOnly: boolean,
+  ): Promise<MuseLease> {
+    if (this.disposed) {
+      throw new Error("Muse runtime has been disposed");
+    }
+    const key = JSON.stringify([workspace, credentialFingerprint(apiKey), readOnly]);
+    let pending = this.entries.get(key);
+    if (!pending) {
+      pending = this.spawn(workspace, apiKey, readOnly);
+      this.entries.set(key, pending);
+      void pending.catch(() => {
+        if (this.entries.get(key) === pending) {
+          this.entries.delete(key);
+        }
+      });
+    }
+    const runtime = await pending;
+    if (this.disposed) {
+      await runtime.close();
+      throw new Error("Muse runtime was disposed during startup");
+    }
+    if (runtime.dead) {
+      this.entries.delete(key);
+      return this.acquire(workspace, apiKey, readOnly);
+    }
+    clearTimeout(runtime.timer);
+    runtime.users++;
+    return {
+      runtime,
+      release: () => {
+        runtime.users--;
+        if (runtime.users === 0) {
+          runtime.timer = setTimeout(() => {
+            if (this.entries.get(key) === pending) {
+              this.entries.delete(key);
+            }
+            void runtime.close();
+          }, 300_000);
+          runtime.timer.unref();
+        }
+      },
+    };
+  }
+
+  private async spawn(
+    workspace: string,
+    apiKey: string | undefined,
+    readOnly: boolean,
+  ): Promise<MuseRuntime> {
+    const handshake = spawnMspConnection({
+      command: this.binaryPath,
+      args: ["serve", ...(readOnly ? ["--disable-shell", "--disable-write"] : [])],
+      cwd: workspace,
+      env: museEnvironment(apiKey),
+      shutdownTimeoutMs: 1000,
+    });
+    const startup = setTimeout(() => {
+      void handshake.close();
+    }, 30_000);
+    startup.unref();
+    try {
+      const host = await handshake.initialize({
+        clientInfo: { name: "openclaw", version: musePackage.version },
+        capabilities: { requestedCapabilities: ["sessionMcp"] },
+      });
+      const runtime: MuseRuntime = {
+        host,
+        sessions: new Map(),
+        users: 0,
+        dead: false,
+        closing: false,
+        close: async () => {
+          runtime.closing = true;
+          await host.close();
+        },
+      };
+      host.connection.onNotification((event) => {
+        const sessionId = event.params?.sessionId;
+        if (typeof sessionId === "string") {
+          runtime.sessions.get(sessionId)?.apply(event);
+        }
+      });
+      host.connection.onProtocolError(() => {
+        void runtime.close();
+      });
+      void host.child.exit.then((exit) => {
+        runtime.dead = true;
+        for (const session of runtime.sessions.values()) {
+          session.hostExited(exit);
+        }
+      });
+      void host.connection.closed.then(() => {
+        runtime.dead = true;
+        for (const session of runtime.sessions.values()) {
+          session.hostExited({ kind: "transportEof" });
+        }
+      });
+      return runtime;
+    } catch (error) {
+      await handshake.close();
+      throw new Error(
+        `Cannot start Muse Code (${this.binaryPath}). Install Muse and run muse to sign in. ${String(error)} ${handshake.child.stderrTail.join("\n")}`,
+        { cause: error },
+      );
+    } finally {
+      clearTimeout(startup);
+    }
+  }
+
+  async dispose() {
+    this.disposed = true;
+    const entries = [...this.entries.values()];
+    this.entries.clear();
+    await Promise.all(
+      entries.map(async (entry) => {
+        const runtime = await entry.catch(() => undefined);
+        if (runtime) {
+          clearTimeout(runtime.timer);
+          await runtime.close();
+        }
+      }),
+    );
+  }
+}

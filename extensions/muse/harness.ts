@@ -1,0 +1,390 @@
+import { realpath } from "node:fs/promises";
+import type { Session, Turn } from "@muse-code/sdk";
+import {
+  agentHarnessAttemptTerminal,
+  clearActiveEmbeddedRun,
+  setActiveEmbeddedRun,
+  type AgentHarnessAttemptParamsV2,
+  type AgentHarnessAttemptResult,
+  type AgentHarnessV2,
+  type AgentMessage,
+} from "openclaw/plugin-sdk/agent-harness-runtime";
+import { formatErrorMessage } from "openclaw/plugin-sdk/error-runtime";
+import { KeyedAsyncQueue } from "openclaw/plugin-sdk/keyed-async-queue";
+import type { PluginStateKeyedStore } from "openclaw/plugin-sdk/plugin-state-runtime";
+import { resolveApiKeyForProvider } from "openclaw/plugin-sdk/provider-auth-runtime";
+import {
+  appendSessionTranscriptMessagesByIdentity,
+  publishSessionTranscriptUpdateByIdentity,
+} from "openclaw/plugin-sdk/session-transcript-runtime";
+import { createApprovalHandler } from "./src/approvals.js";
+import { consumeTurn } from "./src/events.js";
+import { loadMuseMcpServers } from "./src/mcp.js";
+import { credentialFingerprint, MusePool, openMuseSession } from "./src/runtime.js";
+
+export type MuseSessionBinding = { sessionId: string; compatibility: string };
+export type MuseHarnessOptions = {
+  binaryPath?: string;
+  sessionStore: Pick<PluginStateKeyedStore<MuseSessionBinding>, "lookup" | "register" | "delete">;
+};
+
+export function createMuseAgentHarness(options: MuseHarnessOptions): AgentHarnessV2 {
+  const pool = new MusePool(options.binaryPath);
+  const queue = new KeyedAsyncQueue();
+  const active = new Map<string, () => Promise<void>>();
+  const inFlight = new Set<Promise<AgentHarnessAttemptResult>>();
+  let disposed = false;
+
+  async function runAttempt(
+    params: AgentHarnessAttemptParamsV2,
+  ): Promise<AgentHarnessAttemptResult> {
+    const operation = queue.enqueue(params.sessionId, async () => {
+      if (disposed) {
+        throw new Error("Muse harness has been disposed.");
+      }
+      params.hostCapabilities.assertActive();
+      params.abortSignal?.throwIfAborted();
+      if (
+        params.sandbox ||
+        params.requireWorkspaceOnly ||
+        params.pluginHarnessToolPolicyRestricted
+      ) {
+        throw new Error(
+          "Muse cannot enforce this OpenClaw sandbox or tool policy. Select the openclaw runtime for this session.",
+        );
+      }
+      if (params.thinkLevel === "adaptive") {
+        throw new Error("Muse does not support adaptive reasoning; choose a fixed thinking level.");
+      }
+      const target = params.sessionTarget;
+      if (!target?.sessionId || !target.sessionKey || !target.storePath) {
+        throw new Error("Muse requires an exact OpenClaw transcript target.");
+      }
+      const transcriptTarget = {
+        ...target,
+        sessionId: target.sessionId,
+        sessionKey: target.sessionKey,
+        storePath: target.storePath,
+      };
+      let apiKey = params.resolvedApiKey;
+      if (!apiKey && params.authProfileId) {
+        const auth = await resolveApiKeyForProvider({
+          provider: "meta",
+          profileId: params.authProfileId,
+          lockedProfile: true,
+          store: params.authProfileStore,
+          cfg: params.config,
+          agentDir: params.agentDir,
+          signal: params.abortSignal,
+        });
+        if (!auth.apiKey) {
+          throw new Error("The selected meta auth profile has no API key usable by Muse.");
+        }
+        apiKey = auth.apiKey;
+      }
+      params.hostCapabilities.assertActive();
+      const workspace = await realpath(params.workspaceDir);
+      params.hostCapabilities.assertActive();
+      const security = params.execOverrides?.security ?? params.config?.tools?.exec?.security;
+      const ask = params.execOverrides?.ask ?? params.config?.tools?.exec?.ask;
+      if (security === "allowlist") {
+        throw new Error("Muse cannot enforce OpenClaw's exec allowlist. Use the openclaw runtime.");
+      }
+      if (ask === "always") {
+        throw new Error(
+          "Muse cannot enforce exec ask: always for every native command. Use ask: on-miss/default, or the openclaw runtime.",
+        );
+      }
+      const readOnly = security === "deny";
+      const approvalMode = readOnly
+        ? "denyUnmatched"
+        : security === "full" && ask === "off"
+          ? "allowAll"
+          : "promptUnmatched";
+      const mcpServers = await loadMuseMcpServers(params);
+      const compatibility = JSON.stringify([
+        workspace,
+        params.modelId,
+        credentialFingerprint(apiKey),
+        readOnly,
+        approvalMode,
+        credentialFingerprint(JSON.stringify(mcpServers)),
+      ]);
+      params.hostCapabilities.assertActive();
+      const lease = await pool.acquire(workspace, apiKey, readOnly);
+      const { runtime } = lease;
+      let session: Session | undefined;
+      let turn: Turn | undefined;
+      let forceCloseTimer: ReturnType<typeof setTimeout> | undefined;
+      let timedOut = false;
+      let aborted = false;
+      let abortPromise: Promise<void> | undefined;
+      let failure: unknown;
+      const messages: AgentMessage[] = [];
+      let toolMetas: AgentHarnessAttemptResult["toolMetas"] = [];
+      let text = "";
+      let assistantTranscriptOwned = false;
+      let finalKey: string | undefined;
+      const bound = params.hostCapabilities.bindModelExecution?.({
+        provider: "meta",
+        model: params.modelId,
+      });
+      const signal = bound
+        ? AbortSignal.any([bound.signal, ...(params.abortSignal ? [params.abortSignal] : [])])
+        : params.abortSignal;
+      const assertDispatchActive = () => {
+        params.hostCapabilities.assertActive();
+        bound?.assertCurrent();
+        signal?.throwIfAborted();
+        if (aborted) {
+          throw new Error("Muse attempt was aborted before turn dispatch.");
+        }
+      };
+      const stop = async () => {
+        if (!session || !turn) {
+          return;
+        }
+        if (!abortPromise) {
+          // An interrupt ack is not settlement. Retire an unresponsive host so
+          // cancellation cannot leave a turn waiting indefinitely.
+          forceCloseTimer = setTimeout(() => {
+            void runtime.close();
+          }, 5000);
+          forceCloseTimer.unref();
+          abortPromise = runtime.host.connection
+            .command("turn/interrupt", { sessionId: session.sessionId, turnId: turn.turnId })
+            .then(() => undefined);
+        }
+        await abortPromise;
+      };
+      const abort = async () => {
+        aborted = true;
+        await stop();
+      };
+      const onAbort = () => {
+        void abort().catch(() => runtime.close());
+      };
+      const handle = {
+        kind: "embedded" as const,
+        runId: params.runId,
+        startedAtMs: params.startedAtMs,
+        // Core matches this against the attempt before granting tool authority.
+        toolAuthorityFingerprint: params.toolAuthorityFingerprint,
+        queueMessage: async () => {
+          throw new Error("Muse live steering is not supported; wait for the active turn.");
+        },
+        isStreaming: () => !aborted,
+        isAborted: () => aborted,
+        isCompacting: () => false,
+        sourceReplyDeliveryMode: params.sourceReplyDeliveryMode,
+        cancel: onAbort,
+        abort,
+      };
+      signal?.addEventListener("abort", onAbort, { once: true });
+      const timer = setTimeout(() => {
+        timedOut = true;
+        params.onAttemptTimeout?.(new Error("Muse turn timed out"));
+        onAbort();
+      }, params.timeoutMs);
+      timer.unref();
+      try {
+        assertDispatchActive();
+        const stored = await options.sessionStore.lookup(params.sessionId);
+        assertDispatchActive();
+        const resumable =
+          stored &&
+          stored.compatibility === compatibility &&
+          !params.initialReplayState?.replayInvalid;
+        session = await openMuseSession(runtime, {
+          ...(resumable ? { sessionId: stored.sessionId } : {}),
+          workspace,
+          modelId: params.modelId,
+          approvalMode,
+          mcpServers,
+        });
+        assertDispatchActive();
+        await options.sessionStore.register(params.sessionId, {
+          sessionId: session.sessionId,
+          compatibility,
+        });
+        session.onApproval(createApprovalHandler(params));
+        session.onApprovalError((error) => {
+          failure = new Error(`Muse approval failed: ${error.kind}`);
+          void abort().catch(() => runtime.close());
+        });
+        assertDispatchActive();
+        await params.userTurnTranscriptRecorder?.persistApproved();
+        assertDispatchActive();
+        // MSP has no system/developer instruction field; preserve host context in user input.
+        const input = [
+          {
+            type: "text" as const,
+            text: params.extraSystemPrompt
+              ? `${params.extraSystemPrompt}\n\n${params.prompt}`
+              : params.prompt,
+          },
+        ];
+        turn = await session.sendUserTurn({
+          input,
+          ...(params.thinkLevel
+            ? { reasoningEffort: params.thinkLevel === "off" ? "minimal" : params.thinkLevel }
+            : {}),
+        });
+        if (signal?.aborted) {
+          onAbort();
+        }
+        setActiveEmbeddedRun(params.sessionId, handle, params.sessionKey, params.sessionFile);
+        params.replyOperation?.attachBackend(handle);
+        active.set(params.sessionId, abort);
+        params.onExecutionStarted?.({ backend: "muse" });
+        const nativeSessionId = session.sessionId;
+        const result = await consumeTurn(turn, params, async (itemId, group) => {
+          const entries = group.map((message, index) => {
+            const idempotencyKey = `muse:${nativeSessionId}:${itemId}:${index}`;
+            if (message.role === "assistant" && message.stopReason !== "toolUse") {
+              finalKey = idempotencyKey;
+            }
+            return { message: { ...message, idempotencyKey }, idempotencyLookup: "scan" as const };
+          });
+          params.hostCapabilities.assertActive();
+          const written = await appendSessionTranscriptMessagesByIdentity({
+            ...transcriptTarget,
+            messages: entries,
+            config: params.config,
+          });
+          if (written.length !== entries.length) {
+            throw new Error("Muse transcript persistence rejected a native message group.");
+          }
+          await publishSessionTranscriptUpdateByIdentity(transcriptTarget);
+          messages.push(...group);
+          assistantTranscriptOwned = finalKey !== undefined;
+        });
+        toolMetas = result.toolMetas;
+        text = result.visibleText;
+        if (result.outcome.kind !== "completed") {
+          throw new Error(`Muse turn ended without a terminal result (${result.outcome.kind}).`);
+        }
+        if (result.outcome.params.terminal === "failed") {
+          throw new Error(
+            result.outcome.params.error?.message ??
+              result.outcome.params.reason ??
+              "Muse model request failed. Run muse to check login and model access.",
+          );
+        }
+        if (result.outcome.params.terminal === "cancelled") {
+          aborted = true;
+        }
+      } catch (error) {
+        failure ??= error;
+        if (turn && !aborted) {
+          await stop().catch(() => undefined);
+        }
+      } finally {
+        clearTimeout(timer);
+        clearTimeout(forceCloseTimer);
+        signal?.removeEventListener("abort", onAbort);
+        active.delete(params.sessionId);
+        clearActiveEmbeddedRun(params.sessionId, handle, params.sessionKey);
+        bound?.release();
+        lease.release();
+      }
+      if (!toolMetas.length) {
+        toolMetas = messages
+          .filter((message) => message.role === "toolResult")
+          .map((message) => ({ toolName: message.toolName }));
+      }
+      const interruption = timedOut
+        ? { kind: "timeout" as const, phase: "prompt" as const, source: "runtime" as const }
+        : aborted
+          ? { kind: "aborted" as const, source: "external" as const }
+          : { kind: "ok" as const };
+      const terminal = failure
+        ? agentHarnessAttemptTerminal.setFailure(interruption, {
+            source: "prompt",
+            error: new Error(
+              // Muse reports credential rejection (for example an invalid
+              // META_API_KEY) only on stderr; the turn itself says "not logged in".
+              `Muse Code: ${formatErrorMessage(failure)}${runtime.host.child.stderrTail.length ? `\nRecent Muse stderr:\n${runtime.host.child.stderrTail.slice(-5).join("\n")}` : ""}`,
+            ),
+          })
+        : interruption;
+      const lastAssistant = messages.findLast((message) => message.role === "assistant");
+      return {
+        terminal,
+        assistantTexts: text ? [text] : [],
+        messagesSnapshot: messages,
+        lastAssistant,
+        currentAttemptAssistant: lastAssistant,
+        currentAttemptCompletedAssistant: failure ? undefined : lastAssistant,
+        assistantTranscriptOwned,
+        assistantTranscriptIdempotencyKey: finalKey,
+        toolMetas,
+        cloudCodeAssistFormatError: false,
+        didSendViaMessagingTool: false,
+        itemLifecycle: {
+          activeCount: 0,
+          completedCount: messages.length,
+          startedCount: messages.length,
+        },
+        messagingToolSentTexts: [],
+        messagingToolSentTargets: [],
+        messagingToolSentMediaUrls: [],
+        sessionIdUsed: params.sessionId,
+        sessionFileUsed: params.sessionFile,
+        yieldDetected: false,
+        replayMetadata: {
+          replaySafe:
+            !failure && !params.initialReplayState?.replayInvalid && toolMetas.length === 0,
+          hadPotentialSideEffects:
+            params.initialReplayState?.hadPotentialSideEffects === true || toolMetas.length > 0,
+        },
+      };
+    });
+    inFlight.add(operation);
+    try {
+      return await operation;
+    } finally {
+      inFlight.delete(operation);
+    }
+  }
+
+  return {
+    id: "muse",
+    label: "Muse Code",
+    autoSelection: { providerIds: [] },
+    authBootstrap: "harness",
+    executionEnvironment: "host-only",
+    conversationToolPolicyNativeTools: ["exec", "read", "write", "edit"],
+    supports: (ctx) =>
+      ctx.requestedRuntime === "muse" &&
+      ctx.provider === "meta" &&
+      ctx.modelProvider?.requestTransportOverrides !== "present" &&
+      // Muse always calls Meta itself, so only an endpoint other than Meta's
+      // official one is a route Muse cannot reproduce. Setup probes report the
+      // catalog default as an authored endpoint.
+      (ctx.modelProvider?.endpointOverrides !== "present" ||
+        ctx.modelProvider.baseUrl?.replace(/\/+$/u, "") === "https://api.meta.ai/v1")
+        ? { supported: true, priority: 100 }
+        : {
+            supported: false,
+            reason: "Muse requires an explicit muse runtime and Meta's official API endpoint.",
+          },
+    runAttempt,
+    async reset(params) {
+      const sessionId = params.sessionId;
+      if (!sessionId) {
+        return;
+      }
+      await active.get(sessionId)?.();
+      await queue.enqueue(sessionId, async () => {
+        await options.sessionStore.delete(sessionId);
+      });
+    },
+    async dispose() {
+      disposed = true;
+      await Promise.allSettled([...active.values()].map((abort) => abort()));
+      await Promise.allSettled(inFlight);
+      await pool.dispose();
+    },
+  };
+}

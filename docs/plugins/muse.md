@@ -1,0 +1,239 @@
+---
+summary: "Run OpenClaw embedded agent turns for Meta models through the Muse Code CLI"
+title: "Muse Code agent runtime"
+read_when:
+  - You want an agent to run Meta Muse Spark models through the Muse Code CLI
+  - You need configuration examples for the `muse` runtime
+  - You are deciding between the built-in OpenClaw runtime and Muse Code for `meta/*` models
+---
+
+The external `@openclaw/muse` plugin runs embedded agent turns for `meta/*`
+models through [Muse Code](https://dev.meta.ai/docs/muse-code), Meta's coding
+agent CLI. The plugin starts `muse serve` and talks to it over the Muse Session
+Protocol (MSP) with the official `@muse-code/sdk` client.
+
+Muse Code owns the low-level agent loop: native shell, file read/write/edit
+tools, its OS sandbox, and its session state. OpenClaw still owns chat
+channels, model selection, approvals, the visible chat transcript, and the
+mapping from OpenClaw sessions to Muse sessions.
+
+For the broader model/provider/runtime split, start with
+[Agent runtimes](/concepts/agent-runtimes).
+
+## Requirements
+
+- OpenClaw with the `@openclaw/muse` plugin installed.
+- If your config uses `plugins.allow`, include `muse` (the manifest id), not the
+  npm package name.
+- The Muse Code CLI installed separately, with a `muse` binary on `PATH` or a
+  configured `binaryPath`. Install it with Meta's installer:
+
+  ```bash
+  curl -fsSL https://dev.meta.ai/install.sh | sh
+  muse --version
+  ```
+
+- A Meta credential: a Muse Code browser sign-in, a stored key, or a `meta`
+  auth profile in OpenClaw (see [Auth](#auth)).
+
+## Install
+
+```bash
+openclaw plugins install @openclaw/muse
+```
+
+The plugin does not install or update the `muse` binary. It sets
+`MUSE_NO_AUTO_UPDATE=1` on the processes it starts, so Muse does not update
+itself in the middle of a Gateway run. Update Muse with its own installer.
+
+## Quickstart
+
+Route one Meta model through the Muse runtime:
+
+```json5
+{
+  agents: {
+    defaults: {
+      model: "meta/muse-spark-1.3",
+      models: {
+        "meta/muse-spark-1.3": {
+          agentRuntime: { id: "muse" },
+        },
+      },
+    },
+  },
+}
+```
+
+Set `agentRuntime.id` on one model entry to route only that model, or on the
+`meta` provider to route every Meta model. The runtime is never selected
+automatically: without `agentRuntime.id: "muse"`, `meta/*` models use the
+built-in OpenClaw runtime through the [Meta provider](/providers/meta).
+
+The harness accepts only the standard `meta` provider route on Meta's official
+endpoint (`https://api.meta.ai/v1`). A `meta` provider entry with another
+`baseUrl` or with request transport overrides is refused, because Muse Code
+calls Meta itself.
+
+## Auth
+
+The usual setup is Muse Code's own sign-in. Run `muse` once on the Gateway host
+and sign in with your browser (subscription) or paste an API key, or store a key
+with `muse auth set`. The harness then needs no OpenClaw credential.
+
+The harness picks one credential per attempt, in this order:
+
+1. The API key OpenClaw resolved for the attempt's selected `meta` auth profile.
+2. The API key from the exact selected `meta:` auth profile, resolved through
+   the provider auth runtime.
+3. Muse Code's own order: `META_API_KEY` in the Gateway environment, then a key
+   stored with `muse auth set`, then a browser sign-in.
+
+When OpenClaw selects a key, the harness gives it to Muse as `META_API_KEY`.
+The Meta provider's `MODEL_API_KEY` is not passed to Muse; Muse does not read
+it.
+
+Each credential gets its own `muse serve` process. Changing the key starts a
+new Muse session instead of resuming one that belongs to another credential.
+
+If Muse rejects the credential, or finds none, the turn fails with Muse's
+error. Run `muse` in a terminal on the Gateway host to check sign-in and model
+access.
+
+## Configuration
+
+| Key          | Default | Purpose                                                     |
+| ------------ | ------- | ----------------------------------------------------------- |
+| `binaryPath` | `muse`  | Muse executable path, or a command name resolved on `PATH`. |
+
+```json5
+{
+  plugins: {
+    entries: {
+      muse: {
+        enabled: true,
+        config: { binaryPath: "/opt/homebrew/bin/muse" },
+      },
+    },
+  },
+}
+```
+
+Model choice comes from the OpenClaw model ref. The thinking level maps to
+Muse's reasoning effort: `off` becomes `minimal` (Muse Spark does not accept
+`none`), and `minimal`, `low`, `medium`, `high`, `xhigh`, `max`, and `ultra`
+pass through. `adaptive` is refused because Muse has no adaptive mode.
+
+## Approvals and sandbox
+
+The harness maps OpenClaw's exec policy (`tools.exec.security` and
+`tools.exec.ask`, or per-session exec overrides) to Muse's approval mode and
+sandbox posture:
+
+| OpenClaw exec policy                 | Muse behavior                                                                                 |
+| ------------------------------------ | --------------------------------------------------------------------------------------------- |
+| `security: "deny"`                   | `muse serve --disable-shell --disable-write`, approval mode `denyUnmatched`.                  |
+| `security: "full"` with `ask: "off"` | Approval mode `allowAll`.                                                                     |
+| Default and other combinations       | Approval mode `promptUnmatched`: Muse applies its own rules and asks OpenClaw about the rest. |
+| `security: "allowlist"`              | Refused. Muse cannot enforce OpenClaw's exec allowlist.                                       |
+| `ask: "always"`                      | Refused. Muse cannot guarantee an approval prompt for every native command.                   |
+
+When Muse asks for approval, OpenClaw shows its normal approval prompt with
+**Allow once** and **Deny**. The harness answers with a choice that Muse
+offered. A denied, expired, or cancelled approval sends a deny choice. The
+harness never grants persistent approvals.
+
+The harness also refuses an attempt when OpenClaw requires an OpenClaw sandbox,
+workspace-only file access, or a restricted plugin tool policy. Muse runs on
+the Gateway host and cannot enforce those boundaries. Select the `openclaw`
+runtime for those agents or sessions.
+
+A refused attempt fails before any `muse` process starts, with an error that
+names the setting.
+
+## Sessions
+
+The plugin stores one binding per OpenClaw session in its plugin state: the
+Muse session id plus a fingerprint of the workspace, model, credential,
+approval mode, and MCP servers. The next turn resumes that Muse session when
+the fingerprint matches. If any of those inputs changed, or the previous
+transcript was marked unsafe to replay, the next turn starts a new Muse
+session.
+
+If Muse reports that the stored session no longer exists, the harness starts a
+new one. Other resume failures (auth, transport, or an unclear host error) fail
+the turn instead, so a turn that may have run is never silently repeated.
+
+`/new` and `/reset` stop an active Muse turn and delete the binding.
+
+`muse serve` processes are pooled per workspace, credential, and read-only
+posture, and shut down after five idle minutes.
+
+## Transcript
+
+Each completed Muse item (assistant text, reasoning, tool calls, and tool
+results) is written to the OpenClaw session transcript as soon as Muse
+finishes it, keyed by the Muse session and item id so a retried write cannot
+duplicate entries. A transcript write failure stops the turn.
+
+## MCP servers
+
+Static MCP servers from OpenClaw's `mcp.servers` config are passed to each Muse
+session as session MCP servers. Supported transports:
+
+- stdio (`command`, `args`, `env`)
+- streamable HTTP (`url`, `headers`)
+
+The harness refuses SSE servers, a per-server `cwd`, requester-scoped MCP
+credentials, and bundled MCP servers that need a prepared data directory. Muse
+must grant the `sessionMcp` capability; older Muse builds without it fail with
+an upgrade message when MCP servers are configured.
+
+## Limitations
+
+- OpenClaw's own agent tools (messaging, `sessions_spawn`, browser, and other
+  OpenClaw tools) are not available to Muse. MSP has no client-tool contract,
+  and OpenClaw has no generic MCP server for its agent tools yet. Muse uses its
+  native tools and the MCP servers above. Replies go back to the channel from
+  the final turn text.
+- No live steering: a message sent during an active turn waits for the turn to
+  finish.
+- No native compaction, isolated completions, or `/btw` side questions through
+  Muse. `/btw` uses the configured model provider directly, as on other
+  non-Codex runtimes.
+- No `ask_user`-style questions from Muse.
+- MSP has no system-instruction field. OpenClaw's extra system prompt is
+  prepended to the user message of each turn.
+- Muse runs on the Gateway host only. It is not available with OpenClaw
+  sandboxes or remote node execution.
+- Muse's built-in `echo` provider is not available over `muse serve`, so the
+  runtime always needs a working Meta credential.
+- Model Setup checks a new `meta` sign-in with a short tool-restricted probe
+  turn. Muse cannot enforce that restriction, so while `meta/*` models are
+  routed to `muse`, activating a new `meta` API key in Model Setup fails with
+  "Muse Code cannot enforce this conversation's tool policy". Use Muse's own
+  sign-in instead (see [Auth](#auth)).
+
+## Live tests
+
+Two gated live suites run against the real `muse` binary
+(`OPENCLAW_MUSE_BIN` overrides the path):
+
+```bash
+# No credentials needed: handshake, session start/resume, auth error, interrupt, exit
+OPENCLAW_MUSE_LIVE_HOST=1 node scripts/run-vitest.mjs \
+  --config test/vitest/vitest.live.config.ts extensions/muse/src/runtime.live.test.ts
+
+# Real model turn: uses OPENCLAW_MUSE_LIVE_KEY, or Muse's own sign-in when unset
+OPENCLAW_MUSE_LIVE_TEST=1 OPENCLAW_MUSE_LIVE_KEY=<key> node scripts/run-vitest.mjs \
+  --config test/vitest/vitest.live.config.ts extensions/muse/src/runtime.live.test.ts
+```
+
+`OPENCLAW_MUSE_LIVE_MODEL` selects the model for the real turn (default
+`muse-spark-1.3`).
+
+## Related
+
+- [Meta provider](/providers/meta)
+- [Agent runtimes](/concepts/agent-runtimes)
+- [Agent harness plugins](/plugins/sdk-agent-harness)
