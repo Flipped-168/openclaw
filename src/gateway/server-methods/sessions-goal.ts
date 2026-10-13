@@ -61,7 +61,7 @@ async function handleSessionGoalMutation(
     | undefined;
   let incognitoRead: SessionFactsRead<PreparedSessionSourceFacts> | undefined;
   try {
-    const authorization = options.sessionMutationAuthorization
+    const resolvedAuthorization = options.sessionMutationAuthorization
       ? { authorization: options.sessionMutationAuthorization, error: null }
       : await resolveSessionMutationAuthorizationAsync({
           client,
@@ -69,10 +69,11 @@ async function handleSessionGoalMutation(
           requestParams: request,
           context,
         });
-    using _ = {
+    using authorization = {
+      ...resolvedAuthorization,
       [Symbol.dispose]: () => {
         if (!sessionMutationAuthorization) {
-          authorization.authorization?.release?.();
+          resolvedAuthorization.authorization?.release?.();
         }
       },
     };
