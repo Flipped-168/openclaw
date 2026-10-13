@@ -3,6 +3,7 @@ import {
   buildEmbeddedRunnerAssistant,
   makeEmbeddedRunnerAttempt,
 } from "../../test-helpers/embedded-agent-runner-e2e-fixtures.js";
+import type { ToolErrorSummary } from "../../tool-error-summary.js";
 import { buildEmbeddedRunPayloads } from "./payloads.js";
 import { resolveEmbeddedRunTerminal } from "./terminal-resolution.js";
 import { makeTerminalInput, type TerminalInput } from "./terminal-resolution.test-support.js";
@@ -55,10 +56,21 @@ function rejectedCallAfterSettledTool(
 }
 
 function refusedExecThenRejectedCall() {
+  const failure: ToolErrorSummary = {
+    toolName: "exec",
+    executionStarted: false,
+    mutatingAction: false,
+  };
+  const failedTool = {
+    toolName: "exec",
+    toolCallId: "call_exec",
+    isError: true,
+    asyncStarted: false,
+  };
   const turn = rejectedCallAfterSettledTool(
     {
-      lastToolError: { toolName: "exec", executionStarted: false, mutatingAction: false },
-      toolMetas: [{ toolName: "exec", toolCallId: "call_exec", isError: true }],
+      lastToolError: failure,
+      toolMetas: [failedTool],
     },
     {
       api: "anthropic-messages",
@@ -67,23 +79,24 @@ function refusedExecThenRejectedCall() {
       errorMessage: "Provider completed tool call with malformed JSON arguments",
     },
   );
+  const failedResult = {
+    role: "toolResult",
+    toolCallId: "call_exec",
+    toolName: "exec",
+    content: [{ type: "text", text: "exec preflight: complex interpreter invocation detected" }],
+    isError: true,
+    timestamp: 0,
+  } satisfies (typeof turn.attempt.messagesSnapshot)[number];
   turn.attempt.messagesSnapshot = [
     { role: "user", content: "Inspect the workspace", timestamp: 0 },
     buildEmbeddedRunnerAssistant({
       stopReason: "toolUse",
       content: [{ type: "toolCall", id: "call_exec", name: "exec", arguments: {} }],
     }),
-    {
-      role: "toolResult",
-      toolCallId: "call_exec",
-      toolName: "exec",
-      content: [{ type: "text", text: "exec preflight: complex interpreter invocation detected" }],
-      isError: true,
-      timestamp: 0,
-    },
+    failedResult,
     turn.attemptAssistant,
   ];
-  return { ...turn, modelApi: "anthropic-messages" };
+  return { ...turn, failure, failedTool, failedResult, modelApi: "anthropic-messages" };
 }
 
 describe("terminal resolution for a tool call rejected before dispatch", () => {
@@ -155,28 +168,29 @@ describe("terminal resolution for a tool call rejected before dispatch", () => {
     const snapshot = turn.attempt.messagesSnapshot;
     switch (condition) {
       case "started":
-        turn.attempt.lastToolError!.executionStarted = true;
+        turn.failure.executionStarted = true;
         break;
       case "unknown":
-        delete turn.attempt.lastToolError!.executionStarted;
+        delete turn.failure.executionStarted;
         break;
       case "missing-result":
         snapshot.splice(2, 1);
         break;
       case "unconsumed":
-        snapshot.push(snapshot.splice(2, 1)[0]);
+        snapshot.splice(2, 1);
+        snapshot.push(turn.failedResult);
         break;
       case "prior-turn":
         snapshot.splice(3, 0, { role: "user", content: "New task", timestamp: 1 });
         break;
       case "different-tool":
-        turn.attempt.lastToolError!.toolName = "write";
+        turn.failure.toolName = "write";
         break;
       case "active":
         turn.attempt.itemLifecycle.activeCount = 1;
         break;
       case "async":
-        turn.attempt.toolMetas[0].asyncStarted = true;
+        turn.failedTool.asyncStarted = true;
         break;
     }
     const activateInternalPrompt = vi.fn();
