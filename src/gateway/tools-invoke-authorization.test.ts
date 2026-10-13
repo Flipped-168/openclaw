@@ -123,7 +123,7 @@ describe.each(["HTTP", "WebSocket"] as const)(
         sessionKey: "agent:main:member-session",
         stored: true,
         revokeMember: true,
-        expectedError: "Session",
+        expectedError: "session is read-only",
       },
     ];
 

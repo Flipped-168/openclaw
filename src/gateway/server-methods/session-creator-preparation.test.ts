@@ -31,6 +31,7 @@ import { GatewayClientRegistry } from "../server/client-registry.js";
 import type { GatewayWsClient } from "../server/ws-types.js";
 import { resolveSessionEventAgentScope } from "../session-request-agent.js";
 import { getSessionRowProjection } from "../session-row-projection-access.js";
+import { prepareSessionMutationFacts } from "../session-sharing-preparation.js";
 import {
   canReceiveSessionEvent,
   invalidateSessionSharingSnapshot,
@@ -365,8 +366,14 @@ describe("creator preparation at synchronous fan-out boundaries", () => {
       const recipients = eventClients(callerId);
       const primaryConfig: OpenClawConfig = {};
       const alternateConfig: OpenClawConfig = { session: { store: alternateStore } };
-      const primaryAccess = await prepareEventAccess(primaryConfig);
-      const alternateAccess = await prepareEventAccess(alternateConfig);
+      let primaryFacts = await prepareSessionMutationFacts({ cfg: primaryConfig, ...scope });
+      const alternateFacts = await prepareSessionMutationFacts({ cfg: alternateConfig, ...scope });
+      using _ = {
+        [Symbol.dispose]: () => {
+          primaryFacts.release();
+          alternateFacts.release();
+        },
+      };
       let cfg = primaryConfig;
       const decisions: Array<[string, boolean]> = [];
       const { broadcast } = createGatewayBroadcaster({
@@ -379,7 +386,18 @@ describe("creator preparation at synchronous fan-out boundaries", () => {
             agentId,
             event,
             payload,
-            prepared: (cfg === primaryConfig ? primaryAccess : alternateAccess).forClient(client),
+            prepared: {
+              sharing: prepareProjectedSessionSharing({
+                cfg,
+                client,
+                isMember: (_target, identity) =>
+                  (cfg === primaryConfig ? primaryFacts : alternateFacts)
+                    .readCurrent(cfg)
+                    .membership.has(identity),
+              }),
+              target: () =>
+                (cfg === primaryConfig ? primaryFacts : alternateFacts).readCurrent(cfg).target,
+            },
           });
           decisions.push([client.connId, allowed]);
           return allowed;
@@ -408,9 +426,11 @@ describe("creator preparation at synchronous fan-out boundaries", () => {
       expect(recipients.map(({ socket }) => socket.send.mock.calls.length)).toEqual([2, 1]);
       removeSessionMember(scope, callerId);
       emit();
+      primaryFacts.release();
       await closeOpenClawAgentDatabaseByPathAsync(
         path.join(stateDir, "agents", "main", "agent", "openclaw-agent.sqlite"),
       );
+      primaryFacts = await prepareSessionMutationFacts({ cfg: primaryConfig, ...scope });
       emit();
       expect(recipients.map(({ socket }) => socket.send.mock.calls.length)).toEqual([2, 1]);
       addSessionMember(scope, { identityId: callerId, addedBy: "fixture" });

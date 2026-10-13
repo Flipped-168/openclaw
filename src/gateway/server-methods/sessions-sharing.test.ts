@@ -37,6 +37,7 @@ import {
   resolveSessionMutationAuthorization,
   SessionMutationAuthorizationChangedError,
   canReceiveSessionEvent,
+  prepareProjectedSessionSharing,
   createSessionListEntryFilter,
   invalidateSessionSharingSnapshot,
 } from "../session-sharing.js";
@@ -674,6 +675,15 @@ describe("session sharing handlers", () => {
           getLocalSnapshot: () => ({ request: { sessionKey, agentId: "main" } }),
         },
       } as unknown as GatewayRequestContext;
+      await initializeSessionReadContext(requestContext);
+      const projection = getSessionRowProjection(requestContext)!;
+      await projection.prepareMembership();
+      const sharing = prepareProjectedSessionSharing({
+        cfg: {},
+        client: memberClient,
+        isMember: (target, identity) =>
+          projection.hasMembership(target.storePath, target.storeKey, identity),
+      });
       const mutations: Array<[string, Record<string, unknown>]> = [
         ["chat.send", { sessionKey }],
         ["sessions.steer", { key: sessionKey }],
@@ -718,6 +728,10 @@ describe("session sharing handlers", () => {
             client: memberClient as never,
             sessionKeys: [sessionKey],
             agentId: "main",
+            prepared: {
+              sharing,
+              target: (key) => projection.sharingTarget({ key, agentId: "main" }),
+            },
           }),
         ).toBe(allowed);
       };
