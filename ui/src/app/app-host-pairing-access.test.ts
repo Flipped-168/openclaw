@@ -1,7 +1,7 @@
 /* @vitest-environment jsdom */
 
 import type { LitElement, TemplateResult } from "lit";
-import { flush } from "solid-js";
+import { createComponent, flush, onSettled } from "solid-js";
 import { afterEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { resolveThemeBranding } from "../../../packages/gateway-protocol/src/theme.ts";
 import { createDeferred } from "../../../test/helpers/promise.js";
@@ -28,6 +28,7 @@ import type { OutboxStoreRuntime } from "./app-shell-gateway.ts";
 import type { ApplicationContext, ApplicationGatewaySnapshot } from "./context.ts";
 import { LazyRenderer } from "./lazy-renderer.ts";
 import { loadSettings } from "./settings.ts";
+import { ShellLayoutBoundary } from "./shell-layout-traits-solid.tsx";
 import type { UpdateProgress } from "./update-confirmation.ts";
 
 type PairingSidebar = LitElement & {
@@ -619,5 +620,40 @@ describe("application shell pairing access", () => {
       "expired",
     );
     expect(container.querySelector(".device-pair-setup__command code")).toBeNull();
+  });
+
+  it("publishes layout traits from an already-loaded native route on shell mount", async () => {
+    vi.stubGlobal(
+      "IntersectionObserver",
+      class {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      },
+    );
+    const { shell, context, container, refresh } = createPairingShell({ auth: null });
+    const router = shell.runtime!.router;
+    const definition = router.getRoute("activity")!;
+    vi.spyOn(definition, "component").mockResolvedValue({
+      renderSolid: () =>
+        createComponent(ShellLayoutBoundary, {
+          traits: { toolbarHeader: true, activityPage: true },
+          children: "Native activity page",
+        }),
+    });
+    await router.navigate("activity", context);
+    shell.routeState = {
+      routeId: "activity",
+      location: { pathname: "/activity", search: "", hash: "" },
+    };
+    document.body.append(container);
+    await refresh();
+    await new Promise<void>((resolve) => {
+      onSettled(resolve);
+    });
+    expect(container.textContent).toContain("Native activity page");
+    const content = container.querySelector("main.content")!;
+    expect(content.classList.contains("content--toolbar-header")).toBe(true);
+    expect(content.classList.contains("content--activity-page")).toBe(true);
   });
 });
