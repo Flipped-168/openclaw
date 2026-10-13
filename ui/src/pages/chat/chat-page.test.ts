@@ -4,7 +4,8 @@
 import { DEFAULT_GATEWAY_REQUEST_TIMEOUT_MS } from "@openclaw/gateway-client/browser";
 import { expectDefined } from "@openclaw/normalization-core";
 import type { RouteLocation } from "@openclaw/uirouter";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createComponent } from "solid-js";
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 
 // mock-isolation: Observe page bindings without registering the real pane tag and starting its domain owners.
 vi.mock("./chat-pane.tsx", async () => {
@@ -15,6 +16,8 @@ vi.mock("./chat-pane.tsx", async () => {
 import { createDeferred } from "../../../../test/helpers/promise.js";
 import { loadSettings, patchSettings } from "../../app/settings.ts";
 import { UI_COMMAND_EVENT } from "../../components/panel-toggle-contract.ts";
+import { captureI18nStateForTesting } from "../../i18n/lib/translate.test-support.ts";
+import { i18n } from "../../i18n/lib/translate.ts";
 import {
   buildCatalogSessionKey,
   catalogSessionSearch,
@@ -22,8 +25,11 @@ import {
 } from "../../lib/sessions/catalog-key.ts";
 import { SESSION_DRAG_MIME } from "../../lib/sessions/drag.ts";
 import { sessionNavigationTarget } from "../../lib/sessions/route-navigation.ts";
+import { mountSolid } from "../../test-helpers/mount-solid.ts";
+import { flush } from "../../test-helpers/solid-settle.ts";
 import { createStorageMock } from "../../test-helpers/storage.ts";
 import {
+  createChatPageNavigationContext,
   settleChatPage,
   createSplitLayout,
   setLayout,
@@ -31,7 +37,7 @@ import {
   setViewerPresenceContext,
   stubMatchMedia,
 } from "./chat-page.test-support.ts";
-import { ChatPage, chatPageState } from "./chat-page.ts";
+import { ChatPage, ChatPageView, chatPageState } from "./chat-page.ts";
 import { loadChatRoute } from "./route-loader.ts";
 
 const WORK_SESSION_KEY = "agent:main:dashboard:12345678-90ab-cdef-1234-567890abcdef";
@@ -50,6 +56,7 @@ import { insertPane, setPaneSession, singlePaneLayout } from "./split-layout.ts"
 
 type RenderedPane = HTMLElement & {
   paneId: string;
+  paneLabel: string;
   focusComposer: boolean;
   chatMessagesBySession: ChatMessageCache;
   sessionKey: string;
@@ -58,6 +65,7 @@ type RenderedPane = HTMLElement & {
   presentationTitle: string | undefined;
   narrow: boolean;
   mergedChrome: boolean;
+  onboarding: boolean;
   onOpenSplitView?: () => void;
   onFocusPane?: (paneId: string) => void;
   onClosePane?: (paneId: string) => void;
@@ -135,6 +143,51 @@ describe("chat page split layout host", () => {
     document.body.replaceChildren();
     localStorage.clear();
     vi.unstubAllGlobals();
+  });
+
+  it.each([false, true])(
+    "derives mobile chrome after direct Solid attachment (onboarding=%s)",
+    async (onboarding) => {
+      stubMatchMedia(true);
+      const container = document.body.appendChild(document.createElement("div"));
+      container.className = onboarding ? "shell shell--onboarding" : "shell";
+      const { context } = createChatPageNavigationContext();
+      const view = mountSolid(
+        () => createComponent(ChatPageView, { context, data: { sessionKey: "main" } }),
+        { container },
+      );
+      try {
+        const page = expectDefined(
+          container.querySelector<ChatPage>("openclaw-chat-page"),
+          "direct Solid page",
+        );
+        await settleChatPage(page);
+        const pane = itemAt(page.querySelectorAll<RenderedPane>("openclaw-chat-pane"), 0, "pane");
+
+        expect(pane.onboarding).toBe(onboarding);
+        expect(pane.mergedChrome).toBe(!onboarding);
+      } finally {
+        view.unmount();
+      }
+    },
+  );
+
+  it("updates a retained pane label on a live locale change", async () => {
+    onTestFinished(captureI18nStateForTesting());
+    await i18n.setLocale("en");
+    const page = new ChatPage();
+    setNavigationContext(page);
+    page.data = { sessionKey: "main" };
+    document.body.append(page);
+    await settleChatPage(page);
+    const pane = itemAt(page.querySelectorAll<RenderedPane>("openclaw-chat-pane"), 0, "pane");
+    expect(pane.paneLabel).toBe("Column 1, row 1 (p1)");
+
+    await i18n.setLocale("de");
+    flush();
+
+    expect(pane.paneLabel).toBe("Spalte 1, Zeile 1 (p1)");
+    expect(page.querySelector("openclaw-chat-pane")).toBe(pane);
   });
 
   it.each(["focus-moved", "navigation", "suspended", "teardown"] as const)(

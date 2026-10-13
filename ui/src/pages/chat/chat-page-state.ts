@@ -60,7 +60,6 @@ export class ChatPageState extends ControllerHost {
   context!: ApplicationContext;
   @viewState() private layout: ChatSplitLayout | undefined;
   @viewState() private narrow = false;
-  @viewState() private mergedChrome = false;
 
   private wasConversationPresented = false;
   private readonly nativeConversation = nativeEmbedHost()?.surface === "conversation";
@@ -171,7 +170,6 @@ export class ChatPageState extends ControllerHost {
     this.narrow = this.mediaQuery.matches;
     this.mediaQuery.addEventListener("change", this.handleViewportChange);
     this.mobileNavMediaQuery = window.matchMedia(mobileNavLayoutMediaQuery());
-    this.mergedChrome = this.resolveMergedChrome(this.mobileNavMediaQuery.matches);
     this.mobileNavMediaQuery.addEventListener("change", this.handleMobileNavViewportChange);
     this.sessionDrop.connect();
     window.addEventListener(UI_COMMAND_EVENT, this.handleUiCommand);
@@ -325,13 +323,8 @@ export class ChatPageState extends ControllerHost {
     }
   };
 
-  private resolveMergedChrome(mobileNavLayout: boolean): boolean {
-    const webNavigation = mobileNavLayout && !this.nativeConversation;
-    return mergeChatPageChrome(webNavigation, this.host.closest(".shell--onboarding") !== null);
-  }
-
-  private readonly handleMobileNavViewportChange = (event: MediaQueryListEvent) => {
-    this.mergedChrome = this.resolveMergedChrome(event.matches);
+  private readonly handleMobileNavViewportChange = () => {
+    this.requestUpdate();
   };
 
   private readonly handleUiCommand = (event: Event) => {
@@ -667,6 +660,8 @@ export class ChatPageState extends ControllerHost {
     splitMode: boolean,
     retainedSessions: ReadonlyMap<string, readonly (string | undefined)[]>,
   ) {
+    const onboarding = this.host.closest(".shell--onboarding") !== null;
+    const webNavigation = this.mobileNavMediaQuery?.matches === true && !this.nativeConversation;
     return renderChatPageSplitLayout(layout, {
       retainedSessions,
       unboundPaneIds: this.pendingCreate ? undefined : this.retainedSessions.unboundPaneIds,
@@ -678,10 +673,10 @@ export class ChatPageState extends ControllerHost {
         context: this.context,
         data: this.paneData,
         draftFocus: this.draftFocus,
-        mergedChrome: this.mergedChrome,
+        mergedChrome: mergeChatPageChrome(webNavigation, onboarding),
         narrow: this.narrow,
         navDrawerOpen: this.host.navDrawerOpen,
-        onboarding: this.host.closest(".shell--onboarding") !== null,
+        onboarding,
         onClosePane: splitMode ? this.handleClosePane : undefined,
         onFaceChange: this.handlePaneFaceChange,
         onFocusPane: this.handleFocusPane,

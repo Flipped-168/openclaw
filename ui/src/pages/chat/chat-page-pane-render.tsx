@@ -4,8 +4,8 @@ import { createMemo, For, Show } from "solid-js";
 import "../../components/resizable-divider.ts";
 import type { ApplicationContext } from "../../app/context.ts";
 import { readDeletedSessionStartup } from "../../app/deleted-session-startup.ts";
-import { t } from "../../i18n/index.ts";
 import type { BoardFace } from "../../lib/board/settings.ts";
+import { t } from "../../lib/reactive/i18n.ts";
 import { resolveSessionDisplayName } from "../../lib/session-display.ts";
 import { resolveSessionKey } from "../../lib/sessions/index.ts";
 import {
