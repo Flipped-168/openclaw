@@ -12,7 +12,8 @@ import {
   registerChatAttachmentPayload,
   releaseChatAttachmentPayloads,
 } from "./attachment-payload-store.ts";
-import { renderChatQueue, renderChatQueueSolid } from "./components/chat-composer-queue.tsx";
+import { renderChatQueue } from "./chat-composer-queue.test-support.ts";
+import { renderChatQueueSolid } from "./components/chat-composer-queue.tsx";
 import { createSolidRenderLifecycle } from "./solid-render-lifecycle.ts";
 import baseStyles from "../../styles/base.css?inline";
 import queueStyles from "../../styles/chat/composer-queue.css?inline";

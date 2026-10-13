@@ -18,9 +18,9 @@ import { useOptionalApplication } from "../lib/reactive/context.ts";
 import { t } from "../lib/reactive/i18n.ts";
 import { projectSource } from "../lib/reactive/projection.ts";
 import { defineSolidBridge, type SolidBridgeElement } from "../lit/solid-bridge.ts";
+import { renderLegacyTemplate } from "../lit/solid-content.tsx";
 import type { ControlUiRegistration } from "./control-ui-capability.ts";
 import { scopeControlUiHost } from "./control-ui-scope.ts";
-import { renderPluginTemplate } from "./control-ui-view.runtime.ts";
 import type { ViewKind } from "./control-ui-view.ts";
 
 type ViewRegistration = ControlUiRegistration<{ mount: ControlUiView<unknown> }>;
@@ -76,10 +76,10 @@ function MountedContent(props: { value: unknown; host?: object }) {
   createEffect(
     () => ({ value: props.value, host: props.host }),
     ({ value, host }) => {
-      runWithOwner(owner, () => renderPluginTemplate(value, container, host));
+      runWithOwner(owner, () => renderLegacyTemplate(value, container, host));
     },
   );
-  onCleanup(() => renderPluginTemplate(undefined, container));
+  onCleanup(() => renderLegacyTemplate(undefined, container));
   return (
     <div
       style={{ display: "contents" }}
@@ -131,7 +131,7 @@ function PluginViewContent(props: PluginViewProps, host: PluginViewElement) {
       context?.plugins.reportError(registration?.pluginId ?? "host", failure);
     }
     for (const target of defaultContainers) {
-      renderPluginTemplate(undefined, target);
+      renderLegacyTemplate(undefined, target);
     }
     defaultContainers.clear();
     viewContext = undefined;
@@ -231,7 +231,7 @@ function PluginViewContent(props: PluginViewProps, host: PluginViewElement) {
       handle?.update?.(viewContext);
       for (const target of defaultContainers) {
         runWithOwner(owner, () =>
-          renderPluginTemplate(host.defaultView, target, host.defaultHost ?? host),
+          renderLegacyTemplate(host.defaultView, target, host.defaultHost ?? host),
         );
       }
     } catch (failure) {
@@ -297,14 +297,14 @@ function PluginViewContent(props: PluginViewProps, host: PluginViewElement) {
           }
           defaultContainers.add(target);
           runWithOwner(owner, () =>
-            renderPluginTemplate(host.defaultView, target, host.defaultHost ?? host),
+            renderLegacyTemplate(host.defaultView, target, host.defaultHost ?? host),
           );
           notify();
           return () => {
             if (!defaultContainers.delete(target)) {
               return;
             }
-            renderPluginTemplate(undefined, target);
+            renderLegacyTemplate(undefined, target);
             if (!disposed) {
               notify();
             }

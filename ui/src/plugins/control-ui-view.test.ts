@@ -13,11 +13,10 @@ import {
   PRESENTATION_CHANGED_EVENT,
   type PresentationBinding,
 } from "../lit/presentation-binding.ts";
-import { solidContent } from "../lit/solid-content.tsx";
+import { renderLegacyTemplate, solidContent } from "../lit/solid-content.tsx";
 import { createApplicationContextProvider } from "../test-helpers/application-context.ts";
 import { mountSolid } from "../test-helpers/mount-solid.ts";
 import { flush } from "../test-helpers/solid-settle.ts";
-import { renderPluginTemplate } from "./control-ui-view.runtime.ts";
 import { renderPluginSurface } from "./control-ui-view.ts";
 import "./control-ui-view.solid.tsx";
 import "./control-ui-contributions.solid.tsx";
@@ -162,10 +161,10 @@ describe("native UI built-in delegation", () => {
       const target = document.createElement("div");
       createEffect(label, (value) =>
         runWithOwner(owner, () =>
-          renderPluginTemplate(solidContent(DefaultView, { label: value }), target),
+          renderLegacyTemplate(solidContent(DefaultView, { label: value }), target),
         ),
       );
-      onCleanup(() => renderPluginTemplate(undefined, target));
+      onCleanup(() => renderLegacyTemplate(undefined, target));
       return target;
     });
     const button = view.getByRole("button", { name: "First" });
