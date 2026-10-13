@@ -24,7 +24,6 @@ import type { ChatProviderReviewController } from "./chat-provider-review-contro
 import type { ChatRunStartupStatus } from "./chat-run-startup.ts";
 import { chatStartupStatusLabel } from "./chat-run-startup.ts";
 import type { ChatState } from "./chat-state-contract.ts";
-import { projectSubagentStatus } from "./chat-subagent-wait.ts";
 import type { ChatPlacementStartupNoticeProps } from "./chat-view-notices.tsx";
 import { createAsyncQuestionPresentation } from "./components/chat-async-question.ts";
 import {
@@ -221,7 +220,6 @@ export function createChatViewFrame(props: ChatProps) {
   }
   // Placement is visible work, but does not own an abortable model run yet.
   const runWorking = Boolean(placementStartup) || isChatRunWorking(props);
-  const subagents = projectSubagentStatus({ ...props, runWorking }, false);
   const threadProps: ChatThreadProps = {
     ...props,
     asyncQuestions,
@@ -324,7 +322,6 @@ export function createChatViewFrame(props: ChatProps) {
     openImmediateImage,
     attachmentDropHandlers,
     threadProps,
-    subagents,
     displayQueue,
     historyLoadState,
     historyFailed,

@@ -161,8 +161,6 @@ function ChatComposerView(input: ChatViewInput) {
     <ChatComposer
       {...input.props}
       renderRevision={input.frame}
-      waitingSubagents={input.frame.subagents.wait}
-      onOpenSubagents={input.frame.subagents.listed ? input.props.onOpenSubagents : undefined}
       progressCard={input.props.detailsEnabled ? null : input.props.progressCard}
       progressCardInitialLoading={
         input.props.detailsEnabled ? false : input.props.progressCardInitialLoading
