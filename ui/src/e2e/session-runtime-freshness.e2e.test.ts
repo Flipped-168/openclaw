@@ -1,7 +1,7 @@
 import path from "node:path";
 import { expect, it } from "vitest";
-import type { ApplicationContext } from "../app/context.ts";
 import { createControlUiE2eArtifactDir } from "../test-helpers/control-ui-e2e-artifacts.ts";
+import { evaluateControlUiContext } from "../test-helpers/control-ui-e2e-context.ts";
 import { createControlUiSessionRow } from "../test-helpers/control-ui-session-fixtures.ts";
 import {
   chatSessionListResponse,
@@ -64,13 +64,7 @@ suite.define(() => {
       });
       await spinner.waitFor();
       const previousReads = (await gateway.getRequests("sessions.list")).length;
-      await page.evaluate(async () => {
-        const sessions = document.querySelector<
-          HTMLElement & { runtime?: { context: ApplicationContext } }
-        >("openclaw-app")?.runtime?.context.sessions;
-        if (!sessions) {
-          throw new Error("The canonical session owner is unavailable");
-        }
+      await evaluateControlUiContext(page, async ({ sessions }) => {
         await sessions.refreshReplacement();
       });
       expect((await gateway.getRequests("sessions.list")).length).toBeGreaterThan(previousReads);

@@ -1,7 +1,7 @@
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { expect, it } from "vitest";
-import type { ApplicationRuntime } from "../app/bootstrap.ts";
+import { evaluateControlUiContext } from "../test-helpers/control-ui-e2e-context.ts";
 import { createControlUiSessionRow as sessionRow } from "../test-helpers/control-ui-session-fixtures.ts";
 import {
   captureUiProofEnabled,
@@ -110,19 +110,20 @@ suite.define(() => {
           // Wait for the owner to publish the complete newer child page before checking its paint.
           await expect
             .poll(() =>
-              page.evaluate((key) => {
-                const app = document.querySelector<HTMLElement & { runtime?: ApplicationRuntime }>(
-                  "openclaw-app",
-                );
-                const result = app?.runtime?.context.sessions.listSnapshot({
-                  spawnedBy: key,
-                  limit: 100,
-                  includeGlobal: false,
-                  includeUnknown: false,
-                  configuredAgentsOnly: true,
-                }).result;
-                return { count: result?.sessions.length, ts: result?.ts };
-              }, parentKey),
+              evaluateControlUiContext(
+                page,
+                ({ sessions }, key) => {
+                  const result = sessions.listSnapshot({
+                    spawnedBy: key,
+                    limit: 100,
+                    includeGlobal: false,
+                    includeUnknown: false,
+                    configuredAgentsOnly: true,
+                  }).result;
+                  return { count: result?.sessions.length, ts: result?.ts };
+                },
+                parentKey,
+              ),
             )
             .toEqual({ count: 12, ts: freshChildren.ts });
           if (captureUiProofEnabled) {
@@ -158,27 +159,27 @@ suite.define(() => {
             // Retain this assertion failure while completing the replay diagnostics.
             initialPublicationError = error instanceof Error ? error : new Error(String(error));
           } finally {
-            const initialRows = await page.evaluate((key) => {
-              const app = document.querySelector<HTMLElement & { runtime?: ApplicationRuntime }>(
-                "openclaw-app",
-              );
-              const sessions = app?.runtime?.context.sessions;
-              const root = sessions?.state.result;
-              const target = "agent:main:dashboard:jitter-8";
-              return {
-                rootTs: root?.ts,
-                rootRow: root?.sessions.find((row) => row.key === target),
-                childRow: sessions
-                  ?.listSnapshot({
-                    spawnedBy: key,
-                    limit: 100,
-                    includeGlobal: false,
-                    includeUnknown: false,
-                    configuredAgentsOnly: true,
-                  })
-                  .result?.sessions.find((row) => row.key === target),
-              };
-            }, parentKey);
+            const initialRows = await evaluateControlUiContext(
+              page,
+              ({ sessions }, key) => {
+                const root = sessions.state.result;
+                const target = "agent:main:dashboard:jitter-8";
+                return {
+                  rootTs: root?.ts,
+                  rootRow: root?.sessions.find((row) => row.key === target),
+                  childRow: sessions
+                    .listSnapshot({
+                      spawnedBy: key,
+                      limit: 100,
+                      includeGlobal: false,
+                      includeUnknown: false,
+                      configuredAgentsOnly: true,
+                    })
+                    .result?.sessions.find((row) => row.key === target),
+                };
+              },
+              parentKey,
+            );
             await writeFile(
               path.join(suite.artifactDir, `${initialPrimary}-initial-publication.json`),
               JSON.stringify({ ...initialRows, visibleKeys: await keys() }, null, 2),
@@ -265,14 +266,7 @@ suite.define(() => {
           // A sent request does not prove publication. Wait for the canonical owner
           // to admit the exact cached page before awaiting the resulting paint.
           await expect
-            .poll(() =>
-              page.evaluate(() => {
-                const app = document.querySelector<HTMLElement & { runtime?: ApplicationRuntime }>(
-                  "openclaw-app",
-                );
-                return app?.runtime?.context.sessions.state.result?.ts;
-              }),
-            )
+            .poll(() => evaluateControlUiContext(page, ({ sessions }) => sessions.state.result?.ts))
             .toBe(cachedRoot.ts);
           await page.evaluate(
             () =>

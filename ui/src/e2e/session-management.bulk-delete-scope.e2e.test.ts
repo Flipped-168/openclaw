@@ -2,8 +2,8 @@ import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { expect, it } from "vitest";
 import { SIDEBAR_SESSION_ROSTER_LIMIT } from "../../../src/shared/session-list-limits.ts";
-import type { ApplicationRuntime } from "../app/bootstrap.ts";
 import { createControlUiE2eArtifactDir } from "../test-helpers/control-ui-e2e-artifacts.ts";
+import { evaluateControlUiContext } from "../test-helpers/control-ui-e2e-context.ts";
 import { pauseVirtualClock } from "../test-helpers/control-ui-e2e.ts";
 import { createControlUiSessionRow as sessionRow } from "../test-helpers/control-ui-session-fixtures.ts";
 import { createControlUiE2eContextOptions } from "./control-ui-e2e-suite.test-support.ts";
@@ -102,30 +102,30 @@ suite.define(() => {
       await rowFor(lastResearch.key).waitFor({ state: "visible" });
     };
     const sidebarState = () =>
-      page.evaluate((query) => {
-        const app = document.querySelector<HTMLElement & { runtime?: ApplicationRuntime }>(
-          "openclaw-app",
-        );
-        const application = app?.runtime?.context;
-        const sidebarElement = document.querySelector("openclaw-app-sidebar");
-        const sessions = application?.sessions;
-        const filtered = sessions?.listSnapshot(query);
-        const button = sidebarElement?.querySelector<HTMLButtonElement>(
-          ".sidebar-session-pagination--roster > button",
-        );
-        return {
-          selectedAgentId: application?.agentSelection.state.selectedId ?? null,
-          canonicalAgentId: sessions?.state.agentId ?? null,
-          canonicalLoading: sessions?.state.loading ?? null,
-          canonicalRevision: sessions?.canonicalListRevision ?? null,
-          filteredAgentId: filtered?.agentId ?? null,
-          filteredLoading: filtered?.loading ?? null,
-          filteredNextOffset: filtered?.result?.nextOffset ?? null,
-          hasMore: filtered?.result?.hasMore ?? null,
-          disabled: button?.disabled ?? null,
-          ariaBusy: button?.getAttribute("aria-busy") ?? null,
-        };
-      }, researchListQuery);
+      evaluateControlUiContext(
+        page,
+        (application, query) => {
+          const sidebarElement = document.querySelector("openclaw-app-sidebar");
+          const sessions = application.sessions;
+          const filtered = sessions.listSnapshot(query);
+          const button = sidebarElement?.querySelector<HTMLButtonElement>(
+            ".sidebar-session-pagination--roster > button",
+          );
+          return {
+            selectedAgentId: application.agentSelection.state.selectedId ?? null,
+            canonicalAgentId: sessions.state.agentId ?? null,
+            canonicalLoading: sessions.state.loading ?? null,
+            canonicalRevision: sessions.canonicalListRevision ?? null,
+            filteredAgentId: filtered?.agentId ?? null,
+            filteredLoading: filtered?.loading ?? null,
+            filteredNextOffset: filtered?.result?.nextOffset ?? null,
+            hasMore: filtered?.result?.hasMore ?? null,
+            disabled: button?.disabled ?? null,
+            ariaBusy: button?.getAttribute("aria-busy") ?? null,
+          };
+        },
+        researchListQuery,
+      );
     const observations: Array<{
       stage: string;
       visibleRows: string[];
@@ -149,23 +149,16 @@ suite.define(() => {
       await closeSidebarMenu(page);
     };
     const pageKeys = () =>
-      page.evaluate((query) => {
-        const app = document.querySelector<HTMLElement & { runtime?: ApplicationRuntime }>(
-          "openclaw-app",
-        );
-        return (
-          app?.runtime?.context.sessions
-            .listSnapshot(query)
-            .result?.sessions.map((row) => row.key) ?? []
-        );
-      }, researchListQuery);
+      evaluateControlUiContext(
+        page,
+        ({ sessions }, query) => {
+          return sessions.listSnapshot(query).result?.sessions.map((row) => row.key) ?? [];
+        },
+        researchListQuery,
+      );
     const settledResearchRevision = () =>
-      page.evaluate(() => {
-        const app = document.querySelector<HTMLElement & { runtime?: ApplicationRuntime }>(
-          "openclaw-app",
-        );
-        const sessions = app?.runtime?.context.sessions;
-        return sessions?.state.agentId === "research" && !sessions.state.loading
+      evaluateControlUiContext(page, ({ sessions }) => {
+        return sessions.state.agentId === "research" && !sessions.state.loading
           ? sessions.canonicalListRevision
           : -1;
       });

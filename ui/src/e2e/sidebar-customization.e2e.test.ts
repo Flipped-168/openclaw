@@ -3,6 +3,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { Locator, Page } from "playwright";
 import { expect, it } from "vitest";
+import type { AppSidebarElement } from "../components/app-sidebar.tsx";
 import {
   takeControlUiElementScreenshot,
   takeControlUiViewportScreenshot,
@@ -796,21 +797,13 @@ suite.define(() => {
         await sidebar.getByRole("button", { name: "Sessions", exact: true }).click();
         const home = sidebar.locator(".sidebar-footer-bar__home");
         await expect.poll(() => home.isVisible()).toBe(true);
-        await page.locator("openclaw-app-shell").evaluate((element) => {
-          const shell = element as HTMLElement & { requestUpdate(): void };
-          // Seed the shell-owned summary so later shell renders preserve the
-          // warning fixture while the sidebar consumes its bridge property.
-          const storedOutboxes = {
+        await sidebar.evaluate((element) => {
+          // This layout fixture supplies the sidebar's declared presentation input.
+          (element as AppSidebarElement).storedOutboxes = {
             total: 1,
             attentionCountForSession: () => 1,
             hasSessionDraft: () => false,
           };
-          Object.defineProperty(shell, "storedOutboxes", {
-            configurable: true,
-            get: () => storedOutboxes,
-            set: () => undefined,
-          });
-          shell.requestUpdate();
         });
 
         const activity = home.locator(".session-glyph");

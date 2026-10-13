@@ -1,8 +1,8 @@
 import path from "node:path";
 import type { Locator, Page } from "playwright";
 import { expect, it } from "vitest";
-import type { ApplicationContext } from "../app/context.ts";
 import { selectChatLayoutAction } from "../test-helpers/chat-layout-menu.ts";
+import { evaluateControlUiContext } from "../test-helpers/control-ui-e2e-context.ts";
 import {
   chatSessionListResponse,
   createChatFlowE2eSuite,
@@ -88,18 +88,16 @@ function activeSession(placementMove?: {
 }
 
 function observedRunnerStatus(page: Page, key: string) {
-  return page.evaluate(
-    (target) => {
-      const app = document.querySelector<
-        HTMLElement & { runtime?: { context: ApplicationContext } }
-      >("openclaw-app");
+  return evaluateControlUiContext(
+    page,
+    ({ sessions }, target) => {
       // Descriptor admission can precede every list while chat.startup is held.
-      const observation = app?.runtime?.context.sessions.observeRow(target, () => undefined);
+      const observation = sessions.observeRow(target, () => undefined);
       try {
-        const placement = observation?.row?.placement;
+        const placement = observation.row?.placement;
         return placement?.state === "active" ? placement.runner?.status : undefined;
       } finally {
-        observation?.dispose();
+        observation.dispose();
       }
     },
     { key, agentId: "main" },

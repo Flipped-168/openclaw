@@ -1,7 +1,7 @@
 import { writeSync } from "node:fs";
 import { asNullableRecord } from "@openclaw/normalization-core/record-coerce";
 import type { Page } from "playwright";
-import type { ApplicationRuntime } from "../app/bootstrap.ts";
+import { evaluateControlUiContext } from "../test-helpers/control-ui-e2e-context.ts";
 import type { ControlUiMockGateway, MockGatewayRequest } from "../test-helpers/control-ui-e2e.ts";
 
 type MutationCase = { operation: "rename" | "batch archive"; filter: "Active" | "All" };
@@ -18,8 +18,9 @@ export async function installMutationScopeDiagnostics(page: Page, scenario: Muta
   };
   page.on("console", log);
   page.once("close", () => page.off("console", log));
-  await page.addInitScript(
-    ({ prefix: logPrefix, scenario: caseInfo }) => {
+  await evaluateControlUiContext(
+    page,
+    (owner, { prefix: logPrefix, scenario: caseInfo }) => {
       const agentLabel = (agent: string | null) =>
         agent === "main" || agent === "research" ? agent : agent === null ? null : "other";
       for (const { eventName, phase, capture } of [
@@ -41,17 +42,13 @@ export async function installMutationScopeDiagnostics(page: Page, scenario: Muta
               return;
             }
             const record = (recordedPhase: string) => {
-              const app = document.querySelector<HTMLElement & { runtime?: ApplicationRuntime }>(
-                "openclaw-app",
-              );
-              const owner = app?.runtime?.context;
-              const agentId = owner?.agentSelection.state.selectedId;
-              const list = owner?.sessions.listSnapshot({
+              const agentId = owner.agentSelection.state.selectedId;
+              const list = owner.sessions.listSnapshot({
                 source: "sidebar",
                 excludeDock: true,
                 agentId: agentId ?? undefined,
                 archivedFilter: caseInfo.filter === "All" ? "all" : "active",
-                rowMode: "compact",
+                rowMode: "sidebar",
                 includeDerivedTitles: true,
                 includeLastMessage: true,
               });

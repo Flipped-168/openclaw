@@ -6,8 +6,9 @@ import type {
   GatewaySessionRow,
   SessionsListResult,
 } from "../api/types.ts";
-import type { ApplicationContext } from "../app/context.ts";
+import type { AppSidebarElement } from "../components/app-sidebar.tsx";
 import { finishElementAnimations } from "../test-helpers/animations.ts";
+import { evaluateControlUiContext } from "../test-helpers/control-ui-e2e-context.ts";
 import {
   controlUiBundledSettingsStorageKey,
   installMockGateway,
@@ -579,26 +580,20 @@ suite.define(() => {
           const action = headerLocator.locator('button[slot="trigger"]');
           await action.focus();
           await expectSignals();
-          await page.locator("openclaw-app-shell").evaluate((element, key) => {
-            const shell = element as HTMLElement & {
-              runtime: { context: Pick<ApplicationContext, "sessions"> };
-              requestUpdate(): void;
-            };
-            const storedOutboxes = {
+          await evaluateControlUiContext(
+            page,
+            (context, key) => {
+              context.sessions.setPullRequestSummary(key, { numbers: [103], state: "open" });
+            },
+            mainKey,
+          );
+          await sidebar.evaluate((element, key) => {
+            // Keep badge geometry proof at the sidebar's presentation boundary.
+            (element as AppSidebarElement).storedOutboxes = {
               total: 2,
               attentionCountForSession: (sessionKey: string) => (sessionKey === key ? 2 : 0),
               hasSessionDraft: (sessionKey: string) => sessionKey === key,
             };
-            Object.defineProperty(shell, "storedOutboxes", {
-              configurable: true,
-              get: () => storedOutboxes,
-              set: () => undefined,
-            });
-            shell.runtime.context.sessions.setPullRequestSummary(key, {
-              numbers: [103],
-              state: "open",
-            });
-            shell.requestUpdate();
           }, mainKey);
           await expect
             .poll(() =>
