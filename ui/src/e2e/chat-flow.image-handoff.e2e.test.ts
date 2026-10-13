@@ -161,12 +161,23 @@ suite.define(() => {
             expect(await userImage.count()).toBe(1);
             // Native pending sources may report zero dimensions while the browser
             // still paints the current decoded image. Compare the actual pixels.
-            expect(
-              (await takeControlUiElementScreenshot(page, userImage, [userImage])).equals(
-                initialPixels,
-              ),
-              `${stage} preserves the displayed image pixels`,
-            ).toBe(true);
+            const currentPixels = await takeControlUiElementScreenshot(page, userImage, [
+              userImage,
+            ]);
+            const unchanged = currentPixels.equals(initialPixels);
+            if (!unchanged) {
+              await Promise.all([
+                writeFile(
+                  path.join(suite.artifactDir, `image-handoff-${order}-${stage}-initial.png`),
+                  initialPixels,
+                ),
+                writeFile(
+                  path.join(suite.artifactDir, `image-handoff-${order}-${stage}-current.png`),
+                  currentPixels,
+                ),
+              ]);
+            }
+            expect(unchanged, `${stage} preserves the displayed image pixels`).toBe(true);
             expect(await page.locator(".chat-group.user [aria-busy='true']").count()).toBe(0);
           };
           await expectImageStillVisible("01-submitted");
