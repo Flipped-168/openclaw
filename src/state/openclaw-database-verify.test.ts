@@ -11,6 +11,7 @@ import {
   readSqliteDatabaseIntegrityVerification,
 } from "../infra/sqlite-database-admission.js";
 import { readStableSqliteFileGeneration } from "../infra/sqlite-file-generation.js";
+import { resolveSqliteDatabaseFilePaths } from "../infra/sqlite-files.js";
 import { readMainDatabasePosixLocks } from "../infra/sqlite-posix-locks.test-support.js";
 import { readSqliteNumberPragma } from "../infra/sqlite-pragma.test-support.js";
 import { createDeferredCore } from "../shared/deferred.js";
@@ -120,6 +121,15 @@ async function copyHealthyDatabase(sourcePath: string, targetPath: string): Prom
     await sqlite.backup(source, targetPath);
   } finally {
     source.close();
+  }
+}
+
+function archiveDatabaseFamily(databasePath: string, archivePath: string): void {
+  // Retained WAL pages belong to the old inode, not its healthy replacement.
+  for (const file of resolveSqliteDatabaseFilePaths(databasePath)) {
+    if (fs.existsSync(file)) {
+      fs.renameSync(file, `${archivePath}${file.slice(databasePath.length)}`);
+    }
   }
 }
 
@@ -447,8 +457,12 @@ describe("OpenClaw database integrity verifier", () => {
       ];
       const results = preparedVerificationResults(targets);
 
-      fs.renameSync(agent.path, corruptArchivePath);
+      archiveDatabaseFamily(agent.path, corruptArchivePath);
       fs.renameSync(healthyReplacementPath, agent.path);
+      await expect(
+        runDatabaseVerifyWorker(targets.map((target) => ({ ...target, check: "full" as const }))),
+      ).resolves.toEqual([{ path: agent.path, ok: true }]);
+      expect(agent.db.isOpen).toBe(true);
       await applyOpenClawDatabaseVerificationResults({ env, results, targets });
 
       expect(agent.db.isOpen).toBe(false);
@@ -472,8 +486,12 @@ describe("OpenClaw database integrity verifier", () => {
       ];
       const results = preparedVerificationResults(targets);
 
-      fs.renameSync(state.path, corruptArchivePath);
+      archiveDatabaseFamily(state.path, corruptArchivePath);
       fs.renameSync(healthyReplacementPath, state.path);
+      await expect(
+        runDatabaseVerifyWorker(targets.map((target) => ({ ...target, check: "full" as const }))),
+      ).resolves.toEqual([{ path: state.path, ok: true }]);
+      expect(state.db.isOpen).toBe(true);
       await applyOpenClawDatabaseVerificationResults({ env, results, targets });
 
       expect(state.db.isOpen).toBe(false);

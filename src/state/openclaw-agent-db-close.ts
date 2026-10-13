@@ -31,7 +31,7 @@ export function createAgentDatabaseHandleCloser(cache: {
     const alreadyClosed = !database.db.isOpen;
     const delegated = isSqliteWalWorkerMaintained(database.db);
     const priorCheckpointError = database.walMaintenance.health?.state === "error";
-    const publishSeal =
+    using seal =
       !alreadyClosed && !options.eviction
         ? prepareSqliteDatabaseCleanClose(database.db)
         : undefined;
@@ -61,8 +61,8 @@ export function createAgentDatabaseHandleCloser(cache: {
           delegated &&
           !priorCheckpointError &&
           (statSync(`${canonicalPath}-wal`, { throwIfNoEntry: false })?.size ?? 0) === 0;
-        if (publishSeal && (checkpointed || closedWithEmptyWal)) {
-          clean = { path: database.path, publishSeal };
+        if (seal && (checkpointed || closedWithEmptyWal)) {
+          clean = { path: database.path, publishSeal: seal.publish };
         }
       }
     } catch (error) {

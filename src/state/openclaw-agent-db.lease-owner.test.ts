@@ -215,6 +215,7 @@ describe("agent database lease acquisition owner", () => {
     );
 
     now.mockReturnValue(2_000);
+    revokeSqliteDatabaseAdmissionsForPath(closed.path);
     openOpenClawAgentDatabase({ agentId: closed.agentId, env });
     expect(
       listOpenClawRegisteredAgentDatabases({ env }).find((entry) => entry.path === closed.path),

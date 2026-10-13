@@ -8,6 +8,7 @@ import { openNodeSqliteDatabase } from "../infra/node-sqlite.js";
 import {
   readSqliteDatabaseCleanClose,
   readSqliteDatabaseIntegrityVerification,
+  revokeSqliteDatabaseAdmissionsForPath,
 } from "../infra/sqlite-database-admission.js";
 import { admitSqliteSchema, getAdmittedSqliteSchemaFacts } from "../infra/sqlite-schema-facts.js";
 import { extractSqliteTableSchema } from "../infra/sqlite-schema-sql.js";
@@ -81,6 +82,8 @@ it("admits a restarted current schema before repeated version and migration prob
     )
     .run("restart.fixture", '"retained"', 1);
   closeOpenClawStateDatabaseForTest();
+  // Exercise cold admission rather than restoring this orderly close's seal.
+  revokeSqliteDatabaseAdmissionsForPath(first.path);
   const observation = observeSqliteReadSql(StatementSync.prototype);
   try {
     const restarted = openOpenClawStateDatabase({ env });

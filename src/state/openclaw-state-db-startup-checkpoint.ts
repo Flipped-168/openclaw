@@ -202,7 +202,7 @@ export function withOpenClawStateStartupCheckpointConnection<T>(
     const db = openNodeSqliteDatabase(existing ? resolveExistingSqliteFileUri(pathname) : pathname);
     let ownershipAdmitted = false;
     let result: { value: T } | undefined;
-    let publishSeal: (() => boolean) | undefined;
+    let seal: ReturnType<typeof prepareSqliteDatabaseCleanClose> | undefined;
     try {
       setSqliteBusyTimeout(db, OPENCLAW_SQLITE_BUSY_TIMEOUT_MS);
       if (getStateRuntimeSchemaAdmission(db) || checkpointAdmission.get(db)) {
@@ -278,14 +278,15 @@ export function withOpenClawStateStartupCheckpointConnection<T>(
         // A blocked checkpoint merely leaves the next boot to validate normally.
         try {
           truncateSqliteWal(db, pathname);
-          publishSeal = prepareSqliteDatabaseCleanClose(db);
+          seal = prepareSqliteDatabaseCleanClose(db);
         } catch (error) {
           process.emitWarning(`Shared-state clean-close checkpoint failed: ${String(error)}`);
         }
       }
     } finally {
+      using closingSeal = seal;
       db.close();
-      publishSeal?.();
+      closingSeal?.publish();
       if (ownershipAdmitted) {
         ensureOpenClawStatePermissions(pathname, env);
       }

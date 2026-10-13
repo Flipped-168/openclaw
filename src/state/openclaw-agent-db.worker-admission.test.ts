@@ -129,7 +129,6 @@ it.each(["before handoff", "after handoff"] as const)(
       () => context.admission.assertCurrent(),
       undefined,
       () => {},
-      () => async () => {},
     );
     let validation: ReturnType<typeof getOpenClawAgentDatabaseValidationForTransfer>;
     const publish = () => {
@@ -322,12 +321,12 @@ it("admits cold storage in its worker and lends facts to every later native hand
   expect(freshValidation.schema?.facts.textEncoding).toBe("UTF-8");
   expect(Atomics.load(new Int32Array(freshValidation.canonicalReady), 0)).toBe(1);
 
-  // A synchronous caller shares the live worker admission; final close retires its catalog.
+  // Native handles share the worker's physical admission across orderly close.
   expectAdmittedSchemaObjects(openOpenClawAgentDatabase(options).db);
   expect(inspections).toEqual([]);
   await closeOpenClawAgentDatabaseByPathAsync(pathname);
   expectAdmittedSchemaObjects(openOpenClawAgentDatabase(options).db);
-  expect(inspections).toEqual([expect.stringMatching(/\bFROM main\.sqlite_schema\b/iu)]);
+  expect(inspections).toEqual([]);
 });
 
 it("publishes freshly verified proof to a previously admitted alias after stale lease cleanup", async () => {

@@ -17,7 +17,6 @@ import {
   type Admission,
   type SqliteDatabaseAdmissionKey,
 } from "./sqlite-database-admission-record.js";
-import { schemaAdmission } from "./sqlite-schema-admission.js";
 
 export const integrityVerificationKey: SqliteDatabaseAdmissionKey<number> = {
   name: "sqlite.full-verification",
@@ -78,6 +77,10 @@ export class SqliteDatabaseCleanCloseSeals {
       value: unknown,
       revision: number,
     ) => void,
+    private readonly references: {
+      retain: (record: Admission) => void;
+      release: (record: Admission) => void;
+    },
   ) {}
 
   markCreated(record: Admission): void {
@@ -116,9 +119,7 @@ export class SqliteDatabaseCleanCloseSeals {
         !facts.some(
           ([name, , value]) => name === integrityVerificationKey.name && value === seal.verifiedAt,
         ) ||
-        !facts.some(
-          ([name, , value]) => name === schemaAdmission.name && schemaAdmission.read(value),
-        )
+        !facts.some(([name, , value]) => name === "sqlite-schema" && isRecord(value))
       ) {
         return;
       }
@@ -147,6 +148,28 @@ export class SqliteDatabaseCleanCloseSeals {
     database: DatabaseSync,
     record: Admission | undefined,
     verifiedAt: number | undefined,
+  ): Disposable & { publish(this: void): boolean } {
+    const publish = this.preparePublication(database, record, verifiedAt);
+    if (record) {
+      // Native close must not retire this generation before its seal is published.
+      this.references.retain(record);
+    }
+    return {
+      publish: () => record !== undefined && publish(),
+      [Symbol.dispose]: () => {
+        const retained = record;
+        record = undefined;
+        if (retained) {
+          this.references.release(retained);
+        }
+      },
+    };
+  }
+
+  private preparePublication(
+    database: DatabaseSync,
+    record: Admission | undefined,
+    verifiedAt: number | undefined,
   ): () => boolean {
     if (!record || database.isTransaction) {
       return () => false;
@@ -165,11 +188,9 @@ export class SqliteDatabaseCleanCloseSeals {
       encodeSealValue,
     );
     return () => {
-      // Final native close drops idle payloads (retired=2), but the captured proof
-      // remains usable. Explicit retirement and revocation still forbid publication.
       if (
         database.isOpen ||
-        readSqliteDatabaseGeneration(record, "retired") === 1 ||
+        readSqliteDatabaseGeneration(record, "retired") !== 0 ||
         facts.some(
           ([, fact]) =>
             Atomics.load(new Int32Array(fact.current), 0) !== 1 ||

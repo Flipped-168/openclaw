@@ -57,11 +57,14 @@ it("retires the final closed handle's facts while preserving open siblings and d
     expect(getAdmittedSqliteSchemaFacts(second)?.tables.has("proof")).toBe(true);
     const admittedSchema = getAdmittedSqliteSchemaFacts(second);
     recordSqliteDatabaseIntegrity(second);
-    const publishSeal = prepareSqliteDatabaseCleanClose(second);
-    second.exec("PRAGMA wal_checkpoint(TRUNCATE)");
-    second.close();
+    {
+      using seal = prepareSqliteDatabaseCleanClose(second);
+      second.exec("PRAGMA wal_checkpoint(TRUNCATE)");
+      second.close();
+      expect(recordsFor(location)).toHaveLength(1);
+      expect(seal.publish()).toBe(true);
+    }
     expect(recordsFor(location)).toEqual([]);
-    expect(publishSeal()).toBe(true);
     expect(fstatSync(original.descriptor).isFile()).toBe(true);
 
     installSqliteDatabaseAdmissions(stale);

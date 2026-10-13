@@ -415,6 +415,8 @@ it.each([
   const env = { OPENCLAW_STATE_DIR: fs.realpathSync(tempDirs.make("agent-native-integrity-")) };
   const database = openOpenClawAgentDatabase({ agentId: "main", env });
   expect(getOpenClawAgentDatabaseValidation(database)).toBeDefined();
+  const verifiedAt = readSqliteDatabaseIntegrityVerification(database.path)?.verifiedAt;
+  expect(verifiedAt).toBeDefined();
   counter.path = database.path;
   counter.checks = new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT * 2);
   const context = captureOpenClawStateWorkerContext({ env });
@@ -582,6 +584,7 @@ it.each([
   }
   if (proof === "closed-host-blocked-last") {
     expect(readSqliteDatabaseCleanClose(database.path)).toBe(true);
+    expect(readSqliteDatabaseIntegrityVerification(database.path)?.verifiedAt).toBe(verifiedAt);
   }
 });
 

@@ -102,7 +102,7 @@ export function closeStateDatabaseHandle(
   options?: Parameters<OpenClawStateDatabase["walMaintenance"]["close"]>[0],
 ): { errors: unknown[]; cleanupPending: boolean } {
   const errors: unknown[] = [];
-  const publishSeal = prepareSqliteDatabaseCleanClose(database.db);
+  using seal = prepareSqliteDatabaseCleanClose(database.db);
   const delegated = isSqliteWalWorkerMaintained(database.db);
   const priorCheckpointError = database.walMaintenance?.health?.state === "error";
   let checkpointed = false;
@@ -138,7 +138,7 @@ export function closeStateDatabaseHandle(
     (checkpointed || (delegated && !priorCheckpointError))
   ) {
     // Native last-close can drain delegated WAL; the seal owner still requires empty journals.
-    publishSeal();
+    seal.publish();
   }
   return { errors, cleanupPending };
 }

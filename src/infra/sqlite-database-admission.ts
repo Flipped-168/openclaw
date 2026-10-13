@@ -62,7 +62,10 @@ const state = resolveGlobalSingleton(Symbol.for("openclaw.sqliteDatabaseAdmissio
   exchange: new AsyncLocalStorage<Exchange>(),
   exchanging: false,
   publication: 0,
-  seals: new SqliteDatabaseCleanCloseSeals(publishFact),
+  seals: new SqliteDatabaseCleanCloseSeals(publishFact, {
+    retain: (record) => state.registry.changeReferences(record, 1),
+    release: releaseReference,
+  }),
 }));
 
 export function readSqliteDatabaseCleanClose(location: string): boolean {
@@ -88,12 +91,15 @@ export function readSqliteDatabaseIntegrityVerification(
   return verifiedAt === undefined ? undefined : { verifiedAt };
 }
 
-export function recordSqliteDatabaseIntegrity(database: DatabaseSync): void {
-  publishSqliteDatabaseAdmission(database, integrityVerificationKey, Date.now());
+export function recordSqliteDatabaseIntegrity(
+  database: DatabaseSync,
+  verifiedAt = Date.now(),
+): void {
+  publishSqliteDatabaseAdmission(database, integrityVerificationKey, verifiedAt);
 }
 
 /** Capture admitted facts before close; publish only after successful TRUNCATE and native close. */
-export function prepareSqliteDatabaseCleanClose(database: DatabaseSync): () => boolean {
+export function prepareSqliteDatabaseCleanClose(database: DatabaseSync) {
   return state.seals.prepare(
     database,
     admission(database),
@@ -384,10 +390,14 @@ export function releaseSqliteDatabaseAdmission(database: DatabaseSync): void {
   const record = state.connections.get(database);
   if (state.openedIdentities.delete(database) && record) {
     state.local.delete(database);
-    if (state.registry.changeReferences(record, -1)) {
-      state.localSchemaRevisions.delete(record.identity);
-      exchange(record);
-    }
+    releaseReference(record);
+  }
+}
+
+function releaseReference(record: Admission): void {
+  if (state.registry.changeReferences(record, -1)) {
+    state.localSchemaRevisions.delete(record.identity);
+    exchange(record);
   }
 }
 

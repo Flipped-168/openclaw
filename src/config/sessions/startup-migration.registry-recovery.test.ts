@@ -338,6 +338,9 @@ it.each(["missing", "receipt-held", "malformed-receipt", "malformed-journal"])(
       }
       await closeOpenClawAgentDatabasesAsync(stateDir);
       closeOpenClawAgentDatabasesForTest();
+      for (const { path: pathname } of options) {
+        revokeSqliteDatabaseAdmissionsForPath(pathname);
+      }
       runOpenClawStateWriteTransaction(
         (database) => {
           database.db.exec("DROP TABLE agent_deletion_journal");
