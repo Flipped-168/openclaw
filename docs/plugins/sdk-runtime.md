@@ -127,18 +127,21 @@ usage updates preserve the fork's read authority. Session reset or deletion
 revokes even an in-flight fork before its answer can be returned.
 After a restart or without a prepared parent turn, the request fails closed:
 "Cache-parity session fork requires a parent turn prepared by this OpenClaw
-runtime. Send a normal message first." Ordinary `/btw` keeps its lightweight,
-tool-free context. CLI backends with native tools must explicitly support disabling
-them for side questions; backends with no native tools need no additional declaration.
+runtime. Send a normal message first." CLI runtimes are unsupported for
+`forkSession`, even when their backend can disable native tools. Ordinary `/btw`
+keeps its lightweight, tool-free context; CLI backends with native tools must
+explicitly support disabling them for side questions, while backends with no
+native tools need no additional declaration.
 
 Conversation access is required through
 `plugins.entries.<id>.hooks.allowConversationAccess` (enabled by default only for
 bundled plugins). The caller must also have the target session's `sessions.get`
 read access. That authority, the Gateway binding, and conversation access remain
-live through inference and return. Requests share the plugin background-work
-owner and are cancelled when its runtime is retired. A fork does not write a
-transcript, deliver an answer, fire agent-turn lifecycle hooks, or consume queued
-injections or steering. Missing session context and unsupported harnesses produce errors.
+live through inference and return. Requests share the subagent command lane and
+the `agents.defaults.subagents.maxConcurrent` cap with `subagent.complete`, and
+are cancelled when their runtime is retired. A fork does not write a transcript,
+deliver an answer, fire agent-turn lifecycle hooks, or consume queued injections
+or steering. Missing session context and unsupported harnesses produce errors.
 
 ## Storing runtime references
 

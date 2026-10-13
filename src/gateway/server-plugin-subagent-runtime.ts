@@ -23,7 +23,6 @@ import { resolvePluginSubagentCompletionRequester } from "../plugins/runtime/sub
 import type { LlmCompleteUsage } from "../plugins/runtime/types-core.js";
 import type { PluginRuntime } from "../plugins/runtime/types.js";
 import type { PluginOrigin } from "../plugins/types.js";
-import { createBackgroundWorkOwner } from "../process/background-work.js";
 import { enqueueCommandInLane } from "../process/command-queue.js";
 import { getGatewayRestartDrainSignal } from "../process/gateway-work-admission.js";
 import { CommandLane } from "../process/lanes.js";
@@ -261,14 +260,17 @@ export function createGatewaySubagentRuntime(
               assertReadCurrent();
             };
             assertCurrent();
-            const signals = [params.signal, runtimeLifetime, execution.signal].filter(
-              (signal): signal is AbortSignal => signal !== undefined,
+            const signal = AbortSignal.any(
+              [
+                getGatewayRestartDrainSignal(),
+                params.signal,
+                runtimeLifetime,
+                execution.signal,
+              ].filter((candidate): candidate is AbortSignal => candidate !== undefined),
             );
-            return await createBackgroundWorkOwner({
-              owner: `plugin:${pluginId}`,
-              maxConcurrent: 3,
-            }).enqueue(
-              async (signal) => {
+            return await enqueueCommandInLane(
+              CommandLane.Subagent,
+              async () => {
                 await execution.authorize();
                 assertCurrent();
                 signal.throwIfAborted();
@@ -334,7 +336,7 @@ export function createGatewaySubagentRuntime(
                 }
                 return { text: result.text, ...(usage ? { usage } : {}) };
               },
-              { abortSignal: signals.length ? AbortSignal.any(signals) : undefined },
+              { priority: "background", abortSignal: signal },
             );
           },
         );

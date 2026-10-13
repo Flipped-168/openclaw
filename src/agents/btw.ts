@@ -546,6 +546,9 @@ export async function runBtwSideQuestion(
         ? fallbackRuntime
         : undefined);
     if (cliProvider) {
+      if (params.toolCalls === "deny") {
+        throw new Error(`Session forks are not supported for CLI runtime ${cliProvider}.`);
+      }
       return runCliBtwSideQuestion({
         cfg: params.cfg,
         onUsage: params.onUsage,

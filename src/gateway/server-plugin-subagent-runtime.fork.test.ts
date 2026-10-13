@@ -1,9 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { awaitGateBeforeSettlement, createDeferred } from "../../test/helpers/promise.js";
 import type { runBtwSideQuestion } from "../agents/btw.js";
+import type { runIsolatedCompletion } from "../agents/isolated-completion.js";
 import { resetConfigRuntimeState, setRuntimeConfigSnapshot } from "../config/config.js";
 import { upsertSessionEntryCore } from "../config/sessions/session-accessor.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
+import {
+  areDiagnosticsEnabledForProcess,
+  onInternalDiagnosticEvent,
+  setDiagnosticsEnabledForProcess,
+} from "../infra/diagnostic-events.js";
 import {
   withPluginRuntimeGatewayRequestScope,
   withPluginRuntimePluginScope,
@@ -31,6 +37,8 @@ import { requireSessionRowProjection } from "./session-row-projection-access.js"
 const sideQuestion = vi.hoisted(() => vi.fn<typeof runBtwSideQuestion>());
 // mock-isolation: the Gateway admission is real; the provider runtime is replaced at its boundary.
 vi.mock("../agents/btw.js", () => ({ runBtwSideQuestion: sideQuestion }));
+const isolated = vi.hoisted(() => vi.fn<typeof runIsolatedCompletion>());
+vi.mock("../agents/isolated-completion.js", () => ({ runIsolatedCompletion: isolated }));
 
 const PLUGIN_ID = "test-session-fork";
 const sessionKey = "agent:research:fork-parent";
@@ -92,6 +100,7 @@ beforeEach(() => {
   resetCommandQueueStateForTest();
   commandQueue.setCommandLaneConcurrency(CommandLane.Subagent, 3);
   sideQuestion.mockReset().mockResolvedValue({ text: "Looks correct." });
+  isolated.mockReset();
   config = {
     agents: { entries: { research: { model: "test-provider/research-model" } } },
     plugins: { entries: { [PLUGIN_ID]: { hooks: { allowConversationAccess: true } } } },
@@ -139,6 +148,97 @@ describe("plugin session forks", () => {
         text: "Looks correct.",
         usage: { inputTokens: 6, outputTokens: 4, cacheReadTokens: 20, totalTokens: 30 },
       });
+    });
+  });
+
+  it("shares the configured subagent cap with completions and serializes concurrent forks", async () => {
+    await withSession(async (client) => {
+      config.agents!.defaults = { subagents: { maxConcurrent: 1 } };
+      commandQueue.setCommandLaneConcurrency(CommandLane.Subagent, 1);
+      const completionStarted = createDeferred();
+      const releaseCompletion = createDeferred();
+      const firstForkStarted = createDeferred();
+      const threeForksStarted = createDeferred();
+      const forksQueued = createDeferred();
+      const releaseForks = createDeferred();
+      let active = 0;
+      let peak = 0;
+      let starts = 0;
+      isolated.mockImplementation(async (params) => {
+        completionStarted.resolve();
+        await releaseCompletion.promise;
+        return {
+          text: "Completion finished.",
+          provider: params.provider,
+          model: params.model,
+          owner: { kind: "harness", id: "test-runtime" },
+        };
+      });
+      sideQuestion.mockImplementation(async () => {
+        starts++;
+        active++;
+        peak = Math.max(peak, active);
+        firstForkStarted.resolve();
+        if (starts === 3) {
+          threeForksStarted.resolve();
+        }
+        try {
+          await releaseForks.promise;
+          return { text: "Looks correct." };
+        } finally {
+          active--;
+        }
+      });
+      const diagnostics = areDiagnosticsEnabledForProcess();
+      setDiagnosticsEnabledForProcess(true);
+      let enqueued = 0;
+      const stop = onInternalDiagnosticEvent((event) => {
+        if (
+          event.type === "queue.lane.enqueue" &&
+          event.lane === CommandLane.Subagent &&
+          ++enqueued === 4
+        ) {
+          forksQueued.resolve();
+        }
+      });
+      const completion = withPluginRuntimePluginScope({ pluginId: PLUGIN_ID }, () =>
+        createGatewaySubagentRuntime(() => context, {}, lifetime.signal).complete({
+          agentId: "research",
+          message: "Hold the subagent lane",
+        }),
+      );
+      const forks: Promise<{ text: string }>[] = [];
+      try {
+        await awaitGateBeforeSettlement(
+          completionStarted.promise,
+          completion,
+          "completion admission",
+        );
+        forks.push(fork(client), fork(client), fork(client));
+        await awaitGateBeforeSettlement(
+          Promise.race([forksQueued.promise, threeForksStarted.promise]),
+          Promise.all(forks),
+          "fork admission",
+        );
+        expect(sideQuestion).not.toHaveBeenCalled();
+        expect(commandQueue.getCommandLaneSnapshot(CommandLane.Subagent)).toMatchObject({
+          activeCount: 1,
+          queuedCount: 3,
+          maxConcurrent: 1,
+        });
+        releaseCompletion.resolve();
+        await completion;
+        await awaitGateBeforeSettlement(firstForkStarted.promise, Promise.all(forks), "first fork");
+        expect(active).toBe(1);
+      } finally {
+        releaseCompletion.resolve();
+        releaseForks.resolve();
+        await Promise.all([completion, ...forks]);
+        stop();
+        setDiagnosticsEnabledForProcess(diagnostics);
+      }
+      expect(starts).toBe(3);
+      expect(peak).toBe(1);
     });
   });
 
