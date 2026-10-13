@@ -277,6 +277,16 @@ export function evaluateWorkflowRunner(
     : selector;
 }
 
+export function evaluateWorkflowCondition(
+  condition: string,
+  context: Parameters<typeof evaluateWorkflowExpression>[1],
+) {
+  return evaluateWorkflowExpression(
+    condition.trim().startsWith("${{") ? condition : `\${{ ${condition} }}`,
+    context,
+  );
+}
+
 export function quoteShell(value: string): string {
   return `'${value.replaceAll("'", `'"'"'`)}'`;
 }

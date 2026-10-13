@@ -590,13 +590,16 @@ describe.skipIf(process.platform === "win32")("native multi-invocation report ow
       expect(attempt.outcome).toMatchObject({ code: 1, signal: null });
       expect(result.code, result.stderr).toBe(2);
       expect(result.signal).toBeNull();
-      expect(index.complete).toBe(false);
-      expect(index.entries[1].attempts).toEqual([]);
-      expect(fs.existsSync(output)).toBe(false);
+      expect(index.complete).toBe(true);
+      expect(index.entries[1].attempts).toHaveLength(1);
+      expect(index.entries[1].attempts[0].outcome).toMatchObject({ code: 1, signal: null });
+      expect(fs.existsSync(output)).toBe(true);
+      expect(json(output).numTotalTests).toBe(0);
+      expect(json(output).success).toBe(false);
     },
   );
 
-  reportTest.for(["failure", "batch-failure", "unhandled", "suite-error"] as const)(
+  reportTest.for(["failure", "fail-fast", "batch-failure", "unhandled", "suite-error"] as const)(
     "publishes complete evidence without erasing native failure: %s",
     { timeout: 60000 },
     async (mode, { expect, reports }) => {
@@ -606,13 +609,17 @@ describe.skipIf(process.platform === "win32")("native multi-invocation report ow
       if (mode === "failure" || mode === "batch-failure") {
         cases[2]![1] = "failed";
       }
+      if (mode === "fail-fast") {
+        cases[0]![1] = "failed";
+      }
       if (mode === "suite-error") {
         cases.push(["broken suite body", "passed"]);
       }
       expect(inventory(json(result.output))).toEqual(cases);
       const index = json(path.join(result.reportSet!, "index.json"));
       expect(index.complete).toBe(true);
-      expect(index.entries[1].attempts[0].outcome.code).toBe(1);
+      expect(index.entries[0].attempts[0].outcome.code).toBe(mode === "fail-fast" ? 1 : 0);
+      expect(index.entries[1].attempts[0].outcome.code).toBe(mode === "fail-fast" ? 0 : 1);
       if (mode === "suite-error") {
         const capture = json(`${index.entries[1].attempts[0].json}.capture.json`);
         expect(capture.ended).toMatchObject({ reason: "failed", failedModules: 1, suiteErrors: 1 });
@@ -657,7 +664,6 @@ describe.skipIf(process.platform === "win32")("native multi-invocation report ow
     "publish-write",
     "identity",
     "tuple",
-    "fail-fast",
     "cancel",
     "batch-fail-fast",
     "batch-cancel",
@@ -689,7 +695,7 @@ describe.skipIf(process.platform === "win32")("native multi-invocation report ow
         );
         // The joined group may leave an unreaped Linux zombie, but no live worker.
         expect(isPidDefinitelyDead(events[0].pid)).toBe(true);
-      } else if (mode === "fail-fast" || mode === "batch-fail-fast") {
+      } else if (mode === "batch-fail-fast") {
         const report = json(first.json);
         expect(inventory(report)).toEqual([
           ["alpha/one", "failed"],
@@ -762,7 +768,7 @@ describe.skipIf(process.platform === "win32")("native multi-invocation report ow
       if (["missing", "corrupt", "merge-failure", "final-write", "identity"].includes(mode)) {
         expect(fs.readFileSync(result.output, "utf8")).toBe("old report");
       }
-      if (["fail-fast", "cancel", "batch-fail-fast", "batch-cancel"].includes(mode)) {
+      if (["cancel", "batch-fail-fast", "batch-cancel"].includes(mode)) {
         expect(index.entries[1].attempts).toHaveLength(0);
       }
     },

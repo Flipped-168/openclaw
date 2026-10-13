@@ -61,6 +61,7 @@ import {
   MATURITY_SCORECARD_WORKFLOW,
   SETUP_GO_V6,
   UPLOAD_ARTIFACT_V7,
+  evaluateWorkflowCondition,
   evaluateWorkflowExpression,
   evaluateWorkflowRunner,
   quoteShell,
@@ -2307,7 +2308,7 @@ require("node:fs").writeFileSync("scheduler-restart", process.env.OPENCLAW_UPGRA
       path: ".ci-harness",
       "persist-credentials": false,
       ref: "${{ github.workflow_sha }}",
-      "sparse-checkout": ".github/actions",
+      "sparse-checkout": ".github/actions\nscripts/ci-collect-checks.sh\n",
     });
     expect(checkoutIndex).toBeLessThan(actionCheckoutIndex);
     expect(actionCheckoutIndex).toBeLessThan(setupIndex);
@@ -4294,12 +4295,13 @@ ${step.run}`,
           runAttempt: 1,
           env: { HISTORICAL_TARGET: String(historical) },
           matrix: { phase },
+          steps: {
+            "watch-rust-toolchain": { outputs: {}, outcome: expected ? "success" : "skipped" },
+          },
           fileHashes: hasWatchRtc ? { "apps/shared/OpenClawWatchRTC/Cargo.toml": "present" } : {},
         };
-        expect(evaluateWorkflowExpression(`\${{ ${install.if} }}`, context)).toBe(expected);
-        expect(evaluateWorkflowExpression(`\${{ ${engine.if} }}`, context)).toBe(
-          expected && phase === "tests",
-        );
+        expect(evaluateWorkflowCondition(install.if, context)).toBe(expected);
+        expect(evaluateWorkflowCondition(engine.if, context)).toBe(expected && phase === "tests");
       }
     }
   });
@@ -4944,6 +4946,10 @@ printf '%s\n' "\${CURL_SUCCESS_IP:-203.0.113.7}"
       const root = tempDirs.make("openclaw-hosted-lint-owner-");
       mkdirSync(path.join(root, ".ci-harness/scripts"), { recursive: true });
       copyFileSync(
+        new URL("../../scripts/ci-collect-checks.sh", import.meta.url),
+        path.join(root, ".ci-harness/scripts/ci-collect-checks.sh"),
+      );
+      copyFileSync(
         new URL("../../scripts/ci-static-step.sh", import.meta.url),
         path.join(root, ".ci-harness/scripts/ci-static-step.sh"),
       );
@@ -5103,6 +5109,7 @@ printf '%s\n' "\${CURL_SUCCESS_IP:-203.0.113.7}"
       }),
     ).toEqual([
       "node --import tsx scripts/run-oxlint-shards.mts --only=core --split-core --core-stripe=1/5 --threads=1",
+      "node --import tsx scripts/run-oxlint-shards.mts --only=core --split-core --core-stripe=2/5 --threads=1",
     ]);
     expect(
       runLintOwner({
@@ -5116,6 +5123,7 @@ printf '%s\n' "\${CURL_SUCCESS_IP:-203.0.113.7}"
     ).toEqual([
       "node --import tsx scripts/run-oxlint-shards.mts --only=core --split-core --core-stripe=3/5 --threads=1",
       "node --import tsx scripts/run-oxlint-shards.mts --only=core --split-core --core-stripe=4/5 --threads=1",
+      "node --import tsx scripts/run-oxlint-shards.mts --only=core --split-core --core-stripe=5/5 --threads=1",
     ]);
 
     expect(runLintOwner({ capability: true, lane: "check", profile: "github" })).toEqual([
@@ -5388,6 +5396,10 @@ printf '%s\n' "\${CURL_SUCCESS_IP:-203.0.113.7}"
       repository: "openclaw/openclaw",
       runAttempt: 1,
       runnerBackend: "hybrid",
+      steps: {
+        node_setup: { outputs: {}, outcome: "success" },
+        ui_chromium: { outputs: {}, outcome: "success" },
+      },
     } as const;
     const shards = evaluateWorkflowExpression(ui.strategy.matrix, context).include.map(
       (row: { shard: number }) => row.shard,
@@ -5470,7 +5482,7 @@ printf '%s\n' "\${CURL_SUCCESS_IP:-203.0.113.7}"
         ...(scenario.compatibilityTarget ? [] : [`--shard=${shard}/${scenario.shards.length}`]),
       ];
       const steps = [
-        ...(!lint.if || evaluateWorkflowExpression(lint.if, rowContext) ? [lint] : []),
+        ...(!lint.if || evaluateWorkflowCondition(lint.if, rowContext) ? [lint] : []),
         test,
       ];
       for (const step of steps) {
@@ -7834,9 +7846,23 @@ it("pins trusted Performance Git owners before checkout", () => {
 describe("frozen CI compatibility contracts", () => {
   it("skips current-only launcher and QA contracts for frozen targets", () => {
     const source = readFileSync(".github/workflows/ci.yml", "utf8");
-    expect(source).toContain(
-      `if: \${{ needs.preflight.outputs.frozen_target != 'true' }}\n        run: |\n          bun openclaw.mjs --help`,
+    const launcher = readCiWorkflow().jobs["build-artifacts"].steps.find((step: WorkflowStep) =>
+      step.run?.includes("bun openclaw.mjs --help"),
     );
+    for (const frozenTarget of [false, true]) {
+      expect(
+        evaluateWorkflowCondition(launcher.if, {
+          eventName: "workflow_dispatch",
+          repository: "openclaw/openclaw",
+          runAttempt: 1,
+          frozenTarget,
+          steps: {
+            dist_build: { outputs: {}, outcome: "success" },
+            dist_build_cache: { outputs: {} },
+          },
+        }),
+      ).toBe(!frozenTarget);
+    }
     expect(source).toContain(
       "[skip] ${partId} is not declared by this checkout's legacy smoke plan",
     );

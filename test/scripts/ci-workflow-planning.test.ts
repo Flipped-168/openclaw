@@ -53,6 +53,7 @@ import {
   CACHE_V5,
   SETUP_GO_V6,
   UPLOAD_ARTIFACT_V7,
+  evaluateWorkflowCondition,
   evaluateWorkflowExpression,
   readAndroidToolchainAction,
   readBuildArtifactsTestboxWorkflow,
@@ -68,6 +69,32 @@ import {
 } from "./ci-workflow.test-support.js";
 
 const tempDirs = useAutoCleanupTempDirTracker(afterEach);
+
+function installCollectChecks(root: string) {
+  mkdirSync(path.join(root, ".ci-harness/scripts"), { recursive: true });
+  copyFileSync(
+    "scripts/ci-collect-checks.sh",
+    path.join(root, ".ci-harness/scripts/ci-collect-checks.sh"),
+  );
+}
+
+function successfulNativeSetup() {
+  return Object.fromEntries(
+    [
+      "select-xcode",
+      "node-env",
+      "macos-swift-tools",
+      "macos-native-assets",
+      "macos-node-assets",
+      "macos-node-tooling",
+      "ios-swift-tools",
+      "watch-rust-toolchain",
+      "ios-configure",
+      "ios-simulator",
+      "ios-app-build",
+    ].map((id) => [id, { outputs: {}, outcome: "success" as const }]),
+  );
+}
 
 describe("PostgreSQL conformance selection", () => {
   it.each([
@@ -204,7 +231,7 @@ function evaluateSdkCachePublication(
     JSON.stringify(inputs[name] ?? ""),
   );
   return (
-    evaluateWorkflowExpression(`\${{ ${writer.if} }}`, context) &&
+    evaluateWorkflowCondition(expectDefined(writer.if, "SDK writer condition"), context) &&
     evaluateWorkflowExpression(`\${{ ${policy} }}`, {
       ...context,
       steps: {
@@ -581,6 +608,7 @@ function runCheckShardFixture(options: {
   const typeCallsPath = path.join(root, "type-calls.txt");
   const typeCheck = options.task === "test-types" || options.task === "prod-types";
   mkdirSync(fakeBin);
+  installCollectChecks(root);
   if (typeCheck) {
     mkdirSync(path.join(root, "scripts"));
     mkdirSync(path.join(root, ".ci-harness/scripts"), { recursive: true });
@@ -591,10 +619,6 @@ function runCheckShardFixture(options: {
     copyFileSync(
       new URL("../../scripts/ci-additional-checks.sh", import.meta.url),
       path.join(root, ".ci-harness/scripts/ci-additional-checks.sh"),
-    );
-    copyFileSync(
-      new URL("../../scripts/ci-collect-checks.sh", import.meta.url),
-      path.join(root, ".ci-harness/scripts/ci-collect-checks.sh"),
     );
     writeFileSync(
       path.join(root, "scripts/run-tsgo-core-test-shards.mts"),
@@ -826,6 +850,7 @@ function runDependencyCheckFixture(options: {
     const fakeBin = path.join(root, "bin");
     const callsPath = path.join(root, "pnpm-calls.txt");
     mkdirSync(fakeBin);
+    installCollectChecks(root);
     writeFileSync(
       path.join(root, "package.json"),
       `${JSON.stringify({
@@ -1540,13 +1565,11 @@ describe("ci workflow guards", () => {
             (candidate: WorkflowStep) => candidate.name === "Run independent checks",
           );
           const rowContext = { ...context, matrix };
-          expect(evaluateWorkflowExpression(`\${{ ${independentStep.if} }}`, rowContext)).toBe(
-            true,
-          );
+          expect(evaluateWorkflowCondition(independentStep.if, rowContext)).toBe(true);
           const otherStep = additional.steps.find(
             (candidate: WorkflowStep) => candidate.name === "Run additional check shard",
           );
-          expect(evaluateWorkflowExpression(`\${{ ${otherStep.if} }}`, rowContext)).toBe(false);
+          expect(evaluateWorkflowCondition(otherStep.if, rowContext)).toBe(false);
           expect(evaluateWorkflowExpression(independentStep.env.TASK, rowContext)).toBe(
             matrix.group,
           );
@@ -2194,10 +2217,10 @@ describe("ci workflow guards", () => {
       preflightOutputs: manifest.outputs,
     };
     for (const name of ["checks-ui", "control-ui-performance"]) {
-      expect(evaluateWorkflowExpression(`\${{ ${workflow.jobs[name].if} }}`, context)).toBe(true);
+      expect(evaluateWorkflowCondition(workflow.jobs[name].if, context)).toBe(true);
     }
     for (const name of ["checks-ui-e2e", "checks-ui-e2e-real-gateway"]) {
-      expect(evaluateWorkflowExpression(`\${{ ${workflow.jobs[name].if} }}`, context)).toBe(false);
+      expect(evaluateWorkflowCondition(workflow.jobs[name].if, context)).toBe(false);
     }
     expect(JSON.stringify(manifest.outputs)).toContain("dedicated-ui-false");
     expect(
@@ -2547,10 +2570,11 @@ describe("ci workflow guards", () => {
           (candidate: WorkflowStep) => candidate.name === name,
         );
         expect(
-          evaluateWorkflowExpression(`\${{ ${step.if} }}`, {
+          evaluateWorkflowCondition(step.if, {
             ...context,
             matrix: { phase: "tests" },
             env: { HISTORICAL_TARGET: "false" },
+            steps: successfulNativeSetup(),
           }),
           name,
         ).toBe(
@@ -2564,7 +2588,7 @@ describe("ci workflow guards", () => {
       const packageStep = workflow.jobs["docker-seed-e2e"].steps.find((step: WorkflowStep) =>
         step.run?.includes("scripts/package-openclaw-for-docker.mjs"),
       );
-      expect(evaluateWorkflowExpression("${{ " + packageStep.if + " }}", context)).toBe(!release);
+      expect(evaluateWorkflowCondition(packageStep.if, context)).toBe(!release);
     },
   );
 
@@ -2576,6 +2600,7 @@ describe("ci workflow guards", () => {
       const helpers = path.join(root, ".ci-harness/scripts/lib");
       mkdirSync(bin, { recursive: true });
       mkdirSync(helpers, { recursive: true });
+      installCollectChecks(root);
       copyFileSync("scripts/lib/swift-toolchain.sh", path.join(helpers, "swift-toolchain.sh"));
       writeExecutable(path.join(bin, "xcodebuild"), [
         `#!${testNodeExecPath}`,
@@ -2666,6 +2691,7 @@ describe("ci workflow guards", () => {
         repository: "openclaw/openclaw",
         runAttempt: 1,
         env: { HISTORICAL_TARGET: String(historical), MACOS_PRIMARY_PHASE: "release" },
+        steps: successfulNativeSetup(),
         fileHashes: { "apps/shared/OpenClawWatchRTC/Cargo.toml": "present" },
         preflightOutputs: {
           compatibility_target: String(historical),
@@ -2737,8 +2763,7 @@ describe("ci workflow guards", () => {
               .includes(step.name ?? ""),
           )
           .filter(
-            (step: WorkflowStep) =>
-              !step.if || evaluateWorkflowExpression(`\${{ ${step.if} }}`, phaseContext),
+            (step: WorkflowStep) => !step.if || evaluateWorkflowCondition(step.if, phaseContext),
           )
           .map((step: WorkflowStep) => step.name);
         expect(selected, phase).toEqual(expected);
@@ -2753,9 +2778,7 @@ describe("ci workflow guards", () => {
               job.steps.find((step: WorkflowStep) => step.name === name),
               name,
             );
-            expect(
-              !setup.if || evaluateWorkflowExpression(`\${{ ${setup.if} }}`, phaseContext),
-            ).toBe(true);
+            expect(!setup.if || evaluateWorkflowCondition(setup.if, phaseContext)).toBe(true);
           }
         }
       }
@@ -2832,6 +2855,7 @@ describe("ci workflow guards", () => {
               env,
               matrix: { phase },
               steps: {
+                ...successfulNativeSetup(),
                 "swift-test": {
                   outputs: { "debug-tests-built": phase === "tests" ? "true" : "" },
                 },
@@ -2905,6 +2929,10 @@ describe("ci workflow guards", () => {
         repository: "openclaw/openclaw",
         runAttempt: 1,
         runnerBackend: "hybrid" as const,
+        additionalNeeds: {
+          "check-plan": { outputs },
+          "build-artifacts": { outputs: { published_driver_artifact_id: "fixture-package" } },
+        },
         ...overrides,
         preflightOutputs: outputs,
       };
@@ -3148,7 +3176,7 @@ describe("ci workflow guards", () => {
       expect(readFileSync(summary, "utf8")).toContain("hosted-health-unavailable");
       for (const eventName of ["workflow_dispatch", "push", "pull_request"] as const) {
         expect(
-          evaluateWorkflowExpression(`\${{ ${step.if} }}`, {
+          evaluateWorkflowCondition(step.if, {
             eventName,
             repository: "openclaw/openclaw",
             runAttempt: 1,
@@ -3274,7 +3302,7 @@ describe("ci workflow guards", () => {
           (candidate: WorkflowStep) => candidate.id === "hosted_health",
         );
         expect(
-          evaluateWorkflowExpression(`\${{ ${step.if} }}`, {
+          evaluateWorkflowCondition(step.if, {
             eventName,
             ref,
             repository: "openclaw/openclaw",
@@ -3733,7 +3761,10 @@ describe("ci workflow guards", () => {
       repository: "openclaw/openclaw",
       runAttempt: 1,
       preflightOutputs: manifest.outputs,
-      steps: { built_artifact_checks: { outputs: {}, outcome: "success" as const } },
+      steps: {
+        dist_build: { outputs: {}, outcome: "success" as const },
+        built_artifact_checks: { outputs: {}, outcome: "success" as const },
+      },
     };
     const evaluateCondition = (expression: string) =>
       evaluateWorkflowExpression(
@@ -3869,7 +3900,10 @@ describe("ci workflow guards", () => {
         repository: "openclaw/openclaw",
         runAttempt: 1,
         preflightOutputs: manifest.outputs,
-        steps: { built_artifact_checks: { outputs: {}, outcome: "success" as const } },
+        steps: {
+          dist_build: { outputs: {}, outcome: "success" as const },
+          built_artifact_checks: { outputs: {}, outcome: "success" as const },
+        },
       };
       const steps = workflow.jobs["build-artifacts"].steps as WorkflowStep[];
       const verifiers = expectDefined(
@@ -4114,7 +4148,10 @@ describe("ci workflow guards", () => {
         ),
         "Android task runner",
       );
-      const root = tempDirs.make("openclaw-android-tier-");
+      const repositoryRoot = tempDirs.make("openclaw-android-tier-");
+      const root = path.join(repositoryRoot, "apps/android");
+      mkdirSync(root, { recursive: true });
+      installCollectChecks(repositoryRoot);
       const callsPath = path.join(root, "gradle-calls.jsonl");
       const clockPath = path.join(root, "clock-reads.jsonl");
       const gradleJavaHome = path.join(root, "gradle jdk");
@@ -4398,14 +4435,14 @@ describe("ci workflow guards", () => {
         lint: true,
         app_lint: "third-party",
         failTask: ":wear:testDebugUnitTest",
-        calls: 1,
+        calls: 3,
       },
       {
         task: "test-wear",
         lint: true,
         app_lint: "third-party",
         failTask: ":wear:lintDebug",
-        calls: 2,
+        calls: 3,
       },
       {
         task: "test-wear",
@@ -4419,7 +4456,7 @@ describe("ci workflow guards", () => {
         app_lint: "play",
         build_benchmark: true,
         failTask: ":benchmark:assembleDebug",
-        calls: 2,
+        calls: 3,
       },
       {
         task: "ktlint",
@@ -4434,8 +4471,10 @@ describe("ci workflow guards", () => {
         { eventName: "pull_request", repository: "openclaw/openclaw", runAttempt: 1 },
         failTask,
       );
-      expect(result.status).toBe(23);
+      expect(result.status).toBe(1);
       expect(result.calls).toHaveLength(calls);
+      expect(result.calls.flat()).toContain(failTask);
+      expect(result.calls.every((args) => args.includes("--continue"))).toBe(true);
     });
   });
 
@@ -4844,14 +4883,11 @@ describe("ci workflow guards", () => {
         ["ios-build", false],
         ["android", nativeChecks.android],
       ] as const) {
-        expect(
-          evaluateWorkflowExpression(`\${{ ${workflow.jobs[job].if} }}`, typeContext),
-          job,
-        ).toBe(admitted);
+        expect(evaluateWorkflowCondition(workflow.jobs[job].if, typeContext), job).toBe(admitted);
       }
       for (const job of ["checks-ui-e2e", "checks-ui-e2e-real-gateway"]) {
         expect(
-          evaluateWorkflowExpression(`\${{ ${readCiWorkflow().jobs[job].if} }}`, {
+          evaluateWorkflowCondition(readCiWorkflow().jobs[job].if, {
             eventName: "pull_request",
             repository: "openclaw/openclaw",
             runAttempt: 1,
@@ -5317,7 +5353,7 @@ describe("ci workflow guards", () => {
       const health = workflow.jobs.preflight.steps.find(
         (step: WorkflowStep) => step.id === "hosted_health",
       );
-      expect(evaluateWorkflowExpression(`\${{ ${health.if} }}`, context)).toBe(true);
+      expect(evaluateWorkflowCondition(health.if, context)).toBe(true);
       for (const hosted of ["false", "true"]) {
         const qualified = {
           ...context,
@@ -5342,9 +5378,7 @@ describe("ci workflow guards", () => {
             name === "check-extension-package-boundary" &&
             admitted.outputs.shared_sdk_declarations !== "true"
           ) {
-            expect(evaluateWorkflowExpression(`\${{ ${workflow.jobs[name].if} }}`, qualified)).toBe(
-              false,
-            );
+            expect(evaluateWorkflowCondition(workflow.jobs[name].if, qualified)).toBe(false);
             continue;
           }
           for (const key of ["runs-on", "timeout-minutes"] as const) {
@@ -5458,7 +5492,7 @@ describe("ci workflow guards", () => {
       workflow.jobs.preflight.steps.find((step: WorkflowStep) => step.id === "docs_scope"),
       "docs scope owner",
     );
-    expect(evaluateWorkflowExpression(`\${{ ${docsStep.if} }}`, context)).toBe(true);
+    expect(evaluateWorkflowCondition(docsStep.if, context)).toBe(true);
     const root = tempDirs.make("openclaw-qualification-docs-");
     runGit(root, ["init", "--quiet"]);
     runGit(root, ["config", "user.name", "CI Fixture"]);
@@ -6005,7 +6039,7 @@ describe("ci workflow guards", () => {
     );
     for (const enabled of ["true", "false"]) {
       const selected = restoreSteps.filter((step: WorkflowStep) =>
-        evaluateWorkflowExpression(`\${{ ${step.if} }}`, {
+        evaluateWorkflowCondition(expectDefined(step.if, "SDK restore condition"), {
           eventName: "pull_request",
           repository: "openclaw/openclaw",
           runAttempt: 1,
@@ -6495,7 +6529,7 @@ describe("ci workflow guards", () => {
         ["workflow_dispatch", "boundaries", false],
       ] as const) {
         expect(
-          evaluateWorkflowExpression(`\${{ ${ensureRevisionStep.if} }}`, {
+          evaluateWorkflowCondition(ensureRevisionStep.if, {
             eventName,
             matrix: { group },
             repository: "openclaw/openclaw",
@@ -6579,7 +6613,7 @@ describe("ci workflow guards", () => {
         workflowSha,
       };
       const evaluateStep = (step: WorkflowStep) =>
-        evaluateWorkflowExpression(`\${{ ${step.if} }}`, context);
+        evaluateWorkflowCondition(expectDefined(step.if, "compatibility setup condition"), context);
       expect([evaluateStep(setupPnpm), evaluateStep(installDependencies)], label).toEqual([
         usesCompatibilityTooling,
         usesCompatibilityTooling,
@@ -6822,15 +6856,11 @@ describe("ci workflow guards", () => {
           "check:coercion-helpers",
         ],
       });
-      expect(result.status, result.output).toBe(failure ? 17 : 0);
+      expect(result.status, result.output).toBe(failure ? 1 : 0);
       expect(result.calls.filter((call) => call.includes("import-cycles"))).toEqual(
-        selected && failure !== "check:import-cycles"
-          ? ["check:import-cycles", "check:madge-import-cycles"]
-          : ["check:import-cycles"],
+        selected ? ["check:import-cycles", "check:madge-import-cycles"] : ["check:import-cycles"],
       );
-      expect(result.calls.includes("lint:kysely")).toBe(
-        kysely && (failure === "" || failure === "lint:kysely"),
-      );
+      expect(result.calls.includes("lint:kysely")).toBe(kysely);
       for (const deferred of [
         "check:architecture",
         "check:deprecated-api-usage",
@@ -6879,11 +6909,15 @@ describe("ci workflow guards", () => {
           kysely: true,
           calls: ["check:import-cycles", "check:madge-import-cycles", "lint:kysely"],
         },
-        { failure: "check:import-cycles", kysely: true, calls: ["check:import-cycles"] },
+        {
+          failure: "check:import-cycles",
+          kysely: true,
+          calls: ["check:import-cycles", "check:madge-import-cycles", "lint:kysely"],
+        },
         {
           failure: "check:madge-import-cycles",
           kysely: true,
-          calls: ["check:import-cycles", "check:madge-import-cycles"],
+          calls: ["check:import-cycles", "check:madge-import-cycles", "lint:kysely"],
         },
         {
           failure: "lint:kysely",
@@ -6905,7 +6939,7 @@ describe("ci workflow guards", () => {
         failPackageScript: failure,
         scripts: [],
       });
-      expect(result.status, result.output).toBe(failure ? 17 : 0);
+      expect(result.status, result.output).toBe(failure ? 1 : 0);
       expect(result.calls).toEqual(calls);
     },
   );
@@ -7217,20 +7251,30 @@ describe("ci workflow guards", () => {
           failed,
           matrix: { task: "test-types", stripe: 1 },
           preflightOutputs: { cache_mode: cacheMode, cache_write_allowed: String(writable) },
-          steps: { "test-type-cache": { outputs: { "cache-hit": "false" } } },
+          steps: {
+            check_setup: { outputs: {}, outcome: "success" },
+            "test-type-cache": { outputs: { "cache-hit": "false" } },
+          },
         };
-        expect(evaluateWorkflowExpression("${{ " + restore.if + " }}", context)).toBe(canRestore);
-        expect(evaluateWorkflowExpression("${{ " + save.if + " }}", context)).toBe(canSave);
+        expect(
+          evaluateWorkflowCondition(expectDefined(restore.if, "cache restore condition"), context),
+        ).toBe(canRestore);
+        expect(
+          evaluateWorkflowCondition(expectDefined(save.if, "cache save condition"), context),
+        ).toBe(canSave);
         if (!failed) {
           for (const cacheHit of ["false", "true"]) {
             expect(
-              evaluateWorkflowExpression("${{ " + (run.if ?? "true") + " }}", {
+              evaluateWorkflowCondition(run.if ?? "true", {
                 ...context,
                 preflightOutputs: {
                   ...context.preflightOutputs,
                   central_lint_selection_json: "{}",
                 },
-                steps: { "test-type-cache": { outputs: { "cache-hit": cacheHit } } },
+                steps: {
+                  check_setup: { outputs: {}, outcome: "success" },
+                  "test-type-cache": { outputs: { "cache-hit": cacheHit } },
+                },
               }),
             ).toBe(true);
           }
@@ -7308,7 +7352,7 @@ describe("ci workflow guards", () => {
     { failStripe: "1/5", frozenTarget: true },
     { failStripe: "5/5", frozenTarget: true },
   ])(
-    "halts only the type row whose first stripe $failStripe fails (frozen=$frozenTarget)",
+    "collects later checks in the failing type row ($failStripe, frozen=$frozenTarget)",
     ({ failStripe, frozenTarget }) => {
       const changedPathsJson = frozenTarget ? "" : '["src/agents/example.test.ts"]';
       const result = runCheckShardFixture({
@@ -7317,7 +7361,7 @@ describe("ci workflow guards", () => {
         frozenTarget,
         types: { compose: true, failStripe, changedPathsJson },
       });
-      expect(result.status, result.output).toBe(17);
+      expect(result.status, result.output).toBe(frozenTarget && failStripe === "5/5" ? 1 : 17);
       expect(
         readCiWorkflow().jobs["check-test-types-hosted-core-shard"].strategy["fail-fast"],
       ).toBe(false);
@@ -7325,17 +7369,16 @@ describe("ci workflow guards", () => {
       expect(failed).toHaveLength(1);
       expect(result.rows.filter((row) => row.status === 0)).toHaveLength(frozenTarget ? 2 : 5);
       expect(
-        result.typeCalls.filter((call) => call.row === failed[0]!.name).map((call) => call.command),
+        result.typeCalls
+          .filter((call) => call.row === failed[0]!.name && call.command.startsWith("node "))
+          .map((call) => call.command),
       ).toEqual([
         `node --stripe ${failStripe} --concurrency 2${
           changedPathsJson ? ` --changed-paths-json ${changedPathsJson}` : ""
         }`,
+        ...(frozenTarget && failStripe === "1/5" ? ["node --stripe 2/5 --concurrency 2"] : []),
       ]);
-      expect(result.calls).toEqual(
-        frozenTarget && failStripe === "5/5"
-          ? []
-          : ["tsgo:extensions:test", "tsgo:scripts", "tsgo:test:root"],
-      );
+      expect(result.calls).toEqual(["tsgo:extensions:test", "tsgo:scripts", "tsgo:test:root"]);
     },
   );
 
@@ -7607,19 +7650,21 @@ describe("ci workflow guards", () => {
         (step: WorkflowStep) => step.name === "Setup pinned Bun test runtime",
       );
       expect(bunSetup.uses).toBe("./.ci-harness/.github/actions/setup-test-bun");
-      expect(evaluateWorkflowExpression(`\${{ ${bunSetup.if} }}`, context)).toBe(bun);
+      expect(evaluateWorkflowCondition(bunSetup.if, context)).toBe(bun);
       expect(evaluateWorkflowExpression(run.env.OPENCLAW_CI_TEST_RUNTIME_POLICY, context)).toBe(
         policy,
       );
       const ui = readCiWorkflow().jobs["checks-ui"];
-      const uiContext = { ...context, preflightOutputs: manifest.outputs };
+      const uiContext = {
+        ...context,
+        preflightOutputs: manifest.outputs,
+        steps: { node_setup: { outputs: {}, outcome: "success" as const } },
+      };
       const uiBunSetup = ui.steps.find(
         (step: WorkflowStep) => step.name === "Setup pinned Bun test runtime",
       );
       expect(uiBunSetup.uses).toBe("./.ci-harness/.github/actions/setup-test-bun");
-      expect(evaluateWorkflowExpression(`\${{ ${uiBunSetup.if} }}`, uiContext)).toBe(
-        uiPolicy !== "node",
-      );
+      expect(evaluateWorkflowCondition(uiBunSetup.if, uiContext)).toBe(uiPolicy !== "node");
       const uiRun = ui.steps.find((step: WorkflowStep) => step.name === "Test Control UI");
       expect(evaluateWorkflowExpression(uiRun.env.OPENCLAW_CI_TEST_RUNTIME_POLICY, uiContext)).toBe(
         uiPolicy,
@@ -7658,7 +7703,7 @@ describe("ci workflow guards", () => {
       (entry: WorkflowStep) => entry.name === "Check startup corpus",
     );
     expect(
-      evaluateWorkflowExpression(`\${{ ${step.if} }}`, {
+      evaluateWorkflowCondition(step.if, {
         eventName: "pull_request",
         repository: "openclaw/openclaw",
         matrix: { task: "startup-corpus" },
@@ -7762,7 +7807,7 @@ describe("ci workflow guards", () => {
         (entry: WorkflowStep) => entry.name === "Check startup corpus",
       );
       expect(
-        evaluateWorkflowExpression(`\${{ ${step.if} }}`, {
+        evaluateWorkflowCondition(step.if, {
           eventName: "pull_request",
           repository: "openclaw/openclaw",
           matrix: { task: "startup-corpus" },
@@ -7800,7 +7845,7 @@ describe("ci workflow guards", () => {
         (step) =>
           step.run?.includes(file) &&
           (!step.if ||
-            evaluateWorkflowExpression(`\${{ ${step.if} }}`, {
+            evaluateWorkflowCondition(step.if, {
               eventName: "push",
               repository: "openclaw/openclaw",
               ref: "refs/heads/main",
@@ -7934,7 +7979,9 @@ describe("ci workflow guards", () => {
       runAttempt: 1,
       preflightOutputs: manifest.outputs,
     };
-    expect(evaluateWorkflowExpression(`\${{ ${step.if} }}`, context)).toBe(true);
+    expect(
+      evaluateWorkflowCondition(expectDefined(step.if, "startup corpus condition"), context),
+    ).toBe(true);
     const directory = tempDirs.make("startup-corpus-command-");
     const bin = path.join(directory, "bin");
     const argsPath = path.join(directory, "args");
@@ -8216,7 +8263,7 @@ describe("ci workflow guards", () => {
     expect(ratchetRun.run).not.toContain("+${merge_base}:refs/remotes/origin/ci-ratchet-base");
     expect(ratchetRun.run).toContain('pnpm check:max-lines-ratchet --base "$base_ref"');
     expect(ratchetRun.run).toMatch(
-      /if \[\[ -n "\$\{RATCHET_PR_HEAD_SHA:-\}" \]\]; then\s+pnpm check:line-cap-ratchet --base "\$base_ref"\s+fi/u,
+      /if \[\[ -n "\$\{RATCHET_PR_HEAD_SHA:-\}" \]\]; then\s+run_check line-cap pnpm check:line-cap-ratchet --base "\$base_ref"\s+fi/u,
     );
     expect(ratchetRun.run).toContain('pnpm check:assertion-safety --base "$base_ref"');
     expect(ratchetRun.run).toContain('pnpm check:test-timeout-race-ratchet --base "$base_ref"');
@@ -9687,7 +9734,9 @@ describe("ci workflow guards", () => {
     expect(swiftInstall.run).toContain('elif [[ "$HISTORICAL_TARGET" == "true" ]]');
     expect(swiftLint.run).toContain("swiftlint lint --config config/swiftlint.yml");
     expect(swiftLint.run).toContain('elif [[ "$HISTORICAL_TARGET" == "true" ]]');
-    expect(openClawKitTests.if).toBe(
+    expect(openClawKitTests.if).toContain("!cancelled()");
+    expect(openClawKitTests.if).toContain("steps.select-xcode.outcome == 'success'");
+    expect(openClawKitTests.if).toContain(
       "matrix.phase == 'packages' && needs.preflight.outputs.run_openclawkit_tests == 'true'",
     );
 
@@ -9806,7 +9855,7 @@ describe("ci workflow guards", () => {
         preflightOutputs: manifest.outputs,
       };
       const job = readCiWorkflow().jobs["android-access-native"];
-      expect(evaluateWorkflowExpression(`\${{ ${job.if} }}`, context)).toBe(selected);
+      expect(evaluateWorkflowCondition(job.if, context)).toBe(selected);
       expect(manifest.outputs.run_android_access_native).toBe(String(selected));
       for (const result of ["success", "skipped", "failure", "cancelled"]) {
         const gate = runCiGateFixture(
@@ -9968,7 +10017,7 @@ describe("ci workflow guards", () => {
     expect(readFileSync(commandInclude, "utf8")).toBe("");
 
     expect(
-      evaluateWorkflowExpression(`\${{ ${uiE2E.if} }}`, {
+      evaluateWorkflowCondition(uiE2E.if, {
         eventName: "workflow_dispatch",
         preflightOutputs: { compatibility_target: "true", run_ui_tests: "true" },
         repository: "openclaw/openclaw",
@@ -10137,11 +10186,13 @@ describe("ci workflow guards", () => {
         repository: "openclaw/openclaw",
         runAttempt: 1,
         matrix: row,
+        steps: {
+          real_gateway_build: { outputs: {}, outcome: "success" as const },
+          ui_chromium: { outputs: {}, outcome: "success" as const },
+        },
       };
-      expect(evaluateWorkflowExpression(`\${{ ${suiteStep.if} }}`, context)).toBe(hasSuiteTargets);
-      expect(evaluateWorkflowExpression(`\${{ ${desktopStep.if} }}`, context)).toBe(
-        row.run_desktop,
-      );
+      expect(evaluateWorkflowCondition(suiteStep.if, context)).toBe(hasSuiteTargets);
+      expect(evaluateWorkflowCondition(desktopStep.if, context)).toBe(row.run_desktop);
       if (!hasSuiteTargets) {
         expect(row.run_desktop).toBe(true);
       }
@@ -10220,7 +10271,7 @@ describe("ci workflow guards", () => {
       }
       for (const name of ["checks-ui-e2e", "checks-ui-e2e-real-gateway"]) {
         expect(
-          evaluateWorkflowExpression(`\${{ ${readCiWorkflow().jobs[name].if} }}`, {
+          evaluateWorkflowCondition(readCiWorkflow().jobs[name].if, {
             eventName,
             repository: "openclaw/openclaw",
             runAttempt: 1,
@@ -10340,12 +10391,13 @@ describe("ci workflow guards", () => {
         repository: "openclaw/openclaw",
         runAttempt: 1,
         preflightOutputs: manifest.outputs,
+        steps: { node_setup: { outputs: {}, outcome: "success" } },
       };
       const bunSetup = ui.steps.find(
         (candidate: WorkflowStep) => candidate.name === "Setup pinned Bun test runtime",
       );
-      expect(evaluateWorkflowExpression(`\${{ ${ui.if} }}`, context)).toBe(selected);
-      expect(evaluateWorkflowExpression(`\${{ ${bunSetup.if} }}`, context)).toBe(true);
+      expect(evaluateWorkflowCondition(ui.if, context)).toBe(selected);
+      expect(evaluateWorkflowCondition(bunSetup.if, context)).toBe(true);
     },
   );
 
@@ -10738,7 +10790,9 @@ describe("ci workflow guards", () => {
       "paired runtime and Control UI build",
     );
     expect(realGatewayBuild.run).toBe("pnpm build");
-    expect(realGatewayBuild.if).toBeUndefined();
+    expect(realGatewayBuild.if).toBe(
+      "${{ !cancelled() && steps.node_setup.outcome == 'success' }}",
+    );
     expect(realGatewayBuild["continue-on-error"]).toBeUndefined();
     expect(realGatewayBuild.env).toEqual({
       OPENCLAW_BUILD_PRIVATE_QA: "1",
@@ -10755,7 +10809,7 @@ describe("ci workflow guards", () => {
     );
     expect(desktopProof).toEqual({
       name: "Prove desktop resize over node and SSH",
-      if: "matrix.run_desktop",
+      if: "${{ !cancelled() && steps.real_gateway_build.outcome == 'success' && matrix.run_desktop }}",
       env: {
         FROZEN_TARGET: "${{ needs.preflight.outputs.frozen_target }}",
         DESKTOP_PROOF_CHECKOUT_SHA: "${{ needs.preflight.outputs.checkout_revision }}",
@@ -10804,11 +10858,12 @@ describe("ci workflow guards", () => {
     for (const step of [desktopProof, desktopUpload]) {
       expect(
         realGatewayRows.filter(({ matrix }) =>
-          evaluateWorkflowExpression(`\${{ ${step.if} }}`, {
+          evaluateWorkflowCondition(step.if, {
             eventName: "push",
             repository: "openclaw/openclaw",
             runAttempt: 1,
             matrix,
+            steps: { real_gateway_build: { outputs: {}, outcome: "success" } },
           }),
         ),
       ).toHaveLength(1);
@@ -12268,7 +12323,7 @@ describe("ci workflow guards", () => {
     expect(compatibilityJob.name).toBe("checks-node-compat-node24");
     for (const eventName of ["push", "pull_request"] as const) {
       expect(
-        evaluateWorkflowExpression("${{ " + compatibilityJob.if + " }}", {
+        evaluateWorkflowCondition(compatibilityJob.if, {
           eventName,
           repository: "openclaw/openclaw",
           runAttempt: 1,
@@ -12344,7 +12399,7 @@ describe("ci workflow guards", () => {
     );
     const sha = "a".repeat(40);
     expect(
-      evaluateWorkflowExpression(`\${{ ${receipt.if} }}`, {
+      evaluateWorkflowCondition(receipt.if, {
         eventName: "workflow_dispatch",
         dispatchId,
         repository: "openclaw/openclaw",
@@ -12785,10 +12840,10 @@ describe("extension lint PR admission", () => {
             task,
             types: { ...types, failPackageScript: fallbackCalls[0] },
           });
-          expect(failed.status, failed.output).toBe(17);
-          expect(failed.calls).toEqual(fallbackCalls.slice(0, 1));
+          expect(failed.status, failed.output).toBe(task === "prod-types" ? 17 : 1);
+          expect(failed.calls).toEqual(fallbackCalls);
           expect(failed.rows.filter((entry) => entry.status !== 0)).toEqual([
-            { name: "central", status: 17 },
+            { name: "central", status: task === "prod-types" ? 17 : 1 },
           ]);
         }
       } else {
@@ -12810,9 +12865,7 @@ describe("extension lint PR admission", () => {
           check_plan_input_json: manifest.outputs.check_plan_input_json || "{}",
         },
       };
-      expect(evaluateWorkflowExpression(`\${{ ${ensureBase.if} }}`, context)).toBe(
-        eventName === "pull_request",
-      );
+      expect(evaluateWorkflowCondition(ensureBase.if, context)).toBe(eventName === "pull_request");
       expect(evaluateWorkflowExpression(ensureBase.with["base-sha"], context)).toBe("a".repeat(40));
       expect(evaluateWorkflowExpression(ensureBase.with["fetch-ref"], context)).toBe("main");
       expect(steps.indexOf(ensureBase)).toBeLessThan(
