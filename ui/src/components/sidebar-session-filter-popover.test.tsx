@@ -1,9 +1,10 @@
 /* @vitest-environment jsdom */
 
-import { html, render, type LitElement } from "lit";
 import { expect, it } from "vitest";
 import "../test-helpers/app-sidebar-suite.ts";
-import "./sidebar-session-filter-popover.ts";
+import { mountSolid } from "../test-helpers/mount-solid.ts";
+import { waitForSolid } from "../test-helpers/solid-settle.ts";
+import { SidebarSessionFilterPopover } from "./sidebar-session-filter-popover.tsx";
 
 it.each([false, true])(
   "places initial focus without overriding a chosen control (%s)",
@@ -14,16 +15,23 @@ it.each([false, true])(
     container.append(anchor);
     const holdReposition = (event: Event) => event.stopImmediatePropagation();
     container.addEventListener("wa-reposition", holdReposition, true);
-    render(
-      html`<openclaw-sidebar-session-filter-popover
-        .anchor=${anchor}
-        .content=${html`<div id="sidebar-sessions-status"><input type="radio" checked /></div>
-          <button>Sort</button>`}
-      ></openclaw-sidebar-session-filter-popover>`,
-      container,
+    mountSolid(
+      () => (
+        <SidebarSessionFilterPopover
+          anchor={anchor}
+          content={
+            <>
+              <div id="sidebar-sessions-status">
+                <input type="radio" checked />
+              </div>
+              <button>Sort</button>
+            </>
+          }
+        />
+      ),
+      { container },
     );
-    await container.querySelector<LitElement>("openclaw-sidebar-session-filter-popover")!
-      .updateComplete;
+    await waitForSolid(() => expect(container.querySelector("input")).not.toBeNull());
     const initial = container.querySelector("input")!;
     const control = container.querySelector<HTMLButtonElement>(
       "openclaw-sidebar-session-filter-popover button",
