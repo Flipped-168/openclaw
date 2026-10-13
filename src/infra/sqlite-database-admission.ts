@@ -69,9 +69,11 @@ const state = resolveGlobalSingleton(Symbol.for("openclaw.sqliteDatabaseAdmissio
 }));
 
 export function readSqliteDatabaseCleanClose(location: string): boolean {
+  const currentIdentity = prepareSqliteDatabaseAdmission(location);
   const record = pathAdmission(location);
   return (
     record !== undefined &&
+    record.identity === currentIdentity &&
     Atomics.load(new Int32Array(record.generation), SqliteDatabaseGenerationSlot.sealPresent) === 1
   );
 }

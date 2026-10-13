@@ -7,6 +7,7 @@ import {
   revokeSqliteDatabaseAdmissionsForPath,
   readSqliteDatabaseCleanClose,
 } from "../infra/sqlite-database-admission.js";
+import { resolveSqliteDatabaseFilePaths } from "../infra/sqlite-files.js";
 import * as integrity from "../infra/sqlite-integrity.js";
 import * as snapshots from "../infra/sqlite-snapshot-source.js";
 import { readAgentDatabaseAdmissionRefusal } from "./agent-database-admission.js";
@@ -17,9 +18,12 @@ import {
 } from "./openclaw-agent-db.js";
 import { assertOpenClawDatabasesReady } from "./openclaw-database-preflight.js";
 import { snapshotPreflightSourceManifest } from "./openclaw-database-preflight.test-support.js";
+import { OPENCLAW_STATE_SCHEMA_VERSION } from "./openclaw-state-db-contract.js";
 import {
   closeOpenClawStateDatabase,
   closeOpenClawStateDatabaseForTest,
+  closeOpenClawStateDatabaseAsync,
+  openOpenClawStateDatabase,
 } from "./openclaw-state-db.js";
 
 const tempDirs = useAutoCleanupTempDirTracker(afterEach);
@@ -59,6 +63,60 @@ it("reuses a clean closed-WAL receipt without copying the agent database", async
   );
   expect(fs.readFileSync(agentPath)).toEqual(before);
   expect(readSqliteDatabaseCleanClose(agentPath)).toBe(true);
+});
+
+it("reads a replacement database's committed WAL after loading the old clean seal", async () => {
+  const env = { OPENCLAW_STATE_DIR: tempDirs.make("openclaw-startup-replaced-seal-") };
+  const { path: statePath } = openOpenClawStateDatabase({ env });
+  await closeOpenClawStateDatabaseAsync();
+  const replacementPath = `${statePath}.replacement`;
+  const archivedPath = `${statePath}.previous`;
+  const sqlite = requireNodeSqlite();
+  const source = new sqlite.DatabaseSync(statePath, { readOnly: true });
+  try {
+    await sqlite.backup(source, replacementPath);
+  } finally {
+    source.close();
+  }
+  expect(readSqliteDatabaseCleanClose(statePath)).toBe(true);
+
+  // Move complete SQLite families; the old seal intentionally stays at the live path.
+  for (const file of resolveSqliteDatabaseFilePaths(statePath)) {
+    if (fs.existsSync(file)) {
+      fs.renameSync(file, `${archivedPath}${file.slice(statePath.length)}`);
+    }
+  }
+  for (const file of resolveSqliteDatabaseFilePaths(replacementPath)) {
+    if (fs.existsSync(file)) {
+      fs.renameSync(file, `${statePath}${file.slice(replacementPath.length)}`);
+    }
+  }
+
+  const replacement = new sqlite.DatabaseSync(statePath);
+  try {
+    replacement.exec(`
+      PRAGMA journal_mode=WAL;
+      PRAGMA wal_autocheckpoint=0;
+      PRAGMA user_version=${OPENCLAW_STATE_SCHEMA_VERSION + 1};
+    `);
+    expect(fs.statSync(`${statePath}-wal`).size).toBeGreaterThan(0);
+
+    await expect(
+      assertOpenClawDatabasesReady({ env, operation: "gateway-startup", config: {} }),
+    ).rejects.toMatchObject({
+      name: "OpenClawDatabaseSchemaPreflightError",
+      incompatibleDatabases: [
+        expect.objectContaining({
+          kind: "state",
+          path: statePath,
+          foundVersion: OPENCLAW_STATE_SCHEMA_VERSION + 1,
+          supportedVersion: OPENCLAW_STATE_SCHEMA_VERSION,
+        }),
+      ],
+    });
+  } finally {
+    replacement.close();
+  }
 });
 
 it.each(["DELETE", "WAL", "closed WAL"])(
