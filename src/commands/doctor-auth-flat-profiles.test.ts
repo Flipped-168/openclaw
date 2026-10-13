@@ -1128,7 +1128,7 @@ describe("legacy flat profiles through the canonical auth migration owner", () =
     const authority = reader.captureCredentialAuthority("openai:default")!;
     authority.observe(undefined);
     const pendingDenied: boolean[] = [];
-    const unsubscribe = authProfileCredentialPublication.subscribe((change) => {
+    const unsubscribe = authProfileCredentialPublication.subscribeFacts((change) => {
       if (change.kind === "pending") {
         try {
           authority.readCurrentCredential();

@@ -4,7 +4,7 @@ import {
   runOpenClawStateWriteTransaction,
 } from "../../state/openclaw-state-db.js";
 import { captureAuthProfileCredentialCommits } from "../../state/user-model-account-authority.js";
-import { writeAuthProfileJsonCell } from "../auth-profiles/sqlite-json.js";
+import { writeAuthProfileJsonCell } from "../auth-profiles/sqlite-json-write.js";
 import type { AuthProfileStore } from "../auth-profiles/types.js";
 
 serveWorkerTasks(async (value) => {

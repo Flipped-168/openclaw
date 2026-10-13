@@ -388,7 +388,7 @@ describe("OAuth refresh peer settlement", () => {
         ],
       }),
     ).rejects.toThrow(AggregateError);
-    expect(authority.readCurrentCredential()).toMatchObject(original);
+    expect(authority.readCurrentCredential()).toEqual(read(healthyAgentDir));
     expect(read(healthyAgentDir)).toMatchObject({
       type: "oauth",
       provider,

@@ -16,11 +16,8 @@ import {
   createEmptyAuthProfileStore,
   markRuntimePersistedProfiles,
 } from "./runtime-snapshot-owner.js";
-import {
-  readAuthProfileJsonCellText,
-  writeAuthProfileJsonCell,
-  deleteAuthProfileJsonCell,
-} from "./sqlite-json.js";
+import { writeAuthProfileJsonCell, deleteAuthProfileJsonCell } from "./sqlite-json-write.js";
+import { readAuthProfileJsonCellText } from "./sqlite-json.js";
 import { coerceAuthProfileState } from "./state.js";
 import { prepareAuthProfileStoreMutation } from "./store-mutation.js";
 import {

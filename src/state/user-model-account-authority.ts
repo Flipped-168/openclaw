@@ -281,7 +281,7 @@ authProfileCredentialPublication.subscribeFacts((change) => {
     for (const target of affected) {
       target.uncertain = true;
     }
-  } else {
+  } else if (change.kind === "committed") {
     const fact = change.receipt.facts.get("store");
     if (!fact || fact.kind === "unchanged") {
       return;
@@ -395,10 +395,9 @@ export function captureAuthProfileCredentialAuthority(
       );
     }
   };
-  assertCurrent();
+  // Preparation may overlap publication; only the effect reader grants current authority.
   return {
     observe(credential: AuthProfileCredential | undefined) {
-      assertCurrent();
       if (!retained.observed) {
         retained.credential = credential && structuredClone(credential);
         retained.observed = true;

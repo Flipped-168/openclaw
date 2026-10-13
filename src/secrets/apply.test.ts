@@ -656,6 +656,7 @@ describe("secrets apply", () => {
       version: 1 as const,
       order: { openai: ["openai:preexisting"] },
     };
+    registerResolvedAgentDir({ agentId: "first", agentDir: firstAgentDir, env: fixture.env });
     const firstDatabase = openOpenClawAgentDatabase({
       agentId: "first",
       path: firstStorePath,

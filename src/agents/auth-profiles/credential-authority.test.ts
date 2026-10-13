@@ -19,11 +19,8 @@ import {
 } from "../../state/user-model-account-authority.js";
 import { createExternalAuthRuntime } from "./external-auth.js";
 import { coercePersistedAuthProfileStore } from "./persisted-store.js";
-import {
-  deleteAuthProfileJsonCell,
-  readAuthProfileJsonCellText,
-  writeAuthProfileJsonCell,
-} from "./sqlite-json.js";
+import { deleteAuthProfileJsonCell, writeAuthProfileJsonCell } from "./sqlite-json-write.js";
+import { readAuthProfileJsonCellText } from "./sqlite-json.js";
 import { runAuthProfileWriteTransaction } from "./sqlite.js";
 import {
   captureAuthProfileStorePersistenceSnapshot,
@@ -243,7 +240,9 @@ describe.each(["shared-state", "agent"] as const)("%s credential authority", (ki
     current.write("later");
     expect(current.readPersisted()).toEqual(credential("later"));
     expect(() => current.authority.readCurrentCredential()).toThrow("authority is unavailable");
-    expect(current.capture).toThrow("authority is unavailable");
+    const cold = current.capture();
+    cold.observe(current.readPersisted());
+    expect(() => cold.readCurrentCredential()).toThrow("authority is unavailable");
   });
 
   it("publishes native prepared saves and exact-owned secret rollback through the same authority", () => {

@@ -223,7 +223,7 @@ it("permits bounded noncredential machine-state writes", () => {
 });
 
 it("counts canonical auth sinks and transitional generic sinks without file exemptions", () => {
-  const authCells = "src/agents/auth-profiles/sqlite-json.ts";
+  const authCells = "src/agents/auth-profiles/sqlite-json-write.ts";
   const machineState = "src/state/config-machine-state-write.ts";
   const write = `db.insertInto('auth_profile_store');
     db.insertInto('config_machine_state').values({ state_key: 'authProfiles.store' });`;

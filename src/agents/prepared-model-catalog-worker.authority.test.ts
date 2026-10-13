@@ -13,7 +13,7 @@ import {
 } from "../state/openclaw-state-db.js";
 import { captureOpenClawStateWorkerContext } from "../state/openclaw-state-worker-context.js";
 import { captureAuthProfileCredentialAuthority } from "../state/user-model-account-authority.js";
-import { writeAuthProfileJsonCell } from "./auth-profiles/sqlite-json.js";
+import { writeAuthProfileJsonCell } from "./auth-profiles/sqlite-json-write.js";
 import type { AuthProfileStore } from "./auth-profiles/types.js";
 import { createPreparedModelCatalogWorker } from "./prepared-model-catalog-worker.js";
 import type {
@@ -76,14 +76,16 @@ function fixture() {
       }),
     { database },
   );
-  const authority = captureAuthProfileCredentialAuthority(
-    context,
-    {
-      identity: `${context.admission.identity.key}:${context.admission.identity.birthtime ?? ""}`,
-      databasePath: database.path,
-    },
-    profileId,
-  );
+  const capture = () =>
+    captureAuthProfileCredentialAuthority(
+      context,
+      {
+        identity: `${context.admission.identity.key}:${context.admission.identity.birthtime ?? ""}`,
+        databasePath: database.path,
+      },
+      profileId,
+    );
+  const authority = capture();
   authority.observe(credential);
   const worker = createPreparedModelCatalogWorker({
     agentFacts: {
@@ -108,7 +110,7 @@ function fixture() {
     dispatched.resolve();
     return outcome.promise;
   });
-  return { authority, credential, worker, dispatched, outcome, database, profileId, env };
+  return { authority, capture, credential, worker, dispatched, outcome, database, profileId, env };
 }
 
 describe("catalog credential authority settlement", () => {
@@ -127,7 +129,11 @@ describe("catalog credential authority settlement", () => {
       maxWorkers: 1,
       workerOptions: { env: current.env, execArgv: resolveRuntimeWorkerThreadExecArgv(workerUrl) },
     });
+    let prepared: ReturnType<typeof current.capture> | undefined;
     transport.run.mockImplementation(() => {
+      prepared = current.capture();
+      prepared.observe(current.credential);
+      expect(() => prepared!.readCurrentCredential()).toThrow();
       expect(() => current.authority.readCurrentCredential()).toThrow();
       return pool.run(
         {
@@ -142,6 +148,8 @@ describe("catalog credential authority settlement", () => {
         "catalog failed after credential refresh",
       );
       expect(current.authority.readCurrentCredential()).toEqual(next);
+      prepared!.observe(current.credential);
+      expect(prepared!.readCurrentCredential()).toEqual(next);
     } finally {
       await pool.close();
     }
@@ -179,5 +187,8 @@ describe("catalog credential authority settlement", () => {
     current.outcome.reject(new Error("worker terminated"));
     await rejected;
     expect(() => current.authority.readCurrentCredential()).toThrow();
+    const prepared = current.capture();
+    prepared.observe(current.credential);
+    expect(() => prepared.readCurrentCredential()).toThrow();
   });
 });

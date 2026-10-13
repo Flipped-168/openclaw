@@ -31,6 +31,7 @@ function parseCredentialEntry(
   }
   return {
     ok: true,
+    // SAFETY: The credential normalizer owns variant field types; provider is validated above.
     credential: {
       ...typed,
       provider,
