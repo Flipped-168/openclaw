@@ -275,9 +275,11 @@ export function readSessionTranscriptModelContextAsync<T>(
         context,
         assertCurrent,
         capturedAdmission,
-        capturedAdmission ? readSource : undefined,
+        capturedAdmission || capturedThrough ? readSource : undefined,
       );
     },
     signal,
+    undefined,
+    capturedThrough?.storePath,
   );
 }
