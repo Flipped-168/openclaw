@@ -211,6 +211,7 @@ class SolidContent extends AsyncDirective {
     if (!component || !element) {
       return;
     }
+    const owner = this.owner ?? getOwner();
     const view = () => {
       // A legacy host can publish props during its parent's Solid commit.
       const [props, setProps] = createSignal(this.props, { ownedWrite: true });
@@ -232,8 +233,7 @@ class SolidContent extends AsyncDirective {
         </SolidContentPresentation>
       );
     };
-    // A nested top-level render would settle the parent before its refs are bound.
-    const owner = this.owner ?? getOwner();
+    // Nested top-level rendering can flush effects under the parent's render owner.
     this.dispose = runWithOwner(owner, () =>
       owner
         ? createRoot((dispose) => {
