@@ -111,6 +111,7 @@ it.each([false, true])("reads complete cold entry facts with lifecycle=%s", asyn
         storePath: database.path,
       });
       expect(statements.counts.all).toBe(1);
+      expect(transactions.mock.calls).toEqual([]);
       recordSessionParticipant(scope, { ...contribution, promptedAt: 4 });
       removeSessionMember(scope, "member");
       replaceSessionEntrySync(scope, {

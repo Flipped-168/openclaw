@@ -49,6 +49,7 @@ import {
   readSessionEntryCache,
 } from "./session-accessor.sqlite-entry-cache.js";
 import { assignSessionOwner } from "./session-accessor.sqlite-owner.js";
+import { setCanonicalSqliteSessionMainKey } from "./session-canonical-key.js";
 import { updateSessionGroupCategoriesInWorker } from "./session-group-categories.js";
 import { assignSessionOwnerInWorker } from "./session-metadata-write.async.js";
 import { recordSessionParticipantInWorker as recordSessionParticipant } from "./session-sharing-store.async.js";
@@ -405,9 +406,10 @@ it("commits aliased worker membership and participant facts before publishing, a
   });
 });
 
-it("prepares category keys in one statement and observes committed replacements", async () => {
+it("prepares admitted category keys in one statement and observes committed replacements", async () => {
   await withOpenClawTestState({ scenario: "minimal" }, async () => {
     const database = openOpenClawAgentDatabase({ agentId: "main" });
+    setCanonicalSqliteSessionMainKey(database, "main");
     const scope = {
       agentId: "main",
       storePath: database.path,

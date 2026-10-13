@@ -117,7 +117,6 @@ export function readSessionEntryCohort(
   const identity = source.identity;
   const requiresSnapshot = Boolean(
     transcript ||
-    runtimeTarget ||
     includeAuthProfileSource ||
     includeColdMetadata ||
     input.replyInitializationSessionKey,
@@ -183,6 +182,7 @@ export function readSessionEntryCohort(
     const authProfileSource = includeAuthProfileSource
       ? hasAgentAuthProfileSourceInDatabase(database.db)
       : undefined;
+    // A historical target may observe a newer key; live run admission owns the effect.
     const preparedRuntimeTarget = runtimeTarget && {
       ...runtimeTarget,
       sessionKey:
