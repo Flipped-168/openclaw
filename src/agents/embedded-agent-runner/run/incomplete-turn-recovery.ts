@@ -5,6 +5,7 @@ import { isTerminalAssistantError } from "../../../llm/utils/retry.js";
 import { hasAcceptedSessionSpawn } from "../../accepted-session-spawn.js";
 import { isPreDispatchToolCallRejectionMessage } from "../../failover/message-patterns.js";
 import { resolveReplyCompletion, resolveReplyExpectation } from "../../reply-completion.js";
+import { readToolEffectReceipt } from "../../tool-effect-receipt.js";
 import { TOOL_FAILURE_INSTRUCTION } from "../../tool-outcome-instructions.js";
 import { resolveSourceReplyDelivery } from "../delivery-evidence.js";
 import { isZeroUsageEmptyStopAssistantTurn } from "../empty-assistant-turn.js";
@@ -394,12 +395,21 @@ export function resolveEmptyResponseRetryInstruction(
       (message) => message.role === "toolResult" && message.isError,
     );
     const failure = messages[failureIndex];
-    // The latest failure must have reached the model before this rejection.
+    const latestUserIndex = messages.findLastIndex((message) => message.role === "user");
+    // A later refusal cannot erase an earlier failure that may have caused effects.
     consumedToolFailure =
-      failureIndex > messages.findLastIndex((message) => message.role === "user") &&
+      failureIndex > latestUserIndex &&
       failureIndex < messages.indexOf(assistant) &&
       failure?.role === "toolResult" &&
-      failure.toolName === params.attempt.lastToolError.toolName;
+      failure.toolName === params.attempt.lastToolError.toolName &&
+      messages
+        .slice(latestUserIndex + 1, failureIndex + 1)
+        .every(
+          (message) =>
+            message.role !== "toolResult" ||
+            !message.isError ||
+            readToolEffectReceipt(message)?.state === "not_started",
+        );
   }
   if (
     shouldSkipNonVisibleTurnRetry({

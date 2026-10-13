@@ -1,4 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { emitToolResultMessage } from "../../../../packages/agent-core/src/agent-stream-response.js";
+import { createToolExecutionErrorResult } from "../../../../packages/agent-core/src/tool-call-outcome.js";
+import { validateScriptFileForShellBleed } from "../../bash-tools.exec-script-preflight.js";
 import {
   buildEmbeddedRunnerAssistant,
   makeEmbeddedRunnerAttempt,
@@ -55,7 +58,27 @@ function rejectedCallAfterSettledTool(
   } satisfies Partial<TerminalInput>;
 }
 
-function refusedExecThenRejectedCall() {
+async function refusedExecResult(toolCallId = "call_exec") {
+  const result = await validateScriptFileForShellBleed({
+    command: "cat bad.py | python",
+    workdir: "/tmp",
+  }).then(
+    () => {
+      throw new Error("Expected script-preflight refusal");
+    },
+    (error: unknown) => createToolExecutionErrorResult(error),
+  );
+  return emitToolResultMessage(
+    {
+      toolCall: { type: "toolCall", id: toolCallId, name: "exec", arguments: {} },
+      result,
+      isError: true,
+    },
+    () => undefined,
+  );
+}
+
+async function refusedExecThenRejectedCall() {
   const failure: ToolErrorSummary = {
     toolName: "exec",
     executionStarted: false,
@@ -79,14 +102,7 @@ function refusedExecThenRejectedCall() {
       errorMessage: "Provider completed tool call with malformed JSON arguments",
     },
   );
-  const failedResult = {
-    role: "toolResult",
-    toolCallId: "call_exec",
-    toolName: "exec",
-    content: [{ type: "text", text: "exec preflight: complex interpreter invocation detected" }],
-    isError: true,
-    timestamp: 0,
-  } satisfies (typeof turn.attempt.messagesSnapshot)[number];
+  const failedResult = await refusedExecResult();
   turn.attempt.messagesSnapshot = [
     { role: "user", content: "Inspect the workspace", timestamp: 0 },
     buildEmbeddedRunnerAssistant({
@@ -97,6 +113,27 @@ function refusedExecThenRejectedCall() {
     turn.attemptAssistant,
   ];
   return { ...turn, failure, failedTool, failedResult, modelApi: "anthropic-messages" };
+}
+
+function prependFailedExec(
+  turn: Awaited<ReturnType<typeof refusedExecThenRejectedCall>>,
+  result: Awaited<ReturnType<typeof refusedExecResult>>,
+) {
+  turn.attempt.messagesSnapshot.splice(
+    1,
+    0,
+    buildEmbeddedRunnerAssistant({
+      stopReason: "toolUse",
+      content: [{ type: "toolCall", id: result.toolCallId, name: "exec", arguments: {} }],
+    }),
+    result,
+  );
+  turn.attempt.toolMetas.unshift({
+    toolName: "exec",
+    toolCallId: result.toolCallId,
+    isError: true,
+  });
+  turn.attempt.itemLifecycle = { startedCount: 2, completedCount: 2, activeCount: 0 };
 }
 
 describe("terminal resolution for a tool call rejected before dispatch", () => {
@@ -132,7 +169,7 @@ describe("terminal resolution for a tool call rejected before dispatch", () => {
   });
 
   it("continues once after a consumed exec refusal and a malformed different call", async () => {
-    const turn = refusedExecThenRejectedCall();
+    const turn = await refusedExecThenRejectedCall();
     const retryState = createEmbeddedRunTerminalRetryState();
     const activateInternalPrompt = vi.fn();
     const input = makeTerminalInput({
@@ -154,6 +191,15 @@ describe("terminal resolution for a tool call rejected before dispatch", () => {
     expect(activateInternalPrompt).toHaveBeenCalledOnce();
   });
 
+  it("continues after multiple consumed preflight refusals", async () => {
+    const turn = await refusedExecThenRejectedCall();
+    prependFailedExec(turn, await refusedExecResult("call_earlier"));
+
+    await expect(resolveEmbeddedRunTerminal(makeTerminalInput(turn))).resolves.toEqual({
+      action: "retry",
+    });
+  });
+
   it.each([
     "started",
     "unknown",
@@ -161,10 +207,11 @@ describe("terminal resolution for a tool call rejected before dispatch", () => {
     "unconsumed",
     "prior-turn",
     "different-tool",
+    "earlier-failure",
     "active",
     "async",
   ])("does not continue a %s tool failure", async (condition) => {
-    const turn = refusedExecThenRejectedCall();
+    const turn = await refusedExecThenRejectedCall();
     const snapshot = turn.attempt.messagesSnapshot;
     switch (condition) {
       case "started":
@@ -185,6 +232,16 @@ describe("terminal resolution for a tool call rejected before dispatch", () => {
         break;
       case "different-tool":
         turn.failure.toolName = "write";
+        break;
+      case "earlier-failure":
+        prependFailedExec(turn, {
+          role: "toolResult",
+          toolCallId: "call_earlier",
+          toolName: "exec",
+          content: [{ type: "text", text: "Command failed after starting" }],
+          isError: true,
+          timestamp: 0,
+        });
         break;
       case "active":
         turn.attempt.itemLifecycle.activeCount = 1;

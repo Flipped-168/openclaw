@@ -187,7 +187,7 @@ describe("agent tool definition adapter", () => {
       parameters,
       execute: async (_id, params) => {
         await validateScriptFileForShellBleed(params);
-        return { content: [] };
+        return { content: [], details: {} };
       },
     };
     const [definition] = toToolDefinitions([tool]);
