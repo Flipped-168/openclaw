@@ -228,8 +228,9 @@ class SolidContent extends AsyncDirective {
       );
     };
     // A nested top-level render would settle the parent before its refs are bound.
-    this.dispose = runWithOwner(this.owner, () =>
-      this.owner
+    const owner = this.owner ?? getOwner();
+    this.dispose = runWithOwner(owner, () =>
+      owner
         ? createRoot((dispose) => {
             insert(element, view());
             return () => {
