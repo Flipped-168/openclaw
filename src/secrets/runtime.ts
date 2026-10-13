@@ -244,7 +244,7 @@ export async function prepareSecretsRuntimeSnapshot(params: {
   });
 
   if (includeConfigRefs) {
-    collectConfigAssignments({
+    await collectConfigAssignments({
       config: resolvedConfig,
       context,
       loadablePluginOrigins,

@@ -35,7 +35,6 @@ import { agentCommandMock, rpcReq, testState } from "./test-helpers.js";
 const dispatch = vi.hoisted(() => ({ start: vi.fn<(params: StartChatDispatchParams) => void>() }));
 const turnBoundary = vi.hoisted(() => ({
   committing: false,
-  lastAcceptedInput: undefined as unknown,
   afterPrepare: undefined as (() => void) | undefined,
   afterCommit: undefined as (() => void) | undefined,
 }));
@@ -73,9 +72,6 @@ vi.mock("../state/openclaw-agent-execution.js", async (importOriginal) => {
                       turnBoundary.afterPrepare?.();
                     }
                     const result = await worker.execute(command, commandOptions);
-                    if (command.type === "session.actor.acceptInput") {
-                      turnBoundary.lastAcceptedInput = result;
-                    }
                     if (committing) {
                       turnBoundary.afterCommit?.();
                     }
@@ -104,7 +100,6 @@ const { createSessionStoreDir, openClient } = setupSessionCreateTestHarness(asyn
 
 afterEach(() => {
   turnBoundary.committing = false;
-  turnBoundary.lastAcceptedInput = undefined;
   turnBoundary.afterPrepare = undefined;
   turnBoundary.afterCommit = undefined;
   vi.restoreAllMocks();
@@ -521,12 +516,12 @@ test.for(["lost-worker-response", "restart-before-ack"] as const)(
   },
 );
 
-test("rolls back unacknowledged idle chat input when its atomic commit is refused", async () => {
+test("leaves idle chat input unaccepted when its durable commit is refused", async () => {
   const { storePath } = await createSessionStoreDir();
   const { ws } = await openClient();
-  const key = "agent:main:dashboard:idle-staging-preserved";
-  const message = "Idle input transfers custody only when its atomic commit succeeds.";
-  const runId = "idle-staging-preserved";
+  const key = "agent:main:dashboard:idle-commit-refused";
+  const message = "Idle input is accepted only after its durable commit.";
+  const runId = "idle-commit-refused";
   const target = { agentId: "main", sessionKey: key, storePath };
   dispatch.start.mockClear();
   dashboardTitleScheduleMocks.schedule.mockImplementation(() => {});
@@ -552,12 +547,7 @@ test("rolls back unacknowledged idle chat input when its atomic commit is refuse
     const entry = expectDefined(loadSessionEntry(target), "idle session");
     expect(entry.restartRecoveryDeliveryRunId).toBeUndefined();
     const scope = { ...target, sessionId: entry.sessionId };
-    const pending = await listSessionPendingInputs(scope);
-    expect(
-      pending,
-      JSON.stringify({ sent, lastAcceptedInput: turnBoundary.lastAcceptedInput }),
-    ).toEqual({ items: [], total: 0 });
-    expect(turnBoundary.lastAcceptedInput).toMatchObject({ kind: "rolled-back" });
+    expect(await listSessionPendingInputs(scope)).toEqual({ items: [], total: 0 });
     expect(
       (await loadTranscriptEvents(scope)).filter((event) =>
         JSON.stringify(event).includes(message),
