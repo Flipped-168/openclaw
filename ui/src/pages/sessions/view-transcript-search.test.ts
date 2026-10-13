@@ -237,6 +237,7 @@ describe("Sessions query clearing", () => {
       expect(input.value).toBe("keep me");
       expect(event.defaultPrevented).toBe(owner === "prevented");
     } finally {
+      overlay?.removeAttribute("open");
       overlay?.remove();
       container.remove();
     }
