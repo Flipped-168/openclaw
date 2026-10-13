@@ -54,8 +54,8 @@ export function renderAgentSelect(params: {
         .menuLabel=${t("newSession.agents")}
         .disabled=${params.disabled}
         .onSelect=${params.onSelect}
-        @wa-show=${() => params.onOpenChange(true)}
-        @wa-hide=${() => params.onOpenChange(false)}
+        @overlay-show=${() => params.onOpenChange(true)}
+        @overlay-hide=${() => params.onOpenChange(false)}
       ></openclaw-agent-select>
     </span>
   `;
