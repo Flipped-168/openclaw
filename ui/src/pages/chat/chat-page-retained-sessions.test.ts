@@ -3,7 +3,16 @@
 
 import { expectDefined } from "@openclaw/normalization-core";
 import { createRouter } from "@openclaw/uirouter";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createSignal, flush } from "solid-js";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  onTestFinished as registerTestCleanup,
+  vi,
+} from "vitest";
 import { createDeferred } from "../../../../test/helpers/promise.js";
 
 // mock-isolation: Retention fixtures own pane bindings and DOM custody; real tag registration would start domain lifecycles.
@@ -25,12 +34,21 @@ import {
   SESSION_NAVIGATION_INTENT_EVENT,
 } from "../../lib/sessions/navigation-handoff.ts";
 import { sessionNavigationTarget } from "../../lib/sessions/route-navigation.ts";
+import { createLitContentRef } from "../../lit/solid-bridge.ts";
+import { createApplicationContextProvider } from "../../test-helpers/application-context.ts";
+import { mountSolid } from "../../test-helpers/mount-solid.ts";
+import { createSolidApplicationContextProvider } from "../../test-helpers/solid-application-context.tsx";
 import { createStorageMock } from "../../test-helpers/storage.ts";
 import { QUEUED_EDIT_RETENTION_CHANGE_EVENT } from "./chat-page-retained-sessions.ts";
-import { settleChatPage, setNavigationContext } from "./chat-page.test-support.ts";
+import {
+  createChatPageNavigationContext,
+  settleChatPage,
+  setNavigationContext,
+} from "./chat-page.test-support.ts";
 import { ChatPage, chatPageState } from "./chat-page.ts";
 import { routeDraft } from "./route-draft.ts";
-import type { SessionChatRouteData } from "./route-loader.ts";
+import type { ChatRouteData, SessionChatRouteData } from "./route-loader.ts";
+import { renderChatRoute } from "./route-view.tsx";
 
 type RenderedPane = HTMLElement & {
   active: boolean;
@@ -121,6 +139,57 @@ describe("chat page retained sessions", () => {
     document.body.replaceChildren();
     localStorage.clear();
     vi.unstubAllGlobals();
+  });
+
+  it("keeps the page and warm pane through the outlet's route adapter and presentation changes", async () => {
+    const firstKey = "agent:main:main";
+    const nextKey = "agent:research:review";
+    const { context } = createChatPageNavigationContext();
+    const provider = createSolidApplicationContextProvider(context);
+    const container = document.body.appendChild(createApplicationContextProvider(context));
+    const [route, setRoute] = createSignal<{ data: ChatRouteData; presented: boolean }>({
+      data: { kind: "session", sessionKey: firstKey, face: "chat" },
+      presented: true,
+    });
+    const view = mountSolid(
+      () => {
+        const host = document.createElement("div");
+        createLitContentRef(() => renderChatRoute(route().data, false, route().presented))(host);
+        return host;
+      },
+      { container, wrapper: provider.wrapper },
+    );
+    await Promise.resolve();
+    flush();
+    const page = expectDefined(
+      view.container.querySelector<ChatPage>("openclaw-chat-page"),
+      "mounted route page",
+    );
+    await settleChatPage(page);
+    const firstPane = expectDefined(
+      page.querySelector<RenderedPane>("openclaw-chat-pane"),
+      "first route pane",
+    );
+
+    for (const presented of [false, true]) {
+      setRoute({
+        data: { kind: "session", sessionKey: nextKey, face: "dashboard" },
+        presented,
+      });
+      flush();
+      await settleChatPage(page);
+      expect(view.container.querySelector("openclaw-chat-page")).toBe(page);
+      expect(page.presented).toBe(presented);
+      expect(page.contains(firstPane)).toBe(true);
+    }
+    const nextPane = expectDefined(
+      [...page.querySelectorAll<RenderedPane>("openclaw-chat-pane")].find(
+        (pane) => pane.sessionKey === nextKey,
+      ),
+      "replacement route pane",
+    );
+    expect(nextPane).toMatchObject({ presented: true, routeFace: "dashboard" });
+    view.unmount();
   });
 
   it.each(["web", "visible"] as const)(
@@ -256,24 +325,47 @@ describe("chat page retained sessions", () => {
     expect(chatInputOwnerForContext(context).current).toBe("dock");
   });
 
-  it("binds newly resolved Home defaults even when the canonical route is equivalent", async () => {
-    const page = new ChatPage();
-    const { context, navigate, replace } = setNavigationContext(page);
-    page.data = { sessionKey: "main" };
-    document.body.append(page);
-    await settleChatPage(page);
-    context.gateway.snapshot.hello = {
-      snapshot: { sessionDefaults: { mainKey: "main", mainSessionKey: "agent:main:main" } },
-    } as GatewayHelloOk;
-    const pane = page.querySelector<RenderedPane>("openclaw-chat-pane")!;
+  it.each([
+    { routeKey: "main", canonicalKey: "agent:main:main", scope: "per-sender" },
+    { routeKey: "agent:main:main", canonicalKey: "global", scope: "global" },
+  ] as const)(
+    "keeps a route draft while binding $scope Home defaults",
+    async ({ routeKey, canonicalKey, scope }) => {
+      const previousHref = window.location.href;
+      registerTestCleanup(() => window.history.replaceState({}, "", previousHref));
+      window.history.replaceState({}, "", "/chat/main?draft=What+can+you+do%3F");
+      const page = new ChatPage();
+      const { context, navigate, replace } = setNavigationContext(page);
+      page.data = { sessionKey: routeKey };
+      document.body.append(page);
+      await settleChatPage(page);
+      context.agents.state.agentsList = {
+        defaultId: "main",
+        mainKey: "main",
+        scope,
+        agents: [{ id: "main" }],
+      };
+      context.gateway.snapshot.hello = {
+        snapshot: {
+          sessionDefaults: {
+            defaultAgentId: "main",
+            mainKey: "main",
+            mainSessionKey: canonicalKey,
+          },
+        },
+      } as GatewayHelloOk;
+      const pane = page.querySelector<RenderedPane>("openclaw-chat-pane")!;
+      page.data = { sessionKey: routeKey, draft: "What can you do?" };
 
-    pane.onPaneSessionChange?.(pane.paneId, "agent:main:main");
+      pane.onPaneSessionChange?.(pane.paneId, canonicalKey, { replace: true });
 
-    expect(context.gateway.setSessionKey).toHaveBeenLastCalledWith("agent:main:main");
-    expect(loadSettings().sessionKey).toBe("agent:main:main");
-    expect(navigate).not.toHaveBeenCalled();
-    expect(replace).not.toHaveBeenCalled();
-  });
+      expect(navigate).not.toHaveBeenCalled();
+      expect(replace).not.toHaveBeenCalled();
+      expect(context.gateway.setSessionKey).toHaveBeenLastCalledWith(canonicalKey);
+      expect(loadSettings().sessionKey).toBe(canonicalKey);
+      expect(getRouteDraftForActivePane(page)).toBe("What can you do?");
+    },
+  );
 
   it("preserves a pending Home draft when its bound pane adopts the global wire key after collapsing", async () => {
     const page = new ChatPage();

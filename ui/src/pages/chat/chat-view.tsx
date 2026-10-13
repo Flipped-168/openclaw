@@ -223,9 +223,15 @@ function ChatSurfaceContent(input: { view: Component<ChatViewInput>; viewProps: 
   );
 }
 
-function ChatSurface<S extends "transcript" | "composer">(input: {
-  surface: S;
-  surfaceProps: ControlUiSurfaceProps[S];
+type ChatSurfaceBinding = {
+  [Surface in "transcript" | "composer"]: {
+    "prop:surface": Surface;
+    "prop:props": ControlUiSurfaceProps[Surface];
+  };
+}["transcript" | "composer"];
+
+function ChatSurface(input: {
+  binding: ChatSurfaceBinding;
   viewProps: ChatViewInput;
   view: Component<ChatViewInput>;
   companion?: Component<ChatViewInput>;
@@ -236,14 +242,15 @@ function ChatSurface<S extends "transcript" | "composer">(input: {
     subscribe: (source, publish) => source?.subscribe(publish) ?? (() => {}),
     equality: "revision",
   });
-  const selected = createMemo(() => runtime.read()?.selectedReplacement(input.surface));
+  const selected = createMemo(() =>
+    runtime.read()?.selectedReplacement(input.binding["prop:surface"]),
+  );
   return (
     <Show when={selected()} fallback={<input.view {...input.viewProps} />}>
       <openclaw-plugin-view
-        prop:surface={input.surface}
-        prop:props={input.surfaceProps}
+        {...input.binding}
         prop:presented={input.viewProps.presented}
-        data-plugin-composer={input.surface === "composer" ? "" : undefined}
+        data-plugin-composer={input.binding["prop:surface"] === "composer" ? "" : undefined}
         prop:defaultView={solidContent(ChatSurfaceContent, {
           view: input.view,
           viewProps: input.viewProps,
@@ -412,13 +419,15 @@ function ChatContent(input: { props: ChatProps }) {
                       fallback={historyFailure(false)}
                     >
                       <ChatSurface
-                        surface="transcript"
-                        surfaceProps={{
-                          sessionKey: input.props.sessionKey,
-                          agentId: input.props.currentAgentId,
-                          messages: input.props.messages,
-                          stream: input.props.stream,
-                          loading: input.props.loading,
+                        binding={{
+                          "prop:surface": "transcript",
+                          "prop:props": {
+                            sessionKey: input.props.sessionKey,
+                            agentId: input.props.currentAgentId,
+                            messages: input.props.messages,
+                            stream: input.props.stream,
+                            loading: input.props.loading,
+                          },
                         }}
                         viewProps={viewProps()}
                         view={ChatTranscript}
@@ -461,18 +470,20 @@ function ChatContent(input: { props: ChatProps }) {
                     </Show>
                     <div class="chat-footer">
                       <ChatSurface
-                        surface="composer"
-                        surfaceProps={{
-                          sessionKey: input.props.sessionKey,
-                          agentId: input.props.currentAgentId,
-                          draft: input.props.draft,
-                          canSend: input.props.canSend && !input.props.submitDisabledReason,
-                          sending: input.props.sending,
-                          disabledReason:
-                            input.props.submitDisabledReason ?? input.props.disabledReason,
-                          setDraft: input.props.onDraftChange,
-                          send: async () => input.props.onSend(),
-                          abort: input.props.onAbort,
+                        binding={{
+                          "prop:surface": "composer",
+                          "prop:props": {
+                            sessionKey: input.props.sessionKey,
+                            agentId: input.props.currentAgentId,
+                            draft: input.props.draft,
+                            canSend: input.props.canSend && !input.props.submitDisabledReason,
+                            sending: input.props.sending,
+                            disabledReason:
+                              input.props.submitDisabledReason ?? input.props.disabledReason,
+                            setDraft: input.props.onDraftChange,
+                            send: async () => input.props.onSend(),
+                            abort: input.props.onAbort,
+                          },
                         }}
                         viewProps={viewProps()}
                         view={ChatComposerView}

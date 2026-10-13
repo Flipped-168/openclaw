@@ -239,7 +239,7 @@ class SolidContent extends AsyncDirective {
         </SolidContentPresentation>
       );
     };
-    this.dispose = runWithOwner(this.owner, () =>
+    this.dispose = runWithOwner(this.owner ?? getOwner(), () =>
       withinOwner
         ? createRoot((dispose) => {
             insert(element, view());
