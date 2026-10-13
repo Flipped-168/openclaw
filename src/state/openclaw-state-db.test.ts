@@ -16,6 +16,7 @@ import {
 import { resolveCronDeliveryPlan } from "../cron/delivery-plan.js";
 import { loadedCronStoreFromRows, loadCronRows } from "../cron/store/row-codec.js";
 import type { CronStoredJob } from "../cron/types.js";
+import { OLDER_OPERATOR_APPROVAL_SCHEMA_SQL } from "../gateway/operator-approval-store.older-reader.test-support.js";
 import { buildApprovalResolutionRef } from "../infra/approval-resolution-ref.js";
 import {
   countFailedDeliveryQueueEntries,
@@ -3099,16 +3100,13 @@ describe("openclaw state database", () => {
 
     const { DatabaseSync } = requireNodeSqlite();
     const legacyDb = new DatabaseSync(databasePath);
-    const currentSql = (
-      legacyDb
-        .prepare(
-          "SELECT sql FROM sqlite_schema WHERE type = 'table' AND name = 'operator_approvals'",
-        )
-        .get() as { sql: string }
-    ).sql;
-    legacyDb.exec("ALTER TABLE operator_approvals RENAME TO operator_approvals_current");
-    legacyDb.exec(currentSql.replace("'exec', 'plugin', 'system-agent'", "'exec', 'plugin'"));
-    legacyDb.exec("DROP TABLE operator_approvals_current");
+    legacyDb.exec("DROP TABLE operator_approvals");
+    legacyDb.exec(
+      OLDER_OPERATOR_APPROVAL_SCHEMA_SQL.replace(
+        "'exec', 'plugin', 'system-agent'",
+        "'exec', 'plugin'",
+      ),
+    );
     legacyDb.close();
 
     expect(detectOpenClawStateDatabaseSchemaMigrations(options)).toContainEqual({
