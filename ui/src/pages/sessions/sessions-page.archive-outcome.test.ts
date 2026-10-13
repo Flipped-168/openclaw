@@ -9,6 +9,7 @@ import {
   createTestSessionCapability,
   sessionsResult,
 } from "../../lib/sessions/session-capability.test-support.ts";
+import { waitForSolid } from "../../test-helpers/solid-settle.ts";
 import {
   createContext,
   createGateway,
@@ -155,8 +156,7 @@ describe("Sessions archive outcome lifetime", () => {
       }
       fixture.pending.resolve(result);
       await archived;
-      await fixture.toast.updateComplete;
-      expect(fixture.undo()).not.toBeNull();
+      await waitForSolid(() => expect(fixture.undo()).not.toBeNull());
       fixture.page.remove();
       fixture.undo()!.click();
       await vi.waitFor(() => expect(fixture.patches()).toHaveLength(2));
@@ -194,12 +194,12 @@ describe("Sessions archive outcome lifetime", () => {
       }
       fixture.pending.resolve(result);
       await archived;
-      await fixture.toast.updateComplete;
       if (reconnect === "after confirmation") {
-        expect(fixture.undo()).not.toBeNull();
+        await waitForSolid(() => expect(fixture.undo()).not.toBeNull());
         transition();
         fixture.undo()!.click();
       } else {
+        await fixture.toast.updateComplete;
         expect(fixture.undo()).toBeNull();
       }
       expect(fixture.patches()).toHaveLength(1);
@@ -211,7 +211,7 @@ describe("Sessions archive outcome lifetime", () => {
     const archived = fixture.page.archiveActions.archive(row);
     fixture.pending.resolve(result);
     await archived;
-    await fixture.toast.updateComplete;
+    await waitForSolid(() => expect(fixture.undo()).not.toBeNull());
     fixture.request.mockImplementation(async (method) => {
       if (method === "sessions.list") {
         return sessionsResult([{ ...row, sessionId: "replacement-session" }], 2);
