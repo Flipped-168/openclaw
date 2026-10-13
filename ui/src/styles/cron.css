@@ -161,6 +161,7 @@
 .cron-filter-popover {
   --oc-popover-padding: 0;
   --oc-overlay-max-width: min(280px, calc(100vw - 48px));
+  --oc-overlay-max-height: calc(100dvh - 16px);
 }
 
 .cron-filter-popover__trigger {
