@@ -41,6 +41,7 @@ declare module "@solidjs/web" {
     }
     interface IntrinsicElements {
       "openclaw-github-identity": HTMLAttributes<HTMLElement>;
+      "openclaw-plugins-page": HTMLAttributes<HTMLElement>;
       "wa-select": HTMLAttributes<WaSelect> & { "prop:value": WaSelect["value"] };
       "wa-option": HTMLAttributes<WaOption> & {
         value: WaOption["value"];
