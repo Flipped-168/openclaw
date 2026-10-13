@@ -7275,7 +7275,6 @@
 ["src/gateway/server-methods/sessions-goal.event-custody.test.ts","../session-request-agent.js","e44fd00c44dc9e0dfad5854a115899aed28f5b17b7c305126915251a8411e09b",1]
 ["src/gateway/server-methods/sessions-goal.event-custody.test.ts","./gateway-client-identity.js","e5479a16d8ce5ff7cc786a8470540e96c9122a7d742a0ab9f070bedf68309289",1]
 ["src/gateway/server-methods/sessions-goal.event-custody.test.ts","./session-change-event.js","be28038bbaecbfc52973981b12b48bcf1f34ae04bc23af78e78dd13162f45659",1]
-["src/gateway/server-methods/sessions-goal.event-custody.test.ts","./session-goal-request.js","d2eb8edee83d558c0b18d28339aebf46dc1635924d98eaad9551620afbc3ce7b",1]
 ["src/gateway/server-methods/sessions-goal.test.ts","./chat-send-handler.js","cac827f3923c02701d8ae3ef574e648f38edd096964b33a2f7fd68dc82bf4237",1]
 ["src/gateway/server-methods/sessions-groups.test.ts","../session-group-defaults-access.js","da30f442767a08ab0e8d559e1d143e983d8556eb7c277109e9184ae4b5358cd9",1]
 ["src/gateway/server-methods/sessions-groups.test.ts","../session-groups.js","1f59f5e5176d9aa2ee2d2f2029502be309a2485bf6b279abb0e5250c34e4007b",1]

@@ -317,6 +317,13 @@ describe("sessions_send gateway loopback", () => {
           return await prepareFacts(params);
         } catch (error) {
           preparationFailure = error;
+          if (error instanceof Error) {
+            const frames = error.stack
+              ?.split("\n")
+              .slice(1)
+              .map((frame) => frame.replaceAll(":", " at "));
+            console.error("Session preparation failure source locations", frames);
+          }
           throw error;
         }
       });
