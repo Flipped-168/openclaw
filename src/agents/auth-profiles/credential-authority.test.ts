@@ -13,12 +13,12 @@ import {
 } from "../../infra/gateway-state-owner.js";
 import { createSqliteCommitReceipt } from "../../infra/sqlite-commit-receipt.js";
 import { deferSqlitePostCommitPublication } from "../../infra/sqlite-post-commit.js";
-import { runSqliteImmediateTransactionSync } from "../../infra/sqlite-transaction.js";
 import { readDatabasePathIdentitySync } from "../../infra/sqlite-worker-identity.js";
 import { currentSqliteWorkerOperationAdmission } from "../../infra/sqlite-worker-operation-settlement.js";
 import { runWithSqliteWorkerStateContext } from "../../infra/sqlite-worker-state-context.js";
 import { saveAuthProfileStore as saveSdkAuthProfileStore } from "../../plugin-sdk/agent-runtime.js";
 import { upsertAuthProfile as upsertSdkAuthProfile } from "../../plugin-sdk/provider-auth.js";
+import { runSqliteImmediateTransactionSync } from "../../plugin-sdk/sqlite-runtime.js";
 import { readOpenClawAgentDatabaseIdentity } from "../../state/openclaw-agent-db-identity.js";
 import { closeOpenClawAgentDatabaseByPathAsync } from "../../state/openclaw-agent-db.js";
 import {
@@ -624,6 +624,7 @@ describe.each(["shared-state", "agent"] as const)("%s released SDK credential wr
                 current.database,
               );
             });
+            saveSdkAuthProfileStore(store("latest"), current.agentDir, saveOptions);
             expectRetainedCustody(rootPath);
             expect(() => current.authority.readCurrentCredential()).toThrow(
               "authority is unavailable",
@@ -638,9 +639,9 @@ describe.each(["shared-state", "agent"] as const)("%s released SDK credential wr
         expect(observed).toBeUndefined();
       } else {
         save();
-        expect(observed).toEqual(credential("supplied"));
+        expect(observed).toEqual(credential("latest"));
       }
-      const expected = credential(outcome === "commit" ? "supplied" : "original");
+      const expected = credential(outcome === "commit" ? "latest" : "original");
       expect(current.readPersisted()).toEqual(expected);
       expect(current.authority.readCurrentCredential()).toEqual(expected);
       const nextOwner = tryAcquireGatewayStateOwner(rootPath);
@@ -676,6 +677,7 @@ describe.each(["shared-state", "agent"] as const)("%s released SDK credential wr
         expect(() => writeThroughSdk(writer, current, "unknown")).toThrow();
         expectRetainedCustody(rootPath);
         expect(lease).toBeDefined();
+        expect(() => writeThroughSdk(writer, current, "must-stay-denied")).toThrow();
         const persisted = lease?.run(() =>
           inspectAuthProfileJsonCellReadOnly(
             { kind, path: current.database.path, env: current.env },
