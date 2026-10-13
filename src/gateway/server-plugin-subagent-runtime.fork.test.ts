@@ -38,6 +38,7 @@ const sideQuestion = vi.hoisted(() => vi.fn<typeof runBtwSideQuestion>());
 // mock-isolation: the Gateway admission is real; the provider runtime is replaced at its boundary.
 vi.mock("../agents/btw.js", () => ({ runBtwSideQuestion: sideQuestion }));
 const isolated = vi.hoisted(() => vi.fn<typeof runIsolatedCompletion>());
+// mock-isolation: keep provider runtime state outside the real Gateway admission and queue.
 vi.mock("../agents/isolated-completion.js", () => ({ runIsolatedCompletion: isolated }));
 
 const PLUGIN_ID = "test-session-fork";
@@ -193,11 +194,7 @@ describe("plugin session forks", () => {
       setDiagnosticsEnabledForProcess(true);
       let enqueued = 0;
       const stop = onInternalDiagnosticEvent((event) => {
-        if (
-          event.type === "queue.lane.enqueue" &&
-          event.lane === CommandLane.Subagent &&
-          ++enqueued === 4
-        ) {
+        if (event.type === "queue.lane.enqueue" && event.lane === "subagent" && ++enqueued === 4) {
           forksQueued.resolve();
         }
       });
