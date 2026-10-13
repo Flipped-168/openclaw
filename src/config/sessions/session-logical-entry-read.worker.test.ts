@@ -352,7 +352,7 @@ it("keeps writable schema-repair admission for a logical read", async () => {
   }
 });
 
-it.each([
+it.for([
   { stage: "while-queued", change: "file", registration: "changed" },
   { stage: "while-queued", change: "file", registration: "unchanged" },
   { stage: "while-queued", change: "caller", registration: "changed" },

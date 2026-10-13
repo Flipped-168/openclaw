@@ -1,7 +1,5 @@
 import { once } from "node:events";
 import { expectDefined } from "@openclaw/normalization-core/expect";
-import { sha256Hex } from "@openclaw/normalization-core/node-crypto";
-import { stableStringify } from "@openclaw/normalization-core/stable-stringify";
 import { afterEach, expect, test, vi } from "vitest";
 import { createDeferred, withinTest } from "../../test/helpers/promise.js";
 import type { AgentCommandGatewayIngressOpts } from "../agents/command/types.js";
@@ -12,7 +10,6 @@ import {
 import { managedWorktrees } from "../agents/worktrees/service.js";
 import { getRuntimeConfig } from "../config/io.js";
 import { loadSessionEntry, loadTranscriptEvents } from "../config/sessions/session-accessor.js";
-import { stageSessionPendingInput } from "../config/sessions/session-accessor.pending-inputs.js";
 import * as sessionInputActors from "../config/sessions/session-input-actor.js";
 import { listSessionPendingInputs } from "../config/sessions/session-pending-input-history.js";
 import { recordSessionParticipantInWorker } from "../config/sessions/session-sharing-store.async.js";
@@ -23,12 +20,9 @@ import { readLoggingConfig } from "../logging/config.js";
 import { applyLoggingConfig } from "../logging/logger.js";
 import { getSessionWorkAdmissionRelease } from "../sessions/session-lifecycle-admission.js";
 import { onSessionTranscriptUpdate } from "../sessions/transcript-events.js";
-import { buildPersistedUserTurnMessage } from "../sessions/user-turn-transcript.message.js";
 import { runOutsideStoreWriterContext } from "../shared/store-writer-queue.js";
 import { invalidateGatewayDeviceRevocation } from "./device-revocation.js";
-import { hasGatewayAdminScope } from "./operator-scopes.js";
 import type { StartChatDispatchParams } from "./server-methods/chat-send-agent-dispatch.types.js";
-import { gatewayClientSenderFields } from "./server-methods/gateway-client-identity.js";
 import type { GatewayRequestHandlerOptions } from "./server-methods/types.js";
 import { createGitWorkspace } from "./server.sessions.create.projects.test-support.js";
 import {
@@ -522,12 +516,12 @@ test.for(["lost-worker-response", "restart-before-ack"] as const)(
   },
 );
 
-test("retains previously accepted idle input custody when its retry transcript commit is refused", async () => {
+test("accepts neither idle input custody nor transcript when its atomic commit is refused", async () => {
   const { storePath } = await createSessionStoreDir();
   const { ws } = await openClient();
-  const key = "agent:main:dashboard:idle-staging-preserved";
-  const message = "Idle input keeps its separately accepted bytes.";
-  const runId = "idle-staging-preserved";
+  const key = "agent:main:dashboard:idle-atomic-refusal";
+  const message = "Idle input is retained only with its transcript commit.";
+  const runId = "idle-atomic-refusal";
   const target = { agentId: "main", sessionKey: key, storePath };
   dispatch.start.mockClear();
   dashboardTitleScheduleMocks.schedule.mockImplementation(() => {});
@@ -545,44 +539,6 @@ test("retains previously accepted idle input custody when its retry transcript c
       key,
     });
     expect(created.ok, JSON.stringify(created)).toBe(true);
-    const sessionId = expectDefined(created.payload?.sessionId, "created idle session id");
-    const send = chatSendOwner.handleDirectExternalChatSend;
-    vi.spyOn(chatSendOwner, "handleDirectExternalChatSend").mockImplementationOnce(
-      async (...args) => {
-        const { client, params } = args[0];
-        const sender = expectDefined(gatewayClientSenderFields(client).sender, "input sender");
-        const senderIsOwner = hasGatewayAdminScope(client);
-        // Reproduce custody accepted before an older Gateway committed its recovery claim.
-        const receipt = expectDefined(
-          await stageSessionPendingInput(
-            { ...target, sessionId },
-            {
-              runId,
-              message: buildPersistedUserTurnMessage({
-                text: message,
-                timestamp: 1,
-                idempotencyKey: `${runId}:user`,
-                sender,
-                senderIsOwner,
-                provenance: { kind: "external_user" },
-              }),
-              requestFingerprint: sha256Hex(
-                stableStringify([
-                  { ...params, sessionId, expectedLeafEntryId: undefined },
-                  sender.identity ?? sender.id,
-                  senderIsOwner,
-                ]),
-              ),
-              assertCurrent: () => {},
-            },
-          ),
-          "previously accepted idle input",
-        );
-        receipt.finish("interrupted");
-        await receipt.settled?.();
-        return await send(...args);
-      },
-    );
     const sent = await rpcReq(ws, "chat.send", { sessionKey: key, message, idempotencyKey: runId });
     expect(sent.ok).toBe(false);
     await getSessionWorkAdmissionRelease({ scope: storePath, identities: [key] });
@@ -592,8 +548,7 @@ test("retains previously accepted idle input custody when its retry transcript c
     expect(entry.restartRecoveryDeliveryRunId).toBeUndefined();
     const scope = { ...target, sessionId: entry.sessionId };
     const pending = await listSessionPendingInputs(scope);
-    expect(pending).toMatchObject({ total: 1, items: [{ state: "interrupted" }] });
-    expect(JSON.stringify(pending.items)).toContain(message);
+    expect(pending).toEqual({ total: 0, items: [] });
     expect(
       (await loadTranscriptEvents(scope)).filter((event) =>
         JSON.stringify(event).includes(message),

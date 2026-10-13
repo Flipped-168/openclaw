@@ -12,8 +12,6 @@ import {
 } from "../config/sessions/session-transcript-reconcile.js";
 import { refreshCostUsageCacheForAgent } from "../infra/session-cost-usage-aggregation.js";
 import { onSessionCostUsageUpdated } from "../infra/session-cost-usage-events.js";
-import * as usagePricing from "../infra/session-cost-usage-pricing-context.js";
-import * as usageWorkerScope from "../infra/session-cost-usage-worker-scope.js";
 import { AsyncWorkScope } from "../shared/async-work-scope.js";
 import { createDeferredCore } from "../shared/deferred.js";
 import { IncognitoSessionEndedError } from "../state/incognito-session-error.js";
@@ -25,22 +23,7 @@ import { createGatewayMetadataCloseFixture } from "./server-close.metadata.test-
 it("settles accepted actor reconciliation, usage and trajectory across the real close prelude", async ({
   signal,
 }) => {
-  const startedAt = performance.now();
-  const stages: string[] = [];
-  const mark = (stage: string) => {
-    stages.push(`${(performance.now() - startedAt).toFixed(1)}ms ${stage}`);
-  };
-  let diagnosed = false;
-  const diagnose = () => {
-    if (!diagnosed) {
-      diagnosed = true;
-      console.warn("[incognito-compute-close] stages:", stages.join(" | "));
-    }
-  };
-  signal.addEventListener("abort", diagnose, { once: true });
-  mark("fixture:start");
   const fixture = await createGatewayMetadataCloseFixture("incognito-compute-close");
-  mark("fixture:ready");
   const release = createDeferredCore();
   const finish = createDeferredCore();
   const prelude = createDeferredCore();
@@ -51,9 +34,7 @@ it("settles accepted actor reconciliation, usage and trajectory across the real 
   let unsubscribe: (() => void) | undefined;
   try {
     const port = await fixture.reservePort();
-    mark("server:start");
     const server = await fixture.start(port);
-    mark("server:ready");
     const kernel = fixture.kernels.get(port);
     assert(kernel);
     const authority = { assertCurrent() {} };
@@ -64,7 +45,6 @@ it("settles accepted actor reconciliation, usage and trajectory across the real 
       authority,
     });
     assert(actor);
-    mark("actor:ready");
     const target = {
       sessionKey: "agent:main:dashboard:incognito-compute-close",
       sessionId: "compute-close",
@@ -93,7 +73,6 @@ it("settles accepted actor reconciliation, usage and trajectory across the real 
         });
       assert(appended.ok);
     }
-    mark("transcript:ready");
     const binding = { actor, authority };
     const database = { agentId: actor.agentId, path: actor.path, env: fixture.state.env };
     const sessionFile = formatSqliteSessionFileMarker({
@@ -121,14 +100,12 @@ it("settles accepted actor reconciliation, usage and trajectory across the real 
       kernel.scheduler.signal,
     );
     assert(trajectory);
-    mark("trajectory:ready");
     const trajectoryReady = createDeferredCore();
     const trajectoryMaintenanceReplies: unknown[] = [];
     const append = actor.sessions.sideData;
     vi.spyOn(actor.sessions, "sideData").mockImplementation((...args) =>
       append(...args).then(async (value) => {
         if (args[1].type === "session.trajectory.append") {
-          mark("trajectory:append-held");
           trajectoryReady.resolve();
           await release.promise;
         } else if (args[1].type === "session.trajectory.retention.delete") {
@@ -144,47 +121,6 @@ it("settles accepted actor reconciliation, usage and trajectory across the real 
     void verified.promise.catch(() => undefined);
     const published = vi.fn();
     unsubscribe = onSessionCostUsageUpdated(published);
-    const preparePricing = usagePricing.prepareUsageCostPricing;
-    vi.spyOn(usagePricing, "prepareUsageCostPricing").mockImplementation(async (...args) => {
-      mark("usage:pricing-start");
-      const result = await preparePricing(...args);
-      mark("usage:pricing-done");
-      return result;
-    });
-    const withUsageDatabases = usageWorkerScope.withSessionCostUsageWorkerDatabases;
-    vi.spyOn(usageWorkerScope, "withSessionCostUsageWorkerDatabases").mockImplementation(
-      (options, operation) =>
-        withUsageDatabases(options, (scope) =>
-          operation({
-            ...scope,
-            run(input, runOptions) {
-              mark("usage:native-run-start");
-              const onRequest = runOptions.onRequest;
-              return scope
-                .run(input, {
-                  ...runOptions,
-                  beforeDispatch() {
-                    mark("usage:native-dispatch");
-                    runOptions.beforeDispatch?.();
-                  },
-                  onRequest: onRequest
-                    ? async (value, context) => {
-                        const kind =
-                          value && typeof value === "object" && "kind" in value
-                            ? String(value.kind)
-                            : "unknown";
-                        mark(`usage:request:${kind}:start`);
-                        const result = await onRequest(value, context);
-                        mark(`usage:request:${kind}:done`);
-                        return result;
-                      }
-                    : undefined,
-                })
-                .finally(() => mark("usage:native-run-done"));
-            },
-          }),
-        ),
-    );
     const withCompute = actor.sessions.withCompute;
     vi.spyOn(actor.sessions, "withCompute").mockImplementation(
       (caller, selected, operation, abort) =>
@@ -195,19 +131,14 @@ it("settles accepted actor reconciliation, usage and trajectory across the real 
             operation({
               assertCurrent: compute.assertCurrent,
               async execute(command) {
-                mark(`${command.type}:start`);
                 if (command.type === "session.compute.projection.finalize") {
-                  mark("projection:finalize-held");
                   projectionReady.resolve();
                   await release.promise;
                 } else if (command.type === "session.compute.store.writeRollup") {
-                  mark("usage:write-rollup-held");
                   usageReady.resolve();
                   await release.promise;
                 }
-                const result = await compute.execute(command);
-                mark(`${command.type}:done`);
-                return result;
+                return compute.execute(command);
               },
             }),
           abort,
@@ -216,7 +147,6 @@ it("settles accepted actor reconciliation, usage and trajectory across the real 
     kernel.scheduler.signal.addEventListener(
       "abort",
       () => {
-        mark("scheduler:aborted");
         work.beginClose(kernel.scheduler.signal.reason);
         prelude.resolve();
       },
@@ -224,7 +154,6 @@ it("settles accepted actor reconciliation, usage and trajectory across the real 
     );
     const stop = kernel.scheduler.stop.bind(kernel.scheduler);
     vi.spyOn(kernel.scheduler, "stop").mockImplementation(() => {
-      mark("scheduler:joining");
       joining.resolve();
       return stop();
     });
@@ -236,7 +165,6 @@ it("settles accepted actor reconciliation, usage and trajectory across the real 
       run() {
         job = work
           .run(async () => {
-            mark("job:start");
             startSessionTranscriptIndexReconcile(database, binding);
             const reconciling = waitForSessionTranscriptIndexReconcile(database, binding);
             const refreshing = refreshCostUsageCacheForAgent(refresh);
@@ -255,9 +183,7 @@ it("settles accepted actor reconciliation, usage and trajectory across the real 
             expect(() => startSessionTranscriptIndexReconcile(database, binding)).toThrow();
             await expect(refreshCostUsageCacheForAgent(refresh)).rejects.toThrow();
             await release.promise;
-            mark("job:released");
             expect((await accepted)[1]).toBe("refreshed");
-            mark("job:accepted-settled");
             expect(trajectoryMaintenanceReplies.at(-1)).toMatchObject({ complete: true });
             expect(trajectory.describeFlushState()).toBeUndefined();
             await trajectory.flush();
@@ -290,7 +216,6 @@ it("settles accepted actor reconciliation, usage and trajectory across the real 
               usageUpdatedAt: expect.any(Number),
             });
             actor.assertCurrent();
-            mark("job:verified");
             verified.resolve();
             await finish.promise;
           })
@@ -302,38 +227,29 @@ it("settles accepted actor reconciliation, usage and trajectory across the real 
       },
     });
     await vi.advanceTimersByTimeAsync(0);
-    mark("schedule:advanced");
     vi.useRealTimers();
     await withinTest(
       Promise.all([projectionReady.promise, usageReady.promise, trajectoryReady.promise]),
       signal,
     );
-    mark("gates:ready");
     expect(sql.queries).toEqual([]);
     sql.restore();
     sql = undefined;
     closing = server.close({ reason: "incognito compute close proof" });
-    mark("close:started");
     await withinTest(joining.promise, signal);
     expect(kernel.scheduler.signal.aborted).toBe(true);
     expect(() => actor.assertCurrent()).not.toThrow();
     // Other shutdown owners have settled; the scheduler now joins only this accepted work.
     sql = observeHostDataSql();
     release.resolve();
-    mark("gates:released");
     await withinTest(verified.promise, signal);
     expect(sql.queries).toEqual([]);
     sql.restore();
     sql = undefined;
     finish.resolve();
     await closing;
-    mark("close:finished");
     expect(() => actor.assertCurrent()).toThrow(IncognitoSessionEndedError);
-  } catch (error) {
-    diagnose();
-    throw error;
   } finally {
-    signal.removeEventListener("abort", diagnose);
     work.beginClose();
     vi.useRealTimers();
     prelude.resolve();
