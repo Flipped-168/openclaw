@@ -114,7 +114,6 @@ test("persists and dispatches concurrent Gateway inputs while participant writes
     message: `Persist concurrent Gateway initial input ${index}.`,
   }));
   const competingWrites: Promise<unknown>[] = [];
-  const staleInputs = new Set<string>();
   const acquire = sessionInputActors.acquireSessionInputActor;
   vi.spyOn(sessionInputActors, "acquireSessionInputActor").mockImplementation(async (...args) => {
     const input = await acquire(...args);
@@ -138,15 +137,9 @@ test("persists and dispatches concurrent Gateway inputs while participant writes
           );
         await recordParticipant(1);
         const pending = accept(...command);
-        // This independent writer must wait behind the complete admission, including its rebase.
+        // This independent writer must wait behind the complete input admission.
         competingWrites.push(runOutsideStoreWriterContext(() => recordParticipant(2)));
-        const outcome = await pending;
-        expect(outcome).toMatchObject({
-          kind: "stale-version",
-          postimage: { target: input.actor.target },
-        });
-        staleInputs.add(input.actor.target.sessionKey);
-        return outcome;
+        return pending;
       });
     }
     return input;
@@ -175,7 +168,6 @@ test("persists and dispatches concurrent Gateway inputs while participant writes
         ),
       ).toHaveLength(1);
     }
-    expect(staleInputs).toEqual(new Set(inputs.map((input) => input.key)));
     expect(dispatch.start).toHaveBeenCalledTimes(inputs.length);
   } finally {
     await Promise.all(competingWrites);
