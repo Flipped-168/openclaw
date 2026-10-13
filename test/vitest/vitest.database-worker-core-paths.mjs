@@ -465,6 +465,7 @@ export const databaseWorkerCoreTestFiles = [
   "src/auto-reply/reply/commands-session-restart.test.ts",
   "src/cli/node-cli/identity.test.ts",
   "src/node-host/local-id.test.ts",
+  "src/state/config-machine-state-write.test.ts",
   "src/state/onboarding-recommendations.test.ts",
   "src/commands/onboard-recommendations.test.ts",
   "src/wizard/setup.app-recommendations.test.ts",

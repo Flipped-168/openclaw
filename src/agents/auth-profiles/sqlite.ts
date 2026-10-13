@@ -25,8 +25,10 @@ import {
   runOpenClawStateWriteTransaction,
   type OpenClawStateDatabase,
 } from "../../state/openclaw-state-db.js";
+import { resolveOpenClawStateSqlitePath } from "../../state/openclaw-state-db.paths.js";
 import { resolveUserPath } from "../../utils.js";
 import { resolveRegisteredAgentIdForDir } from "../agent-dir-registry.js";
+import { withAuthProfileCredentialOwner } from "./credential-write-custody.js";
 import { resolveSharedAuthStoreOwnership, resolveSharedAuthStorePath } from "./path-resolve.js";
 import { prepareFreshSharedAuthStoreWriteAsync } from "./shared-store-bootstrap-async.js";
 import { prepareFreshSharedAuthStoreWrite } from "./shared-store-bootstrap.js";
@@ -390,8 +392,8 @@ export function prepareAuthProfileWriteEnvironment(
 export function prepareAuthProfileWriteTransaction(
   agentDir: string | undefined,
   options: AuthProfileWriteOptions,
+  env = prepareAuthProfileWriteEnvironment(options),
 ) {
-  const env = prepareAuthProfileWriteEnvironment(options);
   const sharedStoreWrite = prepareFreshSharedAuthStoreWrite({
     agentDir,
     allowExplicitMain: options.sharedStoreWrite === true,
@@ -434,35 +436,37 @@ export function runAuthProfileWriteTransaction<T>(
   options: AuthProfileWriteOptions = {},
 ): T {
   const existing = options.existingDatabaseTarget;
-  const { databaseTarget, sharedOwner } = existing
-    ? { databaseTarget: existing, sharedOwner: prepareAuthProfileSharedOwner(existing.env) }
-    : prepareAuthProfileWriteTransaction(agentDir, options);
-  const run = (database: AuthProfileDatabase) => {
-    const previous = authProfileTransactions.get(database);
-    const owner = previous ?? { ...sharedOwner, databasePath: database.path };
-    authProfileTransactions.set(database, owner);
-    try {
-      return operation(database, owner);
-    } finally {
-      if (!previous) {
-        authProfileTransactions.delete(database);
+  const env = existing?.env ?? prepareAuthProfileWriteEnvironment(options);
+  return withAuthProfileCredentialOwner(resolveOpenClawStateSqlitePath(env), () => {
+    const { databaseTarget, sharedOwner } = existing
+      ? { databaseTarget: existing, sharedOwner: prepareAuthProfileSharedOwner(env) }
+      : prepareAuthProfileWriteTransaction(agentDir, options, env);
+    const run = (database: AuthProfileDatabase) => {
+      const previous = authProfileTransactions.get(database);
+      const owner = previous ?? { ...sharedOwner, databasePath: database.path };
+      authProfileTransactions.set(database, owner);
+      try {
+        return operation(database, owner);
+      } finally {
+        if (!previous) {
+          authProfileTransactions.delete(database);
+        }
       }
+    };
+    if (databaseTarget.kind === "agent") {
+      return runOpenClawAgentWriteTransaction(run, databaseTarget, {
+        operationLabel: "auth-profiles.write",
+        ...(existing
+          ? {
+              repairAdmission: {
+                expectedIdentity: existing.identity,
+                assertCurrent: existing.assertCurrent,
+              },
+            }
+          : {}),
+      });
     }
-  };
-  if (databaseTarget.kind === "agent") {
-    return runOpenClawAgentWriteTransaction(run, databaseTarget, {
-      operationLabel: "auth-profiles.write",
-      ...(existing
-        ? {
-            repairAdmission: {
-              expectedIdentity: existing.identity,
-              assertCurrent: existing.assertCurrent,
-            },
-          }
-        : {}),
-    });
-  }
-  const { env } = databaseTarget;
-  const database = openOpenClawStateDatabase({ env, path: databaseTarget.path });
-  return runOpenClawStateWriteTransaction(run, { env, database });
+    const database = openOpenClawStateDatabase({ env, path: databaseTarget.path });
+    return runOpenClawStateWriteTransaction(run, { env, database });
+  });
 }
