@@ -115,7 +115,6 @@ const tempDirs = useAutoCleanupTempDirTracker((cleanup) =>
 );
 
 // Direct native fixtures hold their generation until their explicit close.
-
 function createNativeGeneration(
   agentId: string,
   pathname: string,

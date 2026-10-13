@@ -13,7 +13,6 @@ import {
 } from "../infra/sqlite-worker-identity.js";
 import {
   bindSqliteWorkerExecutionAuthority,
-  createSqliteWorkerOperationAdmission,
   type SqliteWorkerAdmissionFactory,
   type SqliteWorkerAdmissionRequest,
 } from "../infra/sqlite-worker-operation-admission.js";
