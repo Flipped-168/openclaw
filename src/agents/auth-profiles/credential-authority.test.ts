@@ -34,6 +34,7 @@ import {
 } from "../../state/user-model-account-authority.js";
 import { withEnv } from "../../test-utils/env.js";
 import { createExternalAuthRuntime } from "./external-auth.js";
+import { noteCommittedSharedAuthStoreOwnership } from "./path-resolve.js";
 import { coercePersistedAuthProfileStore } from "./persisted-store.js";
 import { deleteAuthProfileJsonCell, writeAuthProfileJsonCell } from "./sqlite-json-write.js";
 import { readAuthProfileJsonCellText } from "./sqlite-json.js";
@@ -762,6 +763,40 @@ describe("prepared persisted credential readers", () => {
       }
     },
   );
+
+  it("retains scoped legacy-main credentials without consulting ambient shared ownership", async () => {
+    const current = fixture("agent");
+    const agentDir = path.dirname(current.database.path);
+    noteCommittedSharedAuthStoreOwnership({ location: "legacy-main" }, current.env);
+    const ambient = fixture("shared-state");
+    ambient.write("ambient");
+    vi.stubEnv("OPENCLAW_STATE_DIR", ambient.env.OPENCLAW_STATE_DIR);
+    vi.stubEnv("OPENCLAW_AGENT_DIR", undefined);
+    try {
+      const read = await withAuthProfileStoreAgentDir(
+        agentDir,
+        current.env.OPENCLAW_STATE_DIR,
+        async () => {
+          const retained = await nativeRuntime.prepareAuthProfileCredentialRead({
+            agentDir,
+            profileId,
+            store: store("snapshot"),
+          });
+          expect(retained?.()).toEqual(
+            await nativeRuntime.findPersistedAuthProfileCredentialAsync({ agentDir, profileId }),
+          );
+          return retained;
+        },
+      );
+      expect(read?.()).toEqual(credential("original"));
+      current.write("updated");
+      expect(read?.()).toEqual(credential("updated"));
+      current.transact(({ db }) => deleteAuthProfileJsonCell(db, "store", "agent"));
+      expect(read?.()).toBeUndefined();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
 
   it("retains current scoped shared authority and does not revive a deleted persisted snapshot", async () => {
     const shared = fixture("shared-state");

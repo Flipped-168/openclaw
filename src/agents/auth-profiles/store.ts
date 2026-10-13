@@ -1217,10 +1217,14 @@ export function createAuthProfileStoreRuntime(
             reads.env,
             params.profileId,
           );
-        } else if (reads.effectiveAgentDir && requestedPath !== (await reads.sharedPath())) {
-          inherited = await prepare(
-            reads.runInCapturedScope(() => resolveRuntimeAuthProfileAgentDir()),
-          );
+        } else if (reads.effectiveAgentDir) {
+          const inheritedAgentDir = reads.options.inheritedAuthDir;
+          const inheritedPath = inheritedAgentDir
+            ? resolveAgentAuthPath(inheritedAgentDir)
+            : await reads.sharedPath();
+          if (requestedPath !== inheritedPath) {
+            inherited = await prepare(inheritedAgentDir);
+          }
         }
         // Keep the absent local dependency: a later local insert shadows shared credentials.
         const readCurrent = () => requested() ?? inherited?.();
