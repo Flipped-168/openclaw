@@ -8,7 +8,7 @@ import { resolveAgentAvatarUrl } from "../lib/avatar.ts";
 import { formatRelativeTimestamp } from "../lib/format.ts";
 import { t } from "../lib/reactive/i18n.ts";
 import { LitContent } from "../lit/solid-bridge.ts";
-import { PluginArtTile } from "../pages/plugins/plugin-art-tile.tsx";
+import { PluginArtTile } from "../pages/plugins/consent-dialog.tsx";
 import type { CommandPaletteItem } from "./command-palette-catalog-search.ts";
 import { renderAgentIdentityAvatar } from "./identity-avatar-view.ts";
 import { renderSessionOwnerAvatar } from "./session-owner-chip.ts";
@@ -166,11 +166,9 @@ export function CommandPaletteResult(props: {
             <PluginArtTile
               slug={pluginId}
               name={props.item.label}
-              options={{
-                iconUrl: props.pluginIconUrls?.[pluginId],
-                onIconError: () => props.onPluginIconError?.(pluginId),
-                className: "cmd-palette__plugin-icon",
-              }}
+              iconUrl={props.pluginIconUrls?.[pluginId]}
+              onIconError={() => props.onPluginIconError?.(pluginId)}
+              className="cmd-palette__plugin-icon"
             />
           )}
         </Match>
