@@ -1,7 +1,6 @@
 /* @vitest-environment jsdom */
 
 import { render } from "@solidjs/testing-library";
-import type { ReactiveElement } from "lit";
 import { createComponent, flush } from "solid-js";
 import { expect, it, onTestFinished, vi } from "vitest";
 import type { ControlUiHost, ControlUiReplacement } from "../../../src/plugin-sdk/control-ui.js";
@@ -72,7 +71,7 @@ it("keeps one sidebar and outlet while navigation moves between desktop and draw
   expect(view.container.querySelector("openclaw-router-outlet")).toBe(outlet);
 });
 
-it("delegates the live shell to a workspace plugin and restores it after deselection", async () => {
+it("restores the delegated shell after a pending update and can select another workspace", async () => {
   const { runtime, owner, view } = await mountShell();
   const shell = view.container.querySelector(".shell");
   const sidebar = view.container.querySelector("openclaw-app-sidebar");
@@ -107,17 +106,67 @@ it("delegates the live shell to a workspace plugin and restores it after deselec
   selected.mockImplementation((surface) => (surface === "workspace" ? replacement : undefined));
   owner.invalidate();
   flush();
-  const plugin = view.container.querySelector<ReactiveElement>("openclaw-plugin-view");
+  const plugin =
+    view.container.querySelector<HTMLElementTagNameMap["openclaw-plugin-view"]>(
+      "openclaw-plugin-view",
+    );
   expect(plugin).not.toBeNull();
   await settleLitElement(plugin!);
   const target = view.container.querySelector("[data-delegated-workspace]");
   expect(target?.querySelector(".shell")).toBe(shell);
   expect(target?.querySelector("openclaw-app-sidebar")).toBe(sidebar);
 
+  // A final shell update may already be queued when the user recovers the built-in view.
+  plugin!.props = { sessionKey: "agent:main:updated", routeId: "chat" };
   selected.mockReturnValue(undefined);
   owner.invalidate();
   flush();
   expect(view.container.querySelector("openclaw-plugin-view")).toBeNull();
   expect(view.container.querySelector(".shell")).toBe(shell);
   expect(view.container.querySelector("openclaw-app-sidebar")).toBe(sidebar);
+
+  await settleLitElement(plugin!);
+  expect(view.container.querySelector(".shell")).toBe(shell);
+  expect(view.container.querySelector("openclaw-app-sidebar")).toBe(sidebar);
+  expect(shell?.isConnected).toBe(true);
+
+  const customWorkspace: ControlUiRegistration<ControlUiReplacement> = {
+    ...replacement,
+    key: "fixture/custom-workspace",
+    value: {
+      id: "custom-workspace",
+      label: "Custom workspace",
+      surface: "workspace",
+      mount(container) {
+        const heading = document.createElement("h1");
+        heading.textContent = "Custom workspace";
+        container.append(heading);
+      },
+    },
+  };
+  owner.routeState = { routeId: "plugins" };
+  selected.mockImplementation((surface) => (surface === "workspace" ? customWorkspace : undefined));
+  owner.invalidate();
+  flush();
+  expect(view.container.querySelector("openclaw-plugin-view")).toBeNull();
+  expect(view.container.querySelector(".shell")).toBe(shell);
+
+  owner.routeState = { routeId: "dashboard" };
+  owner.invalidate();
+  flush();
+  const customPlugin =
+    view.container.querySelector<HTMLElementTagNameMap["openclaw-plugin-view"]>(
+      "openclaw-plugin-view",
+    );
+  expect(customPlugin).not.toBeNull();
+  await settleLitElement(customPlugin!);
+  expect(view.getByRole("heading", { name: "Custom workspace" })).toBeTruthy();
+
+  selected.mockReturnValue(undefined);
+  owner.invalidate();
+  flush();
+  await settleLitElement(customPlugin!);
+  expect(view.container.querySelector(".shell")).toBe(shell);
+  expect(view.container.querySelector("openclaw-app-sidebar")).toBe(sidebar);
+  expect(shell?.isConnected).toBe(true);
 });
