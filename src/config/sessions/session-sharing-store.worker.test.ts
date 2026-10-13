@@ -31,6 +31,7 @@ import { createDeferredCore } from "../../shared/deferred.js";
 import { readOpenClawAgentDatabaseIdentity } from "../../state/openclaw-agent-db-identity.js";
 import {
   closeOpenClawAgentDatabaseByPath,
+  closeOpenClawAgentDatabaseByPathAsync,
   openOpenClawAgentDatabase,
   resolveOpenClawAgentSqlitePath,
 } from "../../state/openclaw-agent-db.js";
@@ -644,6 +645,9 @@ it.each([
           expect(mutations).toBe(1);
           expect(projection.membership(database.path, scope.sessionKey)).toEqual([]);
           expect(projection.needsPreparation).toBe(true);
+          if (closeBeforeFailure) {
+            await closeOpenClawAgentDatabaseByPathAsync(database.path, database.agentId);
+          }
           expect((await readSessionMembersInWorker(scope)).members).toEqual([]);
           expect(() => sharing.readCurrent(cfg)).toThrow("Session access facts are unavailable");
           await expect(prepareSessionMutationFacts({ cfg, ...scope })).rejects.toThrow(

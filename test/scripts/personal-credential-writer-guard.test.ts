@@ -353,7 +353,7 @@ it("keeps session membership writes with the worker and canonical entry owner", 
       `,
     }),
   ).toEqual([
-    expect.stringContaining("raw authority-table write"),
     expect.stringContaining("unreviewed session membership writer reference"),
+    expect.stringContaining("raw authority-table write"),
   ]);
 });
