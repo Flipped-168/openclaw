@@ -7,11 +7,13 @@ import {
   setRuntimeConfigSnapshot,
 } from "../../config/runtime-snapshot.js";
 import { replaceSessionEntry } from "../../config/sessions/session-accessor.js";
+import { withIncognitoSessionActor } from "../../config/sessions/session-incognito-binding.js";
 import type { OpenClawConfig } from "../../config/types.js";
 import {
   SecretSurfaceUnavailableError,
   setActiveDegradedSecretOwners,
 } from "../../secrets/runtime-degraded-state.js";
+import { captureOpenClawAgentDatabaseExecution } from "../../state/openclaw-agent-execution.js";
 import { withOpenClawTestState } from "../../test-utils/openclaw-test-state.js";
 import { gitHubPublicApi } from "../github-public-api.js";
 import { createControlUiRequestOptions } from "./control-ui-request.test-support.js";
@@ -733,6 +735,55 @@ describe("controlUi.sessionPullRequests.checks", () => {
       });
     },
   );
+
+  it("loads CI details from the active incognito actor without a durable session", async () => {
+    await withOpenClawTestState({ label: "ci-details-incognito-actor" }, async (state) => {
+      const cfg: OpenClawConfig = { agents: { entries: { main: {} } } };
+      await state.writeConfig(cfg);
+      setRuntimeConfigSnapshot(cfg);
+      const actor = expectDefined(
+        await captureOpenClawAgentDatabaseExecution({
+          kind: "ephemeral",
+          agentId: "main",
+          env: state.env,
+          authority: { assertCurrent() {} },
+        }),
+        "CI details incognito actor",
+      );
+      const sessionKey = "agent:main:dashboard:incognito-ci-details";
+      try {
+        await withIncognitoSessionActor(actor, async () => {
+          await replaceSessionEntry(
+            { agentId: "main", sessionKey },
+            {
+              sessionId: "actor-ci",
+              updatedAt: 1,
+              incognito: true,
+              spawnedCwd: "/synthetic/actor-ci",
+            },
+          );
+          const load = vi.fn().mockResolvedValue(result);
+          const handler = expectDefined(
+            createControlUiHandlers(undefined, load)["controlUi.sessionPullRequests.checks"],
+            "CI checks handler",
+          );
+          const respond = vi.fn<RespondFn>();
+          await handler(
+            requestOptions({ ...params, sessionKey }, respond, {
+              context: { getRuntimeConfig: () => cfg },
+            }),
+          );
+          expect(load).toHaveBeenCalledWith(
+            expect.objectContaining({ agentId: "main", sessionKey }),
+            expect.objectContaining({ sessionScope: expect.stringContaining("actor-ci") }),
+          );
+          expect(respond).toHaveBeenCalledWith(true, result, undefined);
+        });
+      } finally {
+        await actor.close();
+      }
+    });
+  });
 
   it("keeps qualified global sessions bound to their resolved agent", async () => {
     await withOpenClawTestState({ label: "ci-details-global" }, async () => {

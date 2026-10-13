@@ -99,14 +99,7 @@ export async function loadUsageSessionSummaries(params: {
   dayBucket?: UsageDailyBucket;
   projection?: "overview";
 }) {
-  const {
-    entries: mergedEntries,
-    config,
-    startMs,
-    endMs,
-    includeUntimestamped,
-    dayBucket,
-  } = params;
+  const { entries: mergedEntries, ...readParams } = params;
   let cacheStatus: UsageCacheStatus | undefined;
   const usageByEntryIndex: Array<SessionCostSummary | null> = Array.from(
     { length: mergedEntries.length },
@@ -134,14 +127,9 @@ export async function loadUsageSessionSummaries(params: {
     Array.from(sessionsByAgent.entries()).map(([agentId, agentSessions]) => async () => ({
       agentSessions,
       loaded: await loadSessionCostSummariesFromCache({
+        ...readParams,
         sessions: agentSessions,
-        config,
         agentId,
-        startMs,
-        endMs,
-        includeUntimestamped,
-        dayBucket,
-        projection: params.projection,
       }),
     })),
   );

@@ -1,11 +1,6 @@
 import fsp from "node:fs/promises";
 import { isDeepStrictEqual } from "node:util";
 import { isRecord } from "@openclaw/normalization-core/record-coerce";
-import {
-  matchesAgentLifecycleBinding,
-  matchesAgentLifecycleBindingAsync,
-} from "../../agents/agent-lifecycle-registry.js";
-import { resolveConfiguredGitHubToolIdentity } from "../../agents/github-tool-identity.js";
 import { resolveGitRepositoryPaths } from "../../agents/worktrees/git.js";
 import { normalizeCapabilityProviderId } from "../../plugins/provider-registry-shared.js";
 import type { WorkerExecutionMode, WorkerProfile, WorkerProvider } from "../../plugins/types.js";
@@ -286,8 +281,8 @@ export function createWorkerProviderIntent(options: WorkerProviderIntentOptions)
   };
 
   // Retention checks immutable contents against local policy/runtime facts.
-  // Unknown observations throw; only confirmed incompatibility returns undefined/false.
-  // This closure cannot authorize an allocation or claim private source.
+  // Unknown observations throw; confirmed incompatibility returns undefined.
+  // Source authority belongs to allocation and transfer, not unused-capacity retention.
   const prepareRetention = async (record: WorkerEnvironmentRecord, signal?: AbortSignal) => {
     const project = readWorkerProjectSnapshot(record.profileSnapshot.project);
     const preparation = readWorkerProjectPreparation(record.profileSnapshot.project);
@@ -308,59 +303,8 @@ export function createWorkerProviderIntent(options: WorkerProviderIntentOptions)
       signal,
     };
     signal?.throwIfAborted();
-    const config = options.getConfig();
-    const configured = config.cloudWorkers?.profiles?.[record.profileId];
-    if (
-      !configured ||
-      normalizeCapabilityProviderId(configured.provider) !== record.providerId ||
-      !isDeepStrictEqual(
-        allocationSnapshot(
-          {
-            install: configured.install ?? "bundle",
-            settings: requireWorkerProfile(configured.settings ?? {}),
-          },
-          createOptions,
-        ),
-        allocationSnapshot(record.profileSnapshot, createOptions),
-      )
-    ) {
-      return undefined;
-    }
-    const isSourceOwnerCurrent = () => {
-      const sourceConfig = options.getConfig();
-      if ("source" in project) {
-        const { agent, identity } = project.source.owner;
-        const agentIdentity = resolveConfiguredGitHubToolIdentity({
-          config: sourceConfig,
-          agentId: agent.agentId,
-          scope: "agent",
-        });
-        const systemIdentity = resolveConfiguredGitHubToolIdentity({
-          config: sourceConfig,
-          agentId: agent.agentId,
-          scope: "system",
-        });
-        const selected = agentIdentity ?? systemIdentity;
-        const selectedSource = agentIdentity ? "agent-override" : "system-configured";
-        if (
-          selected
-            ? identity.source !== selectedSource ||
-              !("profileId" in identity) ||
-              identity.profileId !== selected.profileId
-            : identity.source !== "anonymous" && identity.source !== "system-detected"
-        ) {
-          return false;
-        }
-      }
-      return true;
-    };
-    if (!isSourceOwnerCurrent()) {
-      return undefined;
-    }
-    if (
-      "source" in project &&
-      !(await matchesAgentLifecycleBindingAsync(options.getConfig, project.source.owner.agent))
-    ) {
+    const configured = options.getConfig().cloudWorkers?.profiles?.[record.profileId];
+    if (!configured || normalizeCapabilityProviderId(configured.provider) !== record.providerId) {
       return undefined;
     }
     const resolved = resolveProfile(record.profileId, createOptions);
@@ -373,6 +317,10 @@ export function createWorkerProviderIntent(options: WorkerProviderIntentOptions)
     );
     if (
       providerId !== record.providerId ||
+      !isDeepStrictEqual(
+        profileSnapshot,
+        allocationSnapshot(record.profileSnapshot, createOptions),
+      ) ||
       !target ||
       !isDeepStrictEqual(target, preparation.target) ||
       !provider.requiresNodeEnrollment ||
@@ -381,13 +329,6 @@ export function createWorkerProviderIntent(options: WorkerProviderIntentOptions)
       return undefined;
     }
     const prepared = await options.prepareNodeArtifacts(profileSnapshot, signal);
-    const isCurrent = () =>
-      isSourceOwnerCurrent() &&
-      (!("source" in project) ||
-        matchesAgentLifecycleBinding(options.getConfig(), project.source.owner.agent));
-    if (!isCurrent()) {
-      return undefined;
-    }
     const observed = createWorkerProjectPreparationIdentity({
       namespace: options.projectNamespace,
       providerId,
@@ -399,7 +340,7 @@ export function createWorkerProviderIntent(options: WorkerProviderIntentOptions)
       setupRecipe: preparation.setupRecipe,
       runSetupScript: preparation.runSetupScript,
     });
-    return isDeepStrictEqual(observed, preparation) ? { isCurrent } : undefined;
+    return isDeepStrictEqual(observed, preparation) ? true : undefined;
   };
 
   const createWithProfile = async (

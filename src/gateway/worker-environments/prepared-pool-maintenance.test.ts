@@ -103,9 +103,7 @@ describe("prepared pool retention and source admission", () => {
         }
         return resolveIdleTimeout(profile);
       };
-      const prepareRetention = vi.fn<PoolOptions["prepareRetention"]>(async () => ({
-        isCurrent: () => true,
-      }));
+      const prepareRetention = vi.fn<PoolOptions["prepareRetention"]>(async () => true);
       if (failure === "retention") {
         prepareRetention.mockRejectedValueOnce(
           new Error(`Artifact archive temporarily unreadable (EBUSY): ${"x".repeat(4_096)}`),

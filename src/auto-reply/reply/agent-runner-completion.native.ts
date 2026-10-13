@@ -3,8 +3,6 @@ import {
   resolveSqliteScope,
   toDatabaseOptions,
 } from "../../config/sessions/session-accessor.sqlite-scope.js";
-import type { SessionActorReducer } from "../../config/sessions/session-actor-contract.js";
-import { reduceSessionActorEntry } from "../../config/sessions/session-actor-reducers.js";
 import { captureIncognitoSessionSource } from "../../config/sessions/session-incognito-binding.js";
 import type { InternalSessionEntry as SessionEntry } from "../../config/sessions/types.js";
 import { logVerbose } from "../../globals.js";
@@ -14,6 +12,10 @@ import {
   isIncognitoOpenClawAgentSqlitePath,
   resolveOpenClawAgentSqlitePath,
 } from "../../state/openclaw-agent-db.js";
+import {
+  createAgentTurnCompletionProjector,
+  withAgentTurnCompletionSettlement,
+} from "./agent-runner-completion.shared.js";
 import type { AgentTurnCompletion } from "./agent-runner-completion.types.js";
 
 /** Native incognito keeps its existing in-process entry owner until its worker cutover. */
@@ -62,43 +64,23 @@ export async function withNativeIncognitoTurnCompletion<T>(
   try {
     assertCurrent();
     let snapshot = assertEntry(loadSessionEntry(params));
-    const prepared: Parameters<AgentTurnCompletion["patch"]>[0][] = [];
+    const { project, patch } = createAgentTurnCompletionProjector();
     let finished = false;
-    const project = (entry: SessionEntry) => {
-      let next = structuredClone(entry);
-      const reducers: SessionActorReducer[] = [];
-      for (const preparation of prepared) {
-        const reducer = typeof preparation === "function" ? preparation(next) : preparation;
-        if (reducer) {
-          reducers.push(reducer);
-          next = reduceSessionActorEntry(next, [reducer]);
-        }
-      }
-      return { entry: next, reducers };
-    };
     const refresh = async () => {
       assertCurrent();
       snapshot = assertEntry(loadSessionEntry(params));
       return project(snapshot).entry;
     };
     const completion: AgentTurnCompletion = {
+      current: () => project(snapshot).entry,
       assertCurrent() {
         assertCurrent();
         return assertEntry(loadSessionEntry(params));
       },
-      current: () => project(snapshot).entry,
       refresh,
-      patch(reducer) {
-        if (finished) {
-          throw new Error("Terminal accounting is already settled");
-        }
-        prepared.push(reducer);
-      },
+      patch,
       async complete(pendingFinalDelivery) {
         if (finished) {
-          if (pendingFinalDelivery) {
-            throw new Error("Final delivery custody is already settled");
-          }
           return snapshot;
         }
         finished = true;
@@ -143,20 +125,7 @@ export async function withNativeIncognitoTurnCompletion<T>(
         }
       },
     };
-    let value: T;
-    try {
-      value = await consume(completion);
-    } catch (error) {
-      try {
-        await completion.complete();
-      } catch (settlementError) {
-        throw new AggregateError([error, settlementError], "Terminal accounting failed to settle", {
-          cause: settlementError,
-        });
-      }
-      throw error;
-    }
-    await completion.complete();
+    const value = await withAgentTurnCompletionSettlement(completion, consume);
     return { value };
   } finally {
     retained.release();

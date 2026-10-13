@@ -178,8 +178,7 @@ describe("prepared project retention compatibility", () => {
   it("checks canonical retained contents without source admission or an allocation authority", async () => {
     const { record, owner } = await setup();
     const retained = await owner.prepareRetention(record, fixture.abort.signal);
-    expect(retained).toBeDefined();
-    expect(retained!.isCurrent()).toBe(true);
+    expect(retained).toBe(true);
     expect(sourceAdmission).not.toHaveBeenCalled();
     expect(fixture.store.get(record.environmentId)).toEqual(record);
     expect(() =>
@@ -211,38 +210,6 @@ describe("prepared project retention compatibility", () => {
       expect(sourceAdmission).not.toHaveBeenCalled();
     },
   );
-
-  it.each(["owner selection", "agent deletion"] as const)(
-    "rejects known %s drift while provider observation is unavailable",
-    async (mutation) => {
-      const { record, owner, providerFor } = await setup();
-      const retained = await owner.prepareRetention(record, fixture.abort.signal);
-      expect(retained?.isCurrent()).toBe(true);
-      providerFor.mockClear().mockImplementation(() => {
-        throw new Error("Worker provider registry temporarily unavailable");
-      });
-      if (mutation === "owner selection") {
-        fixture.config.tools = { github: { kind: "oauth", profileId: `ghp_${"a".repeat(32)}` } };
-      } else {
-        fixture.config.agents = { entries: { other: {} } };
-      }
-
-      expect(retained?.isCurrent()).toBe(false);
-      expect(await owner.prepareRetention(record, fixture.abort.signal)).toBeUndefined();
-      expect(providerFor).not.toHaveBeenCalled();
-      expect(sourceAdmission).not.toHaveBeenCalled();
-    },
-  );
-
-  it("rejects agent removal during lifecycle preparation before preparing artifacts", async () => {
-    const { record, owner, prepareNodeArtifacts } = await setup();
-    const pending = owner.prepareRetention(record, fixture.abort.signal);
-    fixture.config.agents = { entries: { other: {} } };
-
-    await expect(pending).resolves.toBeUndefined();
-    expect(prepareNodeArtifacts).not.toHaveBeenCalled();
-    expect(sourceAdmission).not.toHaveBeenCalled();
-  });
 
   it("rejects an old runtime fingerprint when reconstructing retention after restart", async () => {
     const { record, owner, artifacts } = await setup();

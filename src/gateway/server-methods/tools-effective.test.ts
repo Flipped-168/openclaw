@@ -2,7 +2,7 @@
 // caching behavior, delivery context, and policy filtering.
 
 import { expectDefined } from "@openclaw/normalization-core";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { ErrorCodes } from "../../../packages/gateway-protocol/src/index.js";
 import type { McpToolCatalog } from "../../agents/agent-bundle-mcp-types.js";
 import { makeProviderModelFixture } from "../../agents/test-helpers/provider-model-fixture.js";
@@ -352,7 +352,6 @@ describe("tools.effective handler", () => {
       mock.mockReset();
     }
     testing.resetToolsEffectiveCacheForTest();
-    testing.setToolsEffectiveNowForTest();
     nodePluginToolSnapshotMocks.version = 1;
     runtimeMocks.resolveAgentWorkspaceDir.mockReturnValue("/tmp/workspace-main");
     runtimeMocks.resolveAgentDir.mockReturnValue("/tmp/agents/main/agent");
@@ -469,7 +468,8 @@ describe("tools.effective handler", () => {
 
   it("returns stale cached base inventory immediately while refreshing in the background", async () => {
     let now = 1_000;
-    testing.setToolsEffectiveNowForTest(() => now);
+    const clock = vi.spyOn(Date, "now").mockImplementation(() => now);
+    onTestFinished(() => clock.mockRestore());
     const stalePayload = makeCoreInventory({
       id: "read",
       label: "Read",

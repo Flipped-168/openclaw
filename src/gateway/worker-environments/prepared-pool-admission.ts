@@ -20,7 +20,7 @@ export type Generation = {
   preparationKey: string;
   demandAtMs: number;
   expiresAtMs: number;
-  retention?: { isCurrent: () => boolean };
+  retention?: boolean;
   deferred?: boolean;
   activationEligible?: boolean;
   presenceOwned?: boolean;
@@ -228,7 +228,7 @@ export function assertGenerationCurrent(ctx: PassContext, generation: Generation
       throw new Error("Authenticated human presence is unavailable for preparation");
     }
   }
-  if (!generation.retention?.isCurrent()) {
+  if (!generation.retention) {
     throw new Error("Prepared worker contents changed before allocation");
   }
   if (generation.intent) {

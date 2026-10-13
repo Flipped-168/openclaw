@@ -2,10 +2,8 @@ import { randomUUID } from "node:crypto";
 import type {
   SessionActorAuthority,
   SessionActorReceipt,
-  SessionActorReducer,
 } from "../../config/sessions/session-actor-contract.js";
 import { SessionActorReadInvalidatedError } from "../../config/sessions/session-actor-read-error.js";
-import { reduceSessionActorEntry } from "../../config/sessions/session-actor-reducers.js";
 import {
   runSessionActorCommand,
   withSessionActor,
@@ -15,6 +13,10 @@ import type { InternalSessionEntry as SessionEntry } from "../../config/sessions
 import { logVerbose } from "../../globals.js";
 import { SqliteWorkerError } from "../../infra/sqlite-worker-contract.js";
 import { withNativeIncognitoTurnCompletion } from "./agent-runner-completion.native.js";
+import {
+  createAgentTurnCompletionProjector,
+  withAgentTurnCompletionSettlement,
+} from "./agent-runner-completion.shared.js";
 import type {
   AgentTurnCompletion,
   AgentTurnRestartClaimCleanup,
@@ -98,56 +100,36 @@ export async function withAgentTurnCompletion<T>(
         }
       };
       let snapshot = await readCurrent();
-      const prepared: Parameters<AgentTurnCompletion["patch"]>[0][] = [];
+      const { project, patch } = createAgentTurnCompletionProjector();
       let finished = false;
-      const project = () => {
-        let next = structuredClone(snapshot.entry!);
-        const reducers: SessionActorReducer[] = [];
-        for (const preparation of prepared) {
-          const reducer = typeof preparation === "function" ? preparation(next) : preparation;
-          if (reducer) {
-            reducers.push(reducer);
-            next = reduceSessionActorEntry(next, [reducer]);
-          }
-        }
-        return { entry: next, reducers };
-      };
       const refresh = async () => {
         snapshot = await readCurrent();
-        return project().entry;
+        return project(snapshot.entry!).entry;
       };
       const completion: AgentTurnCompletion = {
+        current: () => project(snapshot.entry!).entry,
         assertCurrent() {
           assertCurrent();
           actor.assertCurrent();
           return actor.snapshot(authority)?.entry;
         },
-        current: () => project().entry,
         refresh,
-        patch(reducer) {
-          if (finished) {
-            throw new Error("Terminal accounting is already settled");
-          }
-          prepared.push(reducer);
-        },
+        patch,
         async complete(pendingFinalDelivery) {
           if (finished) {
-            if (pendingFinalDelivery) {
-              throw new Error("Final delivery custody is already settled");
-            }
             return snapshot.entry!;
           }
           finished = true;
           await refresh();
           let restartClaimCleanup = params.prepareRestartClaimCleanup?.(snapshot.entry!);
-          let { reducers } = project();
+          let { reducers } = project(snapshot.entry!);
           if (reducers.length === 0 && !pendingFinalDelivery && !restartClaimCleanup) {
             return snapshot.entry!;
           }
           const committed: { receipt?: SessionActorReceipt } = {};
           const outcome = await runSessionActorCommand(actor, authority, async (current) => {
             snapshot = current ?? (await readCurrent());
-            ({ reducers } = project());
+            ({ reducers } = project(snapshot.entry!));
             restartClaimCleanup = params.prepareRestartClaimCleanup?.(snapshot.entry!);
             return actor.completeTurn(
               {
@@ -200,22 +182,7 @@ export async function withAgentTurnCompletion<T>(
           return snapshot.entry!;
         },
       };
-      let value: T;
-      try {
-        value = await consume(completion);
-      } catch (error) {
-        try {
-          await completion.complete();
-        } catch (settlementError) {
-          throw new AggregateError(
-            [error, settlementError],
-            "Terminal accounting failed to settle",
-            { cause: settlementError },
-          );
-        }
-        throw error;
-      }
-      await completion.complete();
+      const value = await withAgentTurnCompletionSettlement(completion, consume);
       return { value };
     },
   );

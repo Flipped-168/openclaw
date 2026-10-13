@@ -33,7 +33,7 @@ describe("prepared worker builds", () => {
             entered.resolve();
             await release.promise;
           }
-          return { isCurrent: () => true };
+          return true;
         },
       });
       const running = fixture.schedule(owner);
