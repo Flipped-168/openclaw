@@ -163,8 +163,15 @@ export function adoptOpenClawAgentDatabaseSchema(
   if (adopted) {
     adoptCanonicalSessionValidationSchema(database.db);
     if (validation?.integrityVerifiedAt !== undefined) {
-      recordSqliteDatabaseIntegrity(database.db, validation.integrityVerifiedAt);
-      publishSqliteDatabaseAdmission(database.db, agentDatabaseValidationKey, validation);
+      if (readSqliteDatabaseIntegrityVerification(database.db) === undefined) {
+        recordSqliteDatabaseIntegrity(database.db, validation.integrityVerifiedAt);
+      }
+      if (
+        getSqliteDatabaseAdmission(database.db, agentDatabaseValidationKey)?.receiptId !==
+        validation.receiptId
+      ) {
+        publishSqliteDatabaseAdmission(database.db, agentDatabaseValidationKey, validation);
+      }
     }
   }
   return adopted;
