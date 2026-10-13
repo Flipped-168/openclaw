@@ -249,7 +249,7 @@ describeWithLanNodePairingServer("gateway ssh-verified node pairing auto-approve
     });
   });
 
-  test.each(["after rejection", "during handshake"] as const)(
+  test.each(["after rejection", "after authority read"] as const)(
     "approves device pairing and the first capability surface when SSH finishes %s",
     async (timing) => {
       await attemptWithSshVerify({
@@ -267,11 +267,11 @@ describeWithLanNodePairingServer("gateway ssh-verified node pairing auto-approve
           probeMock.mockImplementation(() => probe.promise);
           const readPairing = devicePairing.listDevicePairing;
           const reread =
-            timing === "during handshake"
+            timing === "after authority read"
               ? vi.spyOn(devicePairing, "listDevicePairing").mockImplementationOnce(async () => {
                   const pendingSnapshot = await readPairing();
-                  // Let the real SSH approval commit after the pending snapshot,
-                  // before the handshake revalidates current device authority.
+                  // Recovery follows the final authority read, so a newly committed
+                  // approval belongs to the next connection.
                   probe.resolve(matched);
                   const result = await work.waitForApprovalResult();
                   expect(result?.status).toBe("approved");
@@ -299,7 +299,10 @@ describeWithLanNodePairingServer("gateway ssh-verified node pairing auto-approve
               probe.resolve(matched);
             } else {
               expect(reread).toHaveBeenCalledOnce();
-              expect(first).toMatchObject({ ok: true, payload: { type: "hello-ok" } });
+              expect(first).toMatchObject({
+                ok: false,
+                error: { message: expect.stringContaining("pairing required") },
+              });
             }
             const result = await work.waitForApprovalResult();
             expect(result?.status).toBe("approved");
