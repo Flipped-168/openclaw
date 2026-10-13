@@ -67,7 +67,7 @@ function renderIdentityGateways(
               unknown: t("nav.gateway.unknown"),
             })[gateway().health];
           const openWindow = (event: MouseEvent) => {
-            if (event.metaKey || event.ctrlKey) {
+            if (capability.openWindow && (event.metaKey || event.ctrlKey)) {
               event.preventDefault();
               event.stopPropagation();
               capability.openWindow(gateway().id);
@@ -99,7 +99,7 @@ function renderIdentityGateways(
                 {gateway().isPrimary ? (
                   <span class="sidebar-gateway-primary">{t("nav.gateway.primaryTag")}</span>
                 ) : undefined}
-                {!selected() && index() < 9 ? (
+                {capability.openWindow && !selected() && index() < 9 ? (
                   <Kbd
                     {...{
                       class: "session-menu__shortcut",

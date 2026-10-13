@@ -144,12 +144,22 @@ function SidebarAgentRosterContent(
     () => ({ snapshot: roster.snapshot(), collapsed: collapsed() }),
     ({ snapshot, collapsed: collapsedIds }) => {
       const host = props.host;
-      host.rosterSessionSource = {
-        result: snapshot.result,
-        agentIds: snapshot.cards.map((card) => card.id),
-        collapsedAgentIds: collapsedIds,
-      };
-      host.requestUpdate();
+      const source = host.rosterSessionSource;
+      const agentIds = snapshot.cards.map((card) => card.id);
+      if (
+        !source ||
+        source.result !== snapshot.result ||
+        source.collapsedAgentIds !== collapsedIds ||
+        source.agentIds.length !== agentIds.length ||
+        source.agentIds.some((id, index) => id !== agentIds[index])
+      ) {
+        host.rosterSessionSource = {
+          result: snapshot.result,
+          agentIds,
+          collapsedAgentIds: collapsedIds,
+        };
+        host.sessionData.requestSessionDataUpdate();
+      }
     },
   );
   createEffect(
@@ -195,6 +205,7 @@ function SidebarAgentRosterContent(
           </Show>
           <For each={roster.cards()} keyed={(card) => card.id}>
             {(card) => {
+              const [menuOpened, setMenuOpened] = createSignal(false);
               const runVisibility = sessionRunVisibility;
               const sections = () =>
                 (props.sections ?? []).filter((section) =>
@@ -322,7 +333,10 @@ function SidebarAgentRosterContent(
                       <wa-dropdown
                         class="sidebar-customize-menu sidebar-agent-roster__menu"
                         placement="bottom-end"
-                        onWa-show={() => roster.host().dismissTransientMenus()}
+                        onWa-show={() => {
+                          roster.host().dismissTransientMenus();
+                          setMenuOpened(true);
+                        }}
                         onWa-select={(event: WaSelectEvent) => {
                           switch (event.detail.item.getAttribute("value")) {
                             case null:
@@ -355,27 +369,29 @@ function SidebarAgentRosterContent(
                         >
                           <Icon name="moreHorizontal" />
                         </button>
-                        <wa-dropdown-item class="sidebar-customize-menu__item" value="main">
-                          <span slot="icon" class="nav-item__icon">
-                            <Icon name="messageSquare" />
-                          </span>
-                          {t("agentsHome.openMainChat")}
-                        </wa-dropdown-item>
-                        <wa-dropdown-item class="sidebar-customize-menu__item" value="sessions">
-                          <span slot="icon" class="nav-item__icon">
-                            <Icon name="listTree" />
-                          </span>
-                          {t("agentsHome.allSessions")}
-                        </wa-dropdown-item>
-                        <wa-dropdown-item
-                          class="sidebar-customize-menu__item"
-                          value="collapse-others"
-                        >
-                          <span slot="icon" class="nav-item__icon">
-                            <Icon name="foldVertical" />
-                          </span>
-                          {t("agentsHome.collapseOthers")}
-                        </wa-dropdown-item>
+                        <Show when={menuOpened()}>
+                          <wa-dropdown-item class="sidebar-customize-menu__item" value="main">
+                            <span slot="icon" class="nav-item__icon">
+                              <Icon name="messageSquare" />
+                            </span>
+                            {t("agentsHome.openMainChat")}
+                          </wa-dropdown-item>
+                          <wa-dropdown-item class="sidebar-customize-menu__item" value="sessions">
+                            <span slot="icon" class="nav-item__icon">
+                              <Icon name="listTree" />
+                            </span>
+                            {t("agentsHome.allSessions")}
+                          </wa-dropdown-item>
+                          <wa-dropdown-item
+                            class="sidebar-customize-menu__item"
+                            value="collapse-others"
+                          >
+                            <span slot="icon" class="nav-item__icon">
+                              <Icon name="foldVertical" />
+                            </span>
+                            {t("agentsHome.collapseOthers")}
+                          </wa-dropdown-item>
+                        </Show>
                       </wa-dropdown>
                     </span>
                   </div>
@@ -422,6 +438,7 @@ function SidebarNewSessionMenuContent(
 ) {
   const roster = useRoster(props);
   const access = () => props.access;
+  const [opened, setOpened] = createSignal(false);
   let dropdown!: HTMLElement & { open: boolean };
   return (
     <>
@@ -432,7 +449,10 @@ function SidebarNewSessionMenuContent(
         class="sidebar-new-session-menu"
         placement="bottom-end"
         aria-label={t("agentChip.agents")}
-        onWa-show={() => roster.host().dismissTransientMenus()}
+        onWa-show={() => {
+          roster.host().dismissTransientMenus();
+          setOpened(true);
+        }}
         onWa-select={(event: WaSelectEvent) => {
           const item = event.detail.item;
           event.preventDefault();
@@ -457,34 +477,36 @@ function SidebarNewSessionMenuContent(
         >
           <Icon name="plus" />
         </button>
-        <For each={roster.cards()} keyed={(card) => card.id}>
-          {(card) => (
-            <wa-dropdown-item
-              value={card().id}
-              ref={(item) => {
-                // Run before Web Awesome synchronously emits its selection event.
-                item.addEventListener("click", (event) => {
-                  if (shouldHandleNavigationClick(event)) {
-                    event.preventDefault();
-                  } else {
-                    item.setAttribute("data-native-navigation", "");
-                  }
-                });
-              }}
-            >
-              <a
-                class="sidebar-agent-roster__link"
-                href={`${pathForRoute("new-session", roster.host().basePath)}${newSessionSearch(card().id)}`}
-                tabindex={-1}
+        <Show when={opened()}>
+          <For each={roster.cards()} keyed={(card) => card.id}>
+            {(card) => (
+              <wa-dropdown-item
+                value={card().id}
+                ref={(item) => {
+                  // Run before Web Awesome synchronously emits its selection event.
+                  item.addEventListener("click", (event) => {
+                    if (shouldHandleNavigationClick(event)) {
+                      event.preventDefault();
+                    } else {
+                      item.setAttribute("data-native-navigation", "");
+                    }
+                  });
+                }}
               >
-                <span class="sidebar-agent-roster__avatar" aria-hidden="true">
-                  <AgentIdentityAvatar agent={card()} />
-                </span>
-                <span>{card().name}</span>
-              </a>
-            </wa-dropdown-item>
-          )}
-        </For>
+                <a
+                  class="sidebar-agent-roster__link"
+                  href={`${pathForRoute("new-session", roster.host().basePath)}${newSessionSearch(card().id)}`}
+                  tabindex={-1}
+                >
+                  <span class="sidebar-agent-roster__avatar" aria-hidden="true">
+                    <AgentIdentityAvatar agent={card()} />
+                  </span>
+                  <span>{card().name}</span>
+                </a>
+              </wa-dropdown-item>
+            )}
+          </For>
+        </Show>
       </wa-dropdown>
     </>
   );

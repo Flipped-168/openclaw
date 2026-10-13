@@ -212,7 +212,10 @@ export class AppSidebarOwner extends AppSidebarSessionNavigationElement implemen
         () => this.context?.gateway,
         (gateway) => gateway.subscribeEvents((event) => this.narration?.handleEvent(event)),
       )
-      .watchStore(() => this.context?.agentIdentity)
+      .effect(
+        () => this.context?.agentIdentity,
+        (identity) => identity.subscribe(this.sessionData.requestSessionDataUpdate),
+      )
       .watchStore(
         () => this.context?.theme,
         () => this.syncCommunityInviteState(),
@@ -221,7 +224,10 @@ export class AppSidebarOwner extends AppSidebarSessionNavigationElement implemen
         () => this.context?.config,
         () => this.syncCommunityInviteState(),
       )
-      .watchStore(() => this.context?.plugins);
+      .effect(
+        () => this.context?.plugins,
+        (plugins) => plugins.subscribe(this.sessionData.requestSessionDataUpdate),
+      );
   }
   get nativeGatewaySnapshot(): NativeGatewaysSnapshot | null {
     // SAFETY: The macOS dashboard injects its encoded gateway snapshot at this key; browsers leave it unset.

@@ -18,6 +18,7 @@ import {
 } from "../test-helpers/app-sidebar.ts";
 import { createTestGatewayClient } from "../test-helpers/gateway-client.ts";
 import { settleLitElement } from "../test-helpers/lit-settle.ts";
+import { flush } from "../test-helpers/solid-settle.ts";
 import * as sidebarAgentSessionRows from "./app-sidebar-agent-session-rows.ts";
 import type { AppSidebarSessionNavigationElement } from "./app-sidebar-session-navigation.ts";
 import { SidebarSessionProjection } from "./app-sidebar-session-projection.ts";
@@ -279,13 +280,22 @@ describe("sidebar projection memo", () => {
     },
   );
 
-  it("updates roster selection and menu state without reprojecting rows or sections", async () => {
+  it("updates roster selection without rebuilding an unchanged new-session menu", async () => {
     const mounted = await mountRoster();
     const sidebar = mounted.sidebar as unknown as Sidebar;
     sidebar.sidebarAgentsMode = "roster";
     await settleRoster(mounted.sidebar);
-    await rosterActivityStore(mounted.context).refresh();
+    const source = sidebar.rosterSessionSource;
+    const refresh = rosterActivityStore(mounted.context).refresh();
+    flush();
+    expect(sidebar.rosterSessionSource).toBe(source);
+    await refresh;
     await settleRoster(mounted.sidebar);
+    const newSession = sidebar.querySelector(".sidebar-new-session-menu")!;
+    newSession.dispatchEvent(new Event("wa-show"));
+    flush();
+    const menuItems = [...newSession.querySelectorAll("wa-dropdown-item")];
+    expect(menuItems).toHaveLength(3);
     const sessionKey = "agent:main:recent";
     const row = () => sidebar.querySelector(`[data-session-key="${sessionKey}"]`);
     expect(row()).not.toBeNull();
@@ -308,6 +318,10 @@ describe("sidebar projection memo", () => {
     );
     expect(projectRows).not.toHaveBeenCalled();
     expect(sections).not.toHaveBeenCalled();
+    expect(sidebar.querySelector(".sidebar-new-session-menu")).toBe(newSession);
+    const retainedItems = [...newSession.querySelectorAll("wa-dropdown-item")];
+    expect(retainedItems).toHaveLength(menuItems.length);
+    retainedItems.forEach((item, index) => expect(item).toBe(menuItems[index]));
   });
 
   it("invalidates live attention, expiry, outbox snapshots, and store-owned PR and archive facts", async () => {

@@ -8,6 +8,7 @@ import type { AgentsListResult } from "../../api/types.ts";
 import { loadSettings, patchSettings } from "../../app/settings.ts";
 import { SIDEBAR_SESSION_PAGE_SIZE } from "../../components/app-sidebar-session-types.ts";
 import { rosterActivityStore } from "../../lib/agents/roster-activity-store.ts";
+import { flush } from "../solid-settle.ts";
 import {
   agentIds,
   mountRoster,
@@ -313,15 +314,41 @@ describe("AppSidebar agent roster", () => {
     expect(context.agentSelection.state).toEqual({ selectedId: "recent", scopeId: "recent" });
   });
 
-  it("offers new sessions for agents in group order from the brand menu", async () => {
+  it("defers agent menus and offers new sessions in group order after opening", async () => {
     const { sidebar } = await mountRoster();
     const onOpen = vi.fn();
     sidebar.onOpenNewSession = onOpen;
     await toggleRoster(sidebar);
     await vi.waitFor(() => expect(agentIds(sidebar)).toHaveLength(3));
+    expect(sidebar.querySelectorAll(".sidebar-agent-roster__menu wa-dropdown-item")).toHaveLength(
+      0,
+    );
+    const agentMenu = sidebar.querySelector(
+      '[data-agent-group="main"] .sidebar-agent-roster__menu',
+    )!;
+    agentMenu.dispatchEvent(new Event("wa-show"));
+    flush();
+    const agentOptions = [...agentMenu.querySelectorAll("wa-dropdown-item")];
+    expect(agentOptions.map((item) => item.getAttribute("value"))).toEqual([
+      "main",
+      "sessions",
+      "collapse-others",
+    ]);
+    agentMenu.dispatchEvent(new Event("wa-hide"));
+    agentMenu.dispatchEvent(new Event("wa-show"));
+    flush();
+    const retainedAgentOptions = [...agentMenu.querySelectorAll("wa-dropdown-item")];
+    expect(retainedAgentOptions).toHaveLength(agentOptions.length);
+    retainedAgentOptions.forEach((item, index) => expect(item).toBe(agentOptions[index]));
+    expect(sidebar.querySelectorAll(".sidebar-agent-roster__menu wa-dropdown-item")).toHaveLength(
+      3,
+    );
     const menus = sidebar.querySelectorAll(".sidebar-new-session-menu");
     expect(menus).toHaveLength(1);
     for (const menu of menus) {
+      expect(menu.querySelectorAll("wa-dropdown-item")).toHaveLength(0);
+      menu.dispatchEvent(new Event("wa-show"));
+      flush();
       const options = [...menu.querySelectorAll("wa-dropdown-item")];
       expect(options.map((item) => item.getAttribute("value"))).toEqual(agentIds(sidebar));
       expect(options.map((item) => item.querySelector("a")?.getAttribute("href"))).toEqual(
@@ -331,6 +358,12 @@ describe("AppSidebar agent roster", () => {
       await vi.waitFor(() =>
         expect(options[2]?.querySelector(".identity-avatar__agent-face")).not.toBeNull(),
       );
+      menu.dispatchEvent(new Event("wa-hide"));
+      menu.dispatchEvent(new Event("wa-show"));
+      flush();
+      const retainedOptions = [...menu.querySelectorAll("wa-dropdown-item")];
+      expect(retainedOptions).toHaveLength(options.length);
+      retainedOptions.forEach((item, index) => expect(item).toBe(options[index]));
     }
     menus[0]?.dispatchEvent(
       new CustomEvent("wa-select", {
