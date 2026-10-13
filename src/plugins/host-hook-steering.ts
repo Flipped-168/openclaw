@@ -1,6 +1,6 @@
 import { resolveSessionAgentId } from "../agents/agent-scope.js";
 import { resolveActiveEmbeddedRunSessionId } from "../agents/embedded-agent-runner/active-run-projections.js";
-import { queueEmbeddedAgentMessageWithOutcomeAsync } from "../agents/embedded-agent-runner/runs.js";
+import { queueGuardedEmbeddedAgentMessageWithOutcomeAsync } from "../agents/embedded-agent-runner/runs.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { createUserTurnTranscriptRecorder } from "../sessions/user-turn-transcript.js";
 import type { PluginActiveRunSteerParams, PluginActiveRunSteerResult } from "./plugin-api.types.js";
@@ -36,16 +36,30 @@ export async function steerPluginActiveRun(params: {
     },
   });
   params.assertCurrent();
-  const outcome = await queueEmbeddedAgentMessageWithOutcomeAsync(sessionId, params.input.text, {
-    steeringMode: "all",
-    debounceMs: 0,
-    waitForTranscriptCommit: false,
-    isInboundUserMessage: false,
-    allowPendingUserInputAnswer: false,
-    assertCurrent: params.assertCurrent,
-    userTurnTranscriptRecorder: recorder,
-  });
+  const outcome = await queueGuardedEmbeddedAgentMessageWithOutcomeAsync(
+    sessionId,
+    params.input.text,
+    {
+      steeringMode: "all",
+      debounceMs: 0,
+      waitForTranscriptCommit: false,
+      isInboundUserMessage: false,
+      allowPendingUserInputAnswer: false,
+      assertCurrent: params.assertCurrent,
+      userTurnTranscriptRecorder: recorder,
+    },
+    () => {
+      params.assertCurrent();
+      return true;
+    },
+  );
   return outcome.queued
     ? { steered: true, ...(outcome.runId ? { runId: outcome.runId } : {}) }
-    : { steered: false, reason: outcome.reason };
+    : {
+        steered: false,
+        reason:
+          outcome.reason === "guarded_injection_unsupported"
+            ? "active runtime does not support guarded steering"
+            : outcome.reason,
+      };
 }

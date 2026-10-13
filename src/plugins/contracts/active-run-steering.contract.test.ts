@@ -101,6 +101,26 @@ describe("plugin active-run steering", () => {
     expect(claimAnswer).not.toHaveBeenCalled();
   });
 
+  it("refuses an active V1 runtime before entering its transport queue", async () => {
+    const { api } = createApi();
+    const queueMessage = vi.fn(async () => {});
+    setActiveEmbeddedRun(
+      sessionId,
+      {
+        ...createEmbeddedRunHandle({ runId: "legacy-run" }),
+        messageInjection: { isAvailable: () => true, queueMessage },
+      },
+      sessionKey,
+    );
+    await expect(
+      api.session.workflow.steerActiveRun({ sessionKey, text: "Guidance" }),
+    ).resolves.toEqual({
+      steered: false,
+      reason: "active runtime does not support guarded steering",
+    });
+    expect(queueMessage).not.toHaveBeenCalled();
+  });
+
   it.each(["no_active_run", "not_streaming", "runtime_rejected"] as const)(
     "returns a reason instead of throwing for %s",
     async (reason) => {

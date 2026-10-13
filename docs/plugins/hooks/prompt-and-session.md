@@ -374,13 +374,18 @@ steering, or the runtime rejects it. Acceptance does not wait for transcript
 commitment. The optional `idempotencyKey` is carried by the transcript recorder
 for duplicate correlation.
 
+Active steering requires a guarded (V2) runtime, such as the built-in OpenClaw
+runtime or Codex. Legacy V1 runtimes, including Copilot, return
+`{ steered: false, reason: "active runtime does not support guarded steering" }`
+without queueing the guidance. The API does not automatically enqueue a later
+turn; use the explicit fallback below when needed.
+
 Steering requires `plugins.entries.<id>.hooks.allowPromptInjection` (enabled
 unless explicitly set to `false`) and a live plugin instance. Disabled prompt
 injection returns `steered: false`; an expired plugin instance cannot dispatch.
-The host rechecks the plugin instance immediately before runtime dispatch,
-including legacy runtime transport calls and after transcript persistence.
-Disabling or disposing the plugin while guidance is pending rejects the steer
-rather than silently dropping it.
+The host and guarded runtime recheck the plugin instance before dispatch,
+including after transcript persistence. Disabling or disposing the plugin while
+guidance is pending rejects the steer rather than silently dropping it.
 The input is hidden, plugin-authored internal context, with provenance
 `{ kind: "internal_system", sourceTool: "plugin:<id>" }`. It carries no sender or
 owner authority and never answers a pending user question.
