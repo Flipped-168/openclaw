@@ -592,6 +592,10 @@ function runCheckShardFixture(options: {
       new URL("../../scripts/ci-additional-checks.sh", import.meta.url),
       path.join(root, ".ci-harness/scripts/ci-additional-checks.sh"),
     );
+    copyFileSync(
+      new URL("../../scripts/ci-collect-checks.sh", import.meta.url),
+      path.join(root, ".ci-harness/scripts/ci-collect-checks.sh"),
+    );
     writeFileSync(
       path.join(root, "scripts/run-tsgo-core-test-shards.mts"),
       options.types?.stripeSupport === false
@@ -1271,8 +1275,13 @@ describe("ci workflow guards", () => {
         const plan = planner.steps.findIndex((candidate: WorkflowStep) => candidate.id === "plan");
         expect(setup).toBeGreaterThanOrEqual(0);
         expect(guard).toBeGreaterThan(setup);
-        expect(plan).toBeGreaterThan(guard);
-        expect(step.if).toBeUndefined();
+        expect(guard).toBeGreaterThan(plan);
+        expect(step.if).toBe("${{ !cancelled() && steps.check_setup.outcome == 'success' }}");
+        mkdirSync(path.join(root, ".ci-harness/scripts"), { recursive: true });
+        copyFileSync(
+          new URL("../../scripts/ci-collect-checks.sh", import.meta.url),
+          path.join(root, ".ci-harness/scripts/ci-collect-checks.sh"),
+        );
         const condition = planner.if.startsWith("${{") ? planner.if : `\${{ ${planner.if} }}`;
         for (const selected of [true, false]) {
           expect(
@@ -1294,11 +1303,10 @@ describe("ci workflow guards", () => {
           },
         });
         expect(result.status, result.stderr).toBe(failure ? 1 : 0);
-        expect(readFileSync(calls, "utf8").trim().split("\n")).toEqual(
-          failure
-            ? ["check:no-conflict-markers"]
-            : ["check:no-conflict-markers", "check:doctor-deprecation-registry"],
-        );
+        expect(readFileSync(calls, "utf8").trim().split("\n")).toEqual([
+          "check:no-conflict-markers",
+          "check:doctor-deprecation-registry",
+        ]);
       },
     );
 
@@ -1782,7 +1790,7 @@ describe("ci workflow guards", () => {
       },
     );
 
-    it("requires a successful selected check planner before admitting its consumers", () => {
+    it("requires selected planner outputs before admitting its consumers", () => {
       const manifest = runCiManifestFixture({
         bundledPlanner: true,
         checkFamilyScope: true,
@@ -5986,7 +5994,7 @@ describe("ci workflow guards", () => {
         ?.OPENCLAW_CI_SHARED_SDK,
     ).toBe("1");
     expect(steps.find((step) => step.name === "Check package boundary canary")?.if).toBe(
-      "${{ !cancelled() }}",
+      "${{ !cancelled() && steps.prepare_sdk.outcome == 'success' }}",
     );
     expect(steps.at(-1)?.with?.mode).toBe("publish-run");
     expect(workflow.jobs["ci-gate"].needs).toContain("check-extension-package-boundary");
@@ -6528,7 +6536,9 @@ describe("ci workflow guards", () => {
       "manifest builder",
     );
     const checkProtocolCoverage = expectDefined(
-      steps.find((step) => step.name === "Check mobile protocol event coverage"),
+      workflow.jobs["security-fast"].steps.find(
+        (step: WorkflowStep) => step.name === "Check mobile protocol event coverage",
+      ),
       "protocol coverage owner",
     );
     const workflowSha = "a".repeat(40);
@@ -6564,6 +6574,7 @@ describe("ci workflow guards", () => {
         repository: "openclaw/openclaw",
         runAttempt: 1,
         steps: { checkout_ref: { outputs: { sha: checkoutRevision } } },
+        preflightOutputs: { checkout_revision: checkoutRevision },
         targetRef,
         workflowSha,
       };
@@ -11413,52 +11424,14 @@ describe("ci workflow guards", () => {
     },
   );
 
-  it.each([
-    { eventName: "pull_request", checkName: "checks-node-fixture", runAttempt: 1, expected: "1" },
-    { eventName: "pull_request", checkName: "checks-node-fixture", runAttempt: 2, expected: "0" },
-    {
-      eventName: "workflow_dispatch",
-      checkName: "checks-node-release-packed-1",
-      runAttempt: 1,
-      expected: "1",
-    },
-    {
-      eventName: "workflow_dispatch",
-      checkName: "checks-node-release-packed-1",
-      runAttempt: 2,
-      expected: "1",
-    },
-    {
-      eventName: "workflow_dispatch",
-      checkName: "checks-node-fixture",
-      runAttempt: 1,
-      expected: "0",
-    },
-    {
-      eventName: "schedule",
-      checkName: "checks-node-release-packed-1",
-      runAttempt: 1,
-      expected: "0",
-    },
-  ] as const)(
-    "retains sibling coverage for $eventName $checkName attempt $runAttempt",
-    (scenario) => {
-      const step = expectDefined(
-        readCiWorkflow().jobs["checks-node-core-test-nondist-shard"].steps.find(
-          (candidate: WorkflowStep) => candidate.name === "Run Node test shard",
-        ),
-        "Node shard execution",
-      );
-      expect(
-        evaluateWorkflowExpression(step.env.OPENCLAW_NODE_TEST_PLAN_CONTINUE_ON_FAILURE, {
-          eventName: scenario.eventName,
-          runAttempt: scenario.runAttempt,
-          repository: "openclaw/openclaw",
-          matrix: { check_name: scenario.checkName },
-        }),
-      ).toBe(scenario.expected);
-    },
-  );
+  it("uses CI continuation without an attempt or repository switch", () => {
+    const job = readCiWorkflow().jobs["checks-node-core-test-nondist-shard"];
+    const step = job.steps.find(
+      (candidate: WorkflowStep) => candidate.name === "Run Node test shard",
+    );
+    expect(job.strategy["fail-fast"]).toBe(false);
+    expect(step.env).not.toHaveProperty("OPENCLAW_NODE_TEST_PLAN_CONTINUE_ON_FAILURE");
+  });
 
   it.each([
     ...(["github", "hybrid", "blacksmith"] as const).map((runnerProfile) => ({
@@ -11909,13 +11882,13 @@ describe("ci workflow guards", () => {
       // Bind that projection to its owner so a routing change cannot leave stale selection.
       const eligible = workflow.jobs[job].if
         .replace(/^\$\{\{\s*|\s*\}\}$/gu, "")
-        .replace(/!cancelled\(\)\s*&&\s*(?:always\(\)|!failure\(\))\s*&&\s*/gu, "")
+        .replace(/!cancelled\(\)\s*&&\s*(?:(?:always\(\)|!failure\(\))\s*&&\s*)?/gu, "")
         .replace(
-          /^\(needs\.preflight\.outputs\.shared_sdk_declarations != 'true' \|\| needs\.check-extension-package-boundary\.result == 'success'\)\s*&&\s*/u,
+          /^\(needs\.preflight\.outputs\.shared_sdk_declarations != 'true' \|\| needs\.check-extension-package-boundary\.outputs\.artifact_id != ''\)\s*&&\s*/u,
           "",
         )
         .replace(
-          /^\(needs\.preflight\.outputs\.run_check_plan != 'true' \|\| needs\.check-plan\.result == 'success'\)\s*&&\s*/u,
+          /^\(needs\.preflight\.outputs\.run_check_plan != 'true' \|\| needs\.check-plan\.outputs\.check_matrix != ''\)\s*&&\s*/u,
           "",
         )
         .replace(/^\((.*)\)$/u, "$1")
@@ -11924,6 +11897,7 @@ describe("ci workflow guards", () => {
           /always\(\)\s*&&\s*|!github.event.pull_request.draft\s*&&\s*|needs.preflight.result == 'success'\s*&&\s*/gu,
           "",
         )
+        .replace(/needs\.build-artifacts\.outputs\.published_driver_artifact_id != ''\s*&&\s*/u, "")
         .replace(/!cancelled\(\)\s*&&\s*/gu, "")
         .replace(/\s*&&\s*!github.event.pull_request.draft$/u, "")
         .replace(/\s+/gu, " ")

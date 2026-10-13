@@ -215,7 +215,18 @@ export function evaluateWorkflowExpression(
       ...context.steps,
     },
     needs: {
-      ...context.additionalNeeds,
+      ...Object.fromEntries(
+        Object.entries(context.additionalNeeds ?? {}).map(([name, need]) => [
+          name,
+          {
+            ...need,
+            // Actions resolves missing output properties to an empty string.
+            outputs: new Proxy(need.outputs, {
+              get: (outputs, key: string) => outputs[key] ?? "",
+            }),
+          },
+        ]),
+      ),
       resolve_target: { outputs: context.resolveTargetOutputs ?? {} },
       "checks-baseline-ratchets": {
         result: context.jobResults?.["checks-baseline-ratchets"] ?? "success",

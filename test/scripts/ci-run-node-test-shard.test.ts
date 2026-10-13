@@ -1955,7 +1955,7 @@ describe("scripts/ci-run-node-test-shard.mts", () => {
     });
     const pending = runShardPlans(
       ["one", "two"].map((name) => ({ kind: "target" as const, name, target: `${name}.test.ts` })),
-      { concurrency: 1, continueOnFailure: !("stop" in scenario), env: {} },
+      { concurrency: 1, env: { CI: "stop" in scenario ? "" : "true" } },
     );
     if ("rejects" in scenario) {
       await expect(pending).rejects.toThrow();
@@ -1972,29 +1972,50 @@ describe("scripts/ci-run-node-test-shard.mts", () => {
     );
   });
 
-  it.each([{ continueOnFailure: true, expectedStarted: ["next"] }])(
-    "fails a malformed plan with continuation=$continueOnFailure",
-    async ({ continueOnFailure, expectedStarted }) => {
-      const started: string[] = [];
-      const exitCode = await runShardPlans(
-        [
-          { kind: "group" as const, name: "broken", plan: { configs: [] } },
-          { kind: "group" as const, name: "next", plan: { configs: ["next.config.ts"] } },
-        ],
-        {
-          concurrency: 1,
-          continueOnFailure,
-          env: {},
-          runChild: async (_args, _env, label) => {
-            started.push(label);
-            return 0;
-          },
-          scratchDir: makeScratchDir(),
+  it.each([
+    { name: "first upstream attempt", attempt: "1", repository: "openclaw/openclaw" },
+    { name: "failed-jobs retry", attempt: "2", repository: "openclaw/openclaw" },
+    { name: "fork", attempt: "1", repository: "example/openclaw" },
+  ])("drains every planned CI group after failure on $name", async ({ attempt, repository }) => {
+    const started: string[] = [];
+    const plans = ["first", "second", "third"].map((name) => ({
+      kind: "group" as const,
+      name,
+      plan: { configs: [`${name}.config.ts`] },
+    }));
+    await expect(
+      runShardPlans(plans, {
+        concurrency: 1,
+        env: { CI: "true", GITHUB_RUN_ATTEMPT: attempt, GITHUB_REPOSITORY: repository },
+        scratchDir: makeScratchDir(),
+        runChild: async (_args, _env, label) => {
+          started.push(label);
+          return label === "first" ? 7 : label === "second" ? 3 : 0;
         },
-      );
+      }),
+    ).resolves.toBe(7);
+    expect(started).toEqual(["first", "second", "third"]);
+  });
 
-      expect(exitCode).toBe(1);
-      expect(started).toEqual(expectedStarted);
-    },
-  );
+  it("records a malformed CI plan and still admits the next group", async () => {
+    const started: string[] = [];
+    const exitCode = await runShardPlans(
+      [
+        { kind: "group" as const, name: "broken", plan: { configs: [] } },
+        { kind: "group" as const, name: "next", plan: { configs: ["next.config.ts"] } },
+      ],
+      {
+        concurrency: 1,
+        env: { CI: "true" },
+        runChild: async (_args, _env, label) => {
+          started.push(label);
+          return 0;
+        },
+        scratchDir: makeScratchDir(),
+      },
+    );
+
+    expect(exitCode).toBe(1);
+    expect(started).toEqual(["next"]);
+  });
 });

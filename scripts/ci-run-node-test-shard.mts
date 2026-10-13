@@ -94,7 +94,6 @@ export type ShardGroupPlan = {
 export type ShardPlan = ShardTargetPlan | ShardGroupPlan;
 type RunShardOptions = {
   concurrency?: number;
-  continueOnFailure?: boolean;
   env?: NodeJS.ProcessEnv;
   fsModuleCacheMaxBytes?: number;
   nodeCompileCacheMaxBytes?: number;
@@ -736,7 +735,7 @@ export async function runShardPlans(plans: ShardPlan[], options: RunShardOptions
     await runVitestPlans(admittedPlans, {
       concurrency,
       isExclusive: exclusive,
-      shouldStop: () => Boolean(interrupted) || (exitCode !== 0 && !options.continueOnFailure),
+      shouldStop: () => Boolean(interrupted) || (exitCode !== 0 && !ci),
       run: async (entry, index, cacheSlot) => {
         const targetArgs = entry.kind === "target" ? [entry.target] : entry.plan.configs;
         if (!Array.isArray(targetArgs) || targetArgs.length === 0) {
@@ -829,7 +828,7 @@ export async function runShardPlans(plans: ShardPlan[], options: RunShardOptions
             `${timingPrefix}${timingKey}`,
           );
           // A dual-runtime envelope always completes both ordinary test runs;
-          // its first failure still stops admission of later envelopes.
+          // CI also drains later envelopes so one run reports every ordinary failure.
           if (code !== 0) {
             completion.failedInvocations++;
             exitCode = exitCode || code;
@@ -909,7 +908,5 @@ export async function runShardPlans(plans: ShardPlan[], options: RunShardOptions
 
 if (isDirectRunUrl(process.argv[1], import.meta.url)) {
   const plans = resolveShardPlans();
-  process.exitCode = await runShardPlans(plans, {
-    continueOnFailure: process.env.OPENCLAW_NODE_TEST_PLAN_CONTINUE_ON_FAILURE === "1",
-  });
+  process.exitCode = await runShardPlans(plans);
 }

@@ -64,6 +64,7 @@ describe("protected Vitest cache collection", () => {
       );
       const ui = groups.find((group) => group.shard_name === "cache-warm:ui-package")!;
       for (const [name, value] of Object.entries({
+        CI: "true",
         CACHE_WARM_PLATFORM: platform,
         NODE_OPTIONS: "--max-old-space-size=8192",
         NODE_COMPILE_CACHE: compileRoot,
@@ -114,7 +115,6 @@ describe("protected Vitest cache collection", () => {
           expect(env.OPENCLAW_NODE_TEST_PLAN_CONCURRENCY).toBe("1");
           return await runShardPlans(resolveShardPlans(env), {
             env,
-            continueOnFailure: env.OPENCLAW_NODE_TEST_PLAN_CONTINUE_ON_FAILURE === "1",
             scratchDir: root,
             runChild: async (childArgs, childEnv) => {
               expect(childArgs).toContain("--testNamePattern=(?!)");
