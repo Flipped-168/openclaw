@@ -2,6 +2,10 @@
 
 import { render, type ReactiveElement } from "lit";
 import { expect, it, onTestFinished, vi } from "vitest";
+import { createDeferred } from "../../../test/helpers/promise.ts";
+import type { SessionsListResult } from "../api/types.ts";
+import { rosterActivityStore } from "../lib/agents/roster-activity-store.ts";
+import { createTestSessionCapability } from "../lib/sessions/session-capability.test-support.ts";
 import "../test-helpers/app-sidebar-suite.ts";
 import {
   createContext,
@@ -91,6 +95,99 @@ it("paints the restored roster and workspace in the first sidebar update", async
   await roster!.updateComplete;
   expect(host.querySelector('[data-agent-group="main"]')?.textContent).toContain("Harbor");
   expect(host.querySelector('[data-avatar="⚓"]')).not.toBeNull();
+});
+
+it("keeps cached session rows until the child publishes the settled live roster", async () => {
+  const { host } = createHost();
+  const key = "agent:main:dashboard:cedar";
+  const list = createDeferred<SessionsListResult>();
+  const requested = createDeferred();
+  const gateway = createGatewayHarness(
+    createTestGatewayClient(async (method, params) => {
+      if (method === "sessions.list") {
+        if ((params as { archived?: string }).archived === "all") {
+          requested.resolve();
+          return list.promise;
+        }
+        return { ts: 1, path: "", count: 0, defaults: {}, sessions: [] };
+      }
+      if (method === "sessions.groups.list") {
+        return { names: [], sectionOrder: [] };
+      }
+      if (method === "sessions.subscribe") {
+        return { subscribed: true };
+      }
+      throw new Error(`Unexpected RPC: ${method}`);
+    }),
+  );
+  const sessions = createTestSessionCapability(gateway.gateway);
+  const context = createContext(gateway.gateway, sessions, {
+    defaultId: "main",
+    mainKey: "main",
+    scope: "per-sender",
+    agents: [{ id: "main", name: "Harbor", identity: { emoji: "⚓" } }],
+  });
+  const store = rosterActivityStore(context);
+  // A parent invalidation can arrive before the child consumes the same roster publication.
+  const stop = store.subscribe(() => host.requestUpdate());
+  onTestFinished(stop);
+  host.connected = true;
+  host.sidebarLiveActivity = false;
+  const provider = createApplicationContextProvider(context);
+  provider.append(host);
+  document.body.append(provider);
+  await requested.promise;
+  await host.updateComplete;
+  const saved = snapshotSessions([projectSidebarSession({ key, label: "Cedar" })]);
+  host.restoreSidebarSnapshot({
+    ...emptySnapshot,
+    mode: "roster",
+    sessions: saved,
+    sections: [
+      {
+        id: "agent:main:recent",
+        rows: saved,
+        totalRowCount: 1,
+        visibleRowCount: 1,
+        visibleLimit: 10,
+        collapsedVisibleRowCount: 1,
+        renderHeader: false,
+      },
+    ],
+    cards: [{ id: "main", name: "Harbor", mainKey: "agent:main:main", textAvatar: "⚓" }],
+  });
+  host.requestUpdate();
+  await host.updateComplete;
+  const roster = host.querySelector<ReactiveElement>("openclaw-sidebar-agent-roster")!;
+  await roster.updateComplete;
+  const rowIds = () =>
+    [...host.querySelectorAll(".sidebar-session-content [data-session-key]")].map((row) =>
+      row.getAttribute("data-session-key"),
+    );
+  expect(rowIds()).toEqual([key]);
+  const samples: Array<Array<string | null>> = [];
+  const sample = () => samples.push(rowIds());
+  const observer = new MutationObserver(sample);
+  observer.observe(host, { childList: true, subtree: true });
+  onTestFinished(() => observer.disconnect());
+  sample();
+  list.resolve({
+    ts: 1,
+    path: "",
+    count: 1,
+    defaults: { model: null, modelProvider: null, contextTokens: null },
+    sessions: [{ key, kind: "direct", label: "Cedar", updatedAt: 1 }],
+  });
+  await store.refresh();
+  await host.updateComplete;
+  await roster.updateComplete;
+  await host.updateComplete;
+  observer.disconnect();
+  sample();
+  expect(host.querySelector('aside[data-snapshot-state="live"]')).not.toBeNull();
+  for (const rows of samples) {
+    expect(rows).toEqual([key]);
+  }
 });
 
 it("materializes the archive hint on hover without changing the action name", () => {

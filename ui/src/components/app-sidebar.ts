@@ -145,6 +145,8 @@ class AppSidebar extends AppSidebarSessionNavigationElement implements SessionLi
       return (
         (roster.membershipReady || roster.error !== null) &&
         !roster.loading &&
+        // The child publishes live rows during its own update, after the store settles.
+        this.rosterSessionSource?.result === roster.result &&
         roster.involvingMe === this.sidebarSessionOwnerFilter().involvingMe
       );
     }
