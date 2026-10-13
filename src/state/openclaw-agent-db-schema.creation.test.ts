@@ -65,7 +65,9 @@ describe("fresh agent schema admission", () => {
       }),
     ).toThrow("cancel creation");
     expect(database.prepare("SELECT name FROM sqlite_schema").all()).toEqual([]);
-    expect(() => assertCanonicalSessionValidationSchema(database)).toThrow(/missing or drifted/u);
+    expect(() => assertCanonicalSessionValidationSchema(database)).toThrow(
+      /Session metadata unavailable \(table-missing:/u,
+    );
 
     ensureOpenClawAgentSchema(database, "fresh", ":memory:");
     expect(() => assertCanonicalSessionValidationSchema(database)).not.toThrow();
