@@ -281,7 +281,7 @@ describe("dashboardCommand", () => {
       },
     );
     expect(runtime.log).toHaveBeenCalledExactlyOnceWith(
-      JSON.stringify({ ok: false, reason, error: { type: "cli_error", message: reason } }),
+      JSON.stringify({ ok: false, error: { type: "cli_error", message: reason }, reason }),
     );
     expect(runtime.exit).toHaveBeenCalledExactlyOnceWith(1);
     expect(runtime.error).not.toHaveBeenCalled();
