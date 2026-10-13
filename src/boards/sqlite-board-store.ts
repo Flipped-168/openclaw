@@ -349,7 +349,10 @@ export class SqliteBoardStore implements BoardStore {
             }
             return outcome.value;
           },
-          assertPreparedCurrent,
+          () => {
+            options?.assertCurrent?.();
+            assertPreparedCurrent();
+          },
         );
       },
       true,
