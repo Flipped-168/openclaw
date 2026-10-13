@@ -83,6 +83,25 @@ function captureSessionRuntimeOwnershipRead(params: SessionRuntimeOwnershipReadP
       storePath: params.storePath,
       assertCurrent,
     },
+    readPreviousSessionId: () => {
+      assertCurrent();
+      if (params.readPreparedPreviousSessionId) {
+        const previousSessionId = params.readPreparedPreviousSessionId();
+        assertCurrent();
+        return previousSessionId;
+      }
+      if (privateSource) {
+        const key = sessionKey?.trim();
+        const current =
+          !key || "kind" in privateSource
+            ? undefined
+            : privateSource.actor.sessions.readSharing(key)?.entry;
+        assertCurrent();
+        return current?.sessionId === sessionId ? current.previousSessionId : undefined;
+      }
+      // Released synchronous hooks consume the row their caller already prepared.
+      return entry?.previousSessionId;
+    },
     finish(ownership: AgentHarnessSessionRuntimeOwnership | undefined) {
       assertCurrent();
       return ownership
@@ -121,7 +140,7 @@ export function readSessionRuntimeOwnership(
   if (!read) {
     return undefined;
   }
-  const { harness, sessionId, privateSource, assertCurrent } = read;
+  const { harness, assertCurrent } = read;
   try {
     assertCurrent();
     if (harness.resolveSessionRuntimeOwnership) {
@@ -137,25 +156,7 @@ export function readSessionRuntimeOwnership(
     return read.finish(
       harness.resolveSessionRuntimeOwnership?.({
         ...read.input,
-        readPreviousSessionId: () => {
-          assertCurrent();
-          if (params.readPreparedPreviousSessionId) {
-            const previousSessionId = params.readPreparedPreviousSessionId();
-            assertCurrent();
-            return previousSessionId;
-          }
-          if (privateSource) {
-            const key = params.sessionKey?.trim();
-            const current =
-              !key || "kind" in privateSource
-                ? undefined
-                : privateSource.actor.sessions.readSharing(key)?.entry;
-            assertCurrent();
-            return current?.sessionId === sessionId ? current.previousSessionId : undefined;
-          }
-          // The synchronous compatibility hook consumes the row its caller already prepared.
-          return params.sessionEntry?.previousSessionId;
-        },
+        readPreviousSessionId: read.readPreviousSessionId,
         assertCurrent,
       }),
     );
@@ -185,19 +186,8 @@ export async function readSessionRuntimeOwnershipAsync(
       version: 2,
       readPreviousSessionId: async () => {
         assertCurrent();
-        if (params.readPreparedPreviousSessionId) {
-          const previousSessionId = params.readPreparedPreviousSessionId();
-          assertCurrent();
-          return previousSessionId;
-        }
-        if (privateSource) {
-          const key = params.sessionKey?.trim();
-          const current =
-            !key || "kind" in privateSource
-              ? undefined
-              : privateSource.actor.sessions.readSharing(key)?.entry;
-          assertCurrent();
-          return current?.sessionId === sessionId ? current.previousSessionId : undefined;
+        if (params.readPreparedPreviousSessionId || privateSource) {
+          return read.readPreviousSessionId();
         }
         const scope = previousSessionReadScope(params);
         const current = scope

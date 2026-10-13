@@ -291,7 +291,6 @@ export function createFixture({ pendingPrompt = "hello", pendingImageCount = 1 }
           return this.current;
         },
         readDecisionBaseline: () => undefined,
-        prepareForDispatch: () => undefined,
         decisionRequiredNames: [],
         refresh() {
           return this.current;

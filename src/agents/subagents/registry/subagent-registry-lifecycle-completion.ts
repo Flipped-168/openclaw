@@ -221,7 +221,6 @@ export async function completeSubagentRunAttempt(
     };
     assertCurrent();
     let settled: ReturnType<typeof planTerminalCompletion>;
-    let terminalGeneration = 0;
     let publishesTerminalSignal = false;
     try {
       const commit = () =>
@@ -304,11 +303,7 @@ export async function completeSubagentRunAttempt(
         );
       settled = collectorSession ? await collectorSession.withPublication(commit) : await commit();
       if (settled) {
-        const bindingChanged =
-          completeParams.sessionEffects !== undefined &&
-          context.getSessionEffects(settled.entry) !== completeParams.sessionEffects;
         context.bindTerminalSessionEffects(settled.entry, completeParams.sessionEffects);
-        terminalGeneration = context.bumpTerminalGeneration(settled.entry, bindingChanged);
         if (settled.replacedProvisionalKill) {
           context.bumpCleanupGeneration(settled.entry);
         }
@@ -327,7 +322,6 @@ export async function completeSubagentRunAttempt(
     await completeTerminalEffects(context, {
       completeParams,
       ...settled,
-      terminalGeneration,
       stateContext,
       assertCurrent,
       loadCleanupBrowserSessionsForLifecycleEnd:

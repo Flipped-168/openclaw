@@ -359,11 +359,6 @@ describe("provider request admission", () => {
           toolResultAggregateMaxChars: cap * 4,
           toolResultPromptProjectionState: projectionState,
           onModelRequest: streamGuards.onModelRequest,
-          preparePrimaryModelRequest: () =>
-            Promise.resolve(() => ({
-              systemPrompt: session.agent.state.systemPrompt,
-              tools: session.agent.state.tools,
-            })),
           promptActiveSession: (prompt, options) => session.prompt(prompt, options),
         });
         expect(requests, session.agent.state.errorMessage).toHaveLength(

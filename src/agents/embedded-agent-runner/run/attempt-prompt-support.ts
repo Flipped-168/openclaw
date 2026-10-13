@@ -62,7 +62,7 @@ export function createPromptBuildToolPolicy<
     ? measureDecisionToolSurface(params.readModelTools, params.forceToolNames)
     : undefined;
   let toolsAllow: string[] | undefined;
-  let decisionIsCurrent: (() => boolean) | undefined;
+  let omitOptionalTools = false;
   const current = {
     activeToolNames: [...baseline.activeToolNames],
     callableToolNames: [...baseline.activeToolNames],
@@ -76,30 +76,20 @@ export function createPromptBuildToolPolicy<
       applyPromptBuildToolsAllow({
         ...params,
         baseline,
-        toolsAllow: decisionIsCurrent ? [] : toolsAllow,
+        toolsAllow: omitOptionalTools ? [] : toolsAllow,
       }),
     );
     params.onApplied?.(current);
     return current;
   };
-  const apply = (nextToolsAllow: string[] | undefined, nextDecisionIsCurrent?: () => boolean) => {
+  const apply = (nextToolsAllow: string[] | undefined, omitTools = false) => {
     toolsAllow = nextToolsAllow;
-    decisionIsCurrent = nextDecisionIsCurrent;
+    omitOptionalTools = omitTools;
     return applyCurrent();
   };
   return {
     current,
     apply,
-    prepareForDispatch: <T>(prepareRestoredPrompt: () => Promise<T>): Promise<T> | undefined => {
-      if (!decisionIsCurrent || decisionIsCurrent()) {
-        return undefined;
-      }
-      // Drop only the optional Decision cap. The current host generation and
-      // independent prompt-hook cap still own what is permitted.
-      decisionIsCurrent = undefined;
-      applyCurrent();
-      return prepareRestoredPrompt();
-    },
     readDecisionBaseline: () => decisionBaseline,
     decisionRequiredNames: params.forceToolNames,
     refresh: () => {

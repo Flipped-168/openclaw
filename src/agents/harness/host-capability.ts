@@ -541,7 +541,6 @@ export function createAgentHarnessHostCapabilities(params: {
           },
         ),
       );
-      library?.assertPublicationCurrent();
       return bindCreatedTools(sourceTools, bindingOptions);
     },
     prepareMutableFileApproval: async (request) => {

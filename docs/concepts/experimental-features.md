@@ -122,12 +122,13 @@ if (!isDecisionAssistanceEligible(preparedConfig, owningAgentId)) {
 ```
 
 Use the existing config publication/refresh lifecycle, not file polling.
-Consumers check opt-in again at Decision provider dispatch, after awaited
-preparation. Disabling assistance stops subsequent evaluations from starting;
-already-dispatched evaluations may finish, including provider preparation and
-network I/O, and their results may still be used. Model selection, live authority,
-cancellation, deadlines, and provider/credential validity remain independently
-checked. This helper is not an authority token or a cancellation owner.
+The conversational prefilter checks opt-in again at Decision provider dispatch,
+after awaited preparation. Disabling assistance stops new evaluations from
+starting; already-dispatched evaluations may finish and their results may still
+be used. Model selection and any applied restriction remain turn-scoped. Live
+authority, cancellation, deadlines, and provider/credential validity remain
+independently checked. This helper is not an authority token or a cancellation
+owner.
 
 ### Conversational tool filtering
 
@@ -205,13 +206,11 @@ approvals remain action requests, while a conversational acknowledgment can omit
 optional tools on later turns. It uses the existing host tool policy, preserves
 already-required tools without granting denied tools, and keeps submitted schemas,
 discovery, and callability aligned.
-Each subsequent turn starts from its own normal tool baseline. Opt-out does not
-withdraw a restriction from an already-dispatched Decision evaluation. Changed
-model selection still prevents applying an awaited restriction and is rechecked
-at foreground primary-model dispatch after awaited preparation. That change
-withdraws only the optional restriction and restores the current permitted tool
-surface while retaining independent hook caps and required tools. No historical
-transcript is rewritten and no native thread is recreated.
+Each subsequent turn starts from its own normal tool baseline. Once applied, an
+optional restriction remains for that turn even if the Decision model or opt-in
+changes; the next turn uses the new setting. Independent hook caps, required
+tools, and live execution authority remain enforced. No historical transcript is
+rewritten and no native thread is recreated.
 
 With DEBUG logging enabled for the embedded runner, a safe record at the first
 foreground primary dispatch reports decision status/reason, decision latency,
