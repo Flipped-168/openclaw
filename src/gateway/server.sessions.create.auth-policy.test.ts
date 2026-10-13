@@ -1,6 +1,6 @@
 import { once } from "node:events";
 import { isRecord } from "@openclaw/normalization-core/record-coerce";
-import { assert, expect, it, vi } from "vitest";
+import { assert, expect, it, onTestFinished, vi } from "vitest";
 import { GATEWAY_OWNER_PROFILE_ID } from "../../packages/gateway-protocol/src/schema/users.js";
 import type { dispatchInboundMessage } from "../auto-reply/dispatch.js";
 import {
@@ -11,11 +11,15 @@ import { loadSessionEntry, loadTranscriptEventsSync } from "../config/sessions/s
 import { initializeGlobalHookRunner } from "../plugins/hook-runner-global.js";
 import { getSessionWorkAdmissionRelease } from "../sessions/session-lifecycle-admission.js";
 import { createDeferredCore } from "../shared/deferred.js";
+import * as agentResources from "../state/openclaw-agent-db-resources.js";
+import * as executionOwners from "../state/openclaw-agent-execution-owner.js";
+import * as executionScopes from "../state/openclaw-agent-execution-scope.js";
 import type { GatewayRequestHandlerOptions } from "./server-methods/types.js";
 import {
   chatSendOwner,
   dashboardTitleScheduleMocks,
 } from "./server.sessions.create.test-support.js";
+import * as sessionCreation from "./session-create-service.js";
 import { resolveGatewaySessionStoreTarget } from "./session-utils-store-lookup.js";
 import { loadGatewayTestConfig } from "./test-helpers.config-runtime.js";
 import {
@@ -31,6 +35,97 @@ import { getTestPluginRegistry } from "./test-helpers.plugin-registry.js";
 installGatewayTestHooks({ scope: "suite" });
 
 it("retains committed initial turns through fencing and denies their final write after grant revocation", async () => {
+  // Temporary CI diagnostics: preserve calls, promises, and errors; emit only on rejection.
+  const diagnosticEvents: string[] = [];
+  const ownerSnapshots: Array<() => string> = [];
+  const diagnosticSpies: Array<{ mockRestore(): void }> = [];
+  let nextOwnerId = 0;
+  const recordDiagnostic = (event: string) => {
+    diagnosticEvents.push(new Error(event).stack ?? event);
+    if (diagnosticEvents.length > 32) {
+      diagnosticEvents.shift();
+    }
+  };
+  onTestFinished(() => {
+    for (const spy of diagnosticSpies.toReversed()) {
+      spy.mockRestore();
+    }
+  });
+  const createExecution = executionOwners.createAgentDatabaseExecution;
+  diagnosticSpies.push(
+    vi
+      .spyOn(executionOwners, "createAgentDatabaseExecution")
+      .mockImplementation((options, prepared, state) => {
+        const borrowed = createExecution(options, prepared, state);
+        const owner = state.owners.get(prepared.pathname);
+        if (prepared.agentId === "main" && owner?.kind === "file") {
+          const id = ++nextOwnerId;
+          recordDiagnostic(`owner ${id} created: ${prepared.pathname}`);
+          ownerSnapshots.push(
+            () =>
+              `owner ${id}: registered=${state.owners.get(prepared.pathname) === owner}, idle=${state.idle.has(owner)}`,
+          );
+          if (ownerSnapshots.length > 16) {
+            ownerSnapshots.shift();
+          }
+          for (const method of ["close", "closeIdle"] as const) {
+            const original = owner[method];
+            diagnosticSpies.push(
+              vi.spyOn(owner, method).mockImplementation(() => {
+                recordDiagnostic(`owner ${id}: ${method}`);
+                return original.call(owner);
+              }),
+            );
+          }
+        }
+        return borrowed;
+      }),
+  );
+  const registerResource = agentResources.registerOpenClawAgentDatabaseAsyncResource;
+  diagnosticSpies.push(
+    vi
+      .spyOn(agentResources, "registerOpenClawAgentDatabaseAsyncResource")
+      .mockImplementation((resource, options) => {
+        if (resource.agentId === "main" && resource.retireAfterResources) {
+          const revoke = resource.revoke;
+          diagnosticSpies.push(
+            vi.spyOn(resource, "revoke").mockImplementation(() => {
+              recordDiagnostic(`executor resource revoked: ${resource.path}`);
+              return revoke.call(resource);
+            }),
+          );
+        }
+        return registerResource(resource, options);
+      }),
+  );
+  const supportsScope = executionScopes.supportsAgentDatabaseExecutionScope;
+  diagnosticSpies.push(
+    vi
+      .spyOn(executionScopes, "supportsAgentDatabaseExecutionScope")
+      .mockImplementation((options) => {
+        const supported = supportsScope(options);
+        if (!supported && options.agentId === "main") {
+          recordDiagnostic("main executor scope refused");
+        }
+        return supported;
+      }),
+  );
+  const createSession = sessionCreation.createGatewaySession;
+  diagnosticSpies.push(
+    vi.spyOn(sessionCreation, "createGatewaySession").mockImplementation((params) => {
+      const pending = createSession(params);
+      void pending.catch((error: unknown) => {
+        console.error(
+          "[initial-turn-admission]",
+          params.key,
+          error instanceof Error ? error.stack : String(error),
+          ownerSnapshots.map((snapshot) => snapshot()),
+          diagnosticEvents,
+        );
+      });
+      return pending;
+    }),
+  );
   process.env.OPENCLAW_TEST_MINIMAL_GATEWAY = "0";
   testState.gatewayAuth = undefined;
   const token = "initial-turn-source-fixture-token";
