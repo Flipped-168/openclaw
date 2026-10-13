@@ -225,6 +225,33 @@ describe("renderPicker", () => {
     expect(p.params.onChange).toHaveBeenCalledExactlyOnceWith("beta");
   });
 
+  it.each([
+    { value: "beta", disabled: false, expected: "beta" },
+    { value: "", disabled: false, expected: "" },
+    { value: "beta", disabled: true, expected: "gamma" },
+    { value: null, disabled: false, expected: "gamma" },
+  ])(
+    "opens with ArrowUp at the enabled selection or last fallback (value=$value, disabled=$disabled)",
+    async ({ value, disabled, expected }) => {
+      const { userEvent } = await import("vitest/browser");
+      const p = await mount({
+        value,
+        options: [
+          { value: "", label: "Automatic" },
+          { value: "alpha", label: "Alpha" },
+          { value: "beta", label: "Beta", disabled },
+          { value: "gamma", label: "Gamma" },
+        ],
+      });
+      p.trigger.focus();
+      await userEvent.keyboard("{ArrowUp}");
+      await expect.element(p.trigger).toHaveAttribute("aria-expanded", "true");
+      expect(p.params.onChange).not.toHaveBeenCalled();
+      await userEvent.keyboard("{Enter}");
+      expect(p.params.onChange).toHaveBeenCalledExactlyOnceWith(expected);
+    },
+  );
+
   it("opens a compact menu with a printable key without committing it", async () => {
     const p = await mount({
       options: [

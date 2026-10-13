@@ -291,7 +291,8 @@ export function useMenuMachine(
         const next =
           enabled.find((item) => item.value === selected)?.value ?? enabled[0]?.value ?? null;
         if (api.highlightedValue !== next) {
-          service.send({ type: "HIGHLIGHTED.SET", value: next });
+          // Zag queues send(); a stale catalog correction must not replace a later opening choice.
+          service.service.context.set("highlightedValue", next);
         }
       }
     },

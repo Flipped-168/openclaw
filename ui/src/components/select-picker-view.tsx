@@ -120,7 +120,10 @@ export function PickerContent<Option extends PickerOption>(props: {
           : searching()
             ? input
             : list;
-      if (intent === "last") {
+      if (
+        intent === "last" &&
+        !rows().some((option) => option.value === props.params.value && !option.disabled)
+      ) {
         menu.service.send({
           type: "HIGHLIGHTED.SET",
           value: rows().findLast((option) => !option.disabled)?.value ?? null,
