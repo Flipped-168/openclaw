@@ -1,5 +1,3 @@
-import type { AgentDatabaseRequestExecutionSource } from "../../state/openclaw-agent-execution-admission-contract.js";
-import type { OpenClawAgentDatabaseExecution } from "../../state/openclaw-agent-execution-contract.js";
 import type { SessionEntryReplacementPublication } from "./session-accessor.sqlite-entry-cache.types.js";
 import type { ResolvedSessionEntryRow } from "./session-accessor.sqlite-entry-read.js";
 import type {
@@ -11,19 +9,6 @@ import type { SessionOwnerAssignment } from "./session-entry-provenance.js";
 import type { SessionNativeBindingParticipants } from "./session-native-binding.types.js";
 import type { SessionSourcePredicate } from "./session-source-authority.js";
 import type { SessionEntry } from "./types.js";
-
-export type SessionEntryWorkerPreparation = (
-  execution: OpenClawAgentDatabaseExecution,
-  source: AgentDatabaseRequestExecutionSource,
-) => {
-  prepare: () => Promise<void>;
-  beforeWrite: () => void;
-  release: () => Promise<void>;
-};
-
-export type SessionEntryWorkerMutationResult<T> =
-  | { kind: "committed"; value: T; publication: SessionEntryReplacementPublication }
-  | { kind: "not-committed"; value: T };
 
 export type SqliteSessionEntryReplacement = SessionEntryReplacement & {
   previousSessionKeys?: readonly string[];

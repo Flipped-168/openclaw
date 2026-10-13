@@ -2,11 +2,7 @@ import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import { err, ok, type Result } from "@openclaw/normalization-core/result";
 import { formatErrorMessage } from "../../infra/errors.js";
 import { createSqliteLifecycleAggregateError } from "../../infra/sqlite-lifecycle-errors.js";
-import {
-  hasSqliteWorkerOutcomeUnknown,
-  retainSqliteWorkerErrorCode,
-  SqliteWorkerError,
-} from "../../infra/sqlite-worker-contract.js";
+import { retainSqliteWorkerErrorCode } from "../../infra/sqlite-worker-contract.js";
 import { readDatabasePathIdentitySync } from "../../infra/sqlite-worker-identity.js";
 import {
   createSqliteWorkerOperationAdmission,
@@ -38,8 +34,6 @@ import { publishCommittedSessionIdentity } from "./session-accessor.sqlite-ident
 import type {
   SessionEntryReplacementCandidate,
   SessionEntryReplacementCommitted,
-  SessionEntryWorkerMutationResult,
-  SessionEntryWorkerPreparation,
 } from "./session-accessor.sqlite-replacement-types.js";
 import type { SessionEntryCommitContext } from "./session-accessor.types.js";
 import { withSessionEntryWriterReads } from "./session-entry-read-facts.js";
@@ -52,17 +46,18 @@ import {
   type SessionSourceValidation,
 } from "./session-source-authority.js";
 import { parseSessionTranscriptAuthorityReceipts } from "./session-transcript-authority.js";
+import { throwSessionWorkerOutcomeUnknown } from "./session-worker-receipt.js";
 
 type ReplacementDatabaseOptions = OpenClawAgentDatabaseOptions & { path: string };
 
-function rejectUnknownSessionEntryOutcome(message: string, cause: unknown): never {
-  if (hasSqliteWorkerOutcomeUnknown(cause)) {
-    throw cause;
-  }
-  const error = new SqliteWorkerError(message, "outcome-unknown");
-  error.cause = cause;
-  throw error;
-}
+export type SessionEntryWorkerPreparation = (
+  execution: OpenClawAgentDatabaseExecution,
+  source: AgentDatabaseRequestExecutionSource,
+) => {
+  prepare: () => Promise<void>;
+  beforeWrite: () => void;
+  release: () => Promise<void>;
+};
 
 export async function withSessionEntryWorker<T>(
   options: ReplacementDatabaseOptions,
@@ -403,7 +398,7 @@ export async function initializeSessionTranscriptInWorker(
           publication.settle(receipt, unknown);
         }
         if (unknown) {
-          rejectUnknownSessionEntryOutcome(
+          throwSessionWorkerOutcomeUnknown(
             "Session transcript initialization has no confirmed native completion and commit receipt",
             outcome.ok ? undefined : outcome.error,
           );
@@ -440,6 +435,10 @@ export async function initializeSessionTranscriptInWorker(
     },
   );
 }
+
+export type SessionEntryWorkerMutationResult<T> =
+  | { kind: "committed"; value: T; publication: SessionEntryReplacementPublication }
+  | { kind: "not-committed"; value: T };
 
 export async function runSessionEntryWorkerMutation<T>(
   options: ReplacementDatabaseOptions,
@@ -515,7 +514,7 @@ export async function runSessionEntryWorkerMutation<T>(
       }
     } catch (error) {
       if (unknown) {
-        rejectUnknownSessionEntryOutcome(unknownMessage, error);
+        throwSessionWorkerOutcomeUnknown(unknownMessage, error);
       }
       throw error;
     }
@@ -550,7 +549,7 @@ export async function runSessionEntryWorkerMutation<T>(
           // Keep the executing scope and FIFO writer through native publication settlement.
           // Close joins this callback; a delayed result cannot borrow a successor owner.
           if (await settle(publication, identity)) {
-            rejectUnknownSessionEntryOutcome(
+            throwSessionWorkerOutcomeUnknown(
               unknownMessage,
               outcome.ok ? undefined : outcome.error,
             );
