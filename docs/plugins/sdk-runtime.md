@@ -108,6 +108,13 @@ The built-in `openclaw` runtime replays the parent's recorded provider request
 with one appended user message, preserving its system prompt, tools, reasoning
 settings, and prompt-cache affinity for OpenAI and Anthropic. It reuses prepared
 payload data without re-running the parent's one-shot continuation hooks.
+The replay uses the current prepared model's proxy and TLS policy. Session read
+authority is checked immediately before every network send, including retries.
+Native ChatGPT forks use independent connections without consuming or replacing
+the parent's continuation. Supported APIs are OpenAI Responses (including native
+ChatGPT), Chat Completions, and Anthropic Messages. Other APIs, including Bedrock,
+fail before dispatch because their transports cannot enforce the fork's live
+request authority.
 Tool choice is set to `none` before dispatch to prevent hosted tool execution;
 local tool calls are also denied, with at most two additional inference attempts.
 On Anthropic, changing tool choice invalidates the messages cache, but preserves
@@ -121,7 +128,8 @@ revokes even an in-flight fork before its answer can be returned.
 After a restart or without a prepared parent turn, the request fails closed:
 "Cache-parity session fork requires a parent turn prepared by this OpenClaw
 runtime. Send a normal message first." Ordinary `/btw` keeps its lightweight,
-tool-free context. CLI backends must explicitly declare tool-free side-question support.
+tool-free context. CLI backends with native tools must explicitly support disabling
+them for side questions; backends with no native tools need no additional declaration.
 
 Conversation access is required through
 `plugins.entries.<id>.hooks.allowConversationAccess` (enabled by default only for

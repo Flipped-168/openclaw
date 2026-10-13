@@ -1,7 +1,12 @@
-import { independentResponsesRequest } from "@openclaw/ai/internal/openai";
+import { getAiTransportHost } from "@openclaw/ai";
+import {
+  independentResponsesRequest,
+  responsesRequestLifecycle,
+} from "@openclaw/ai/internal/openai";
 import { registerSessionResourceCleanup } from "@openclaw/ai/internal/runtime";
 import { isCredentialFieldName } from "@openclaw/ai/internal/shared";
 import { isRecord } from "@openclaw/normalization-core/record-coerce";
+import { withGuardedFetchRequestAuthority } from "../../infra/net/fetch-request-authority.js";
 import type { Model } from "../../llm/types.js";
 import { collectTextContentBlocks } from "../content-blocks.js";
 import type { StreamFn } from "../runtime/index.js";
@@ -198,6 +203,17 @@ export async function runEmbeddedSessionFork(params: {
   assertCurrent: () => void;
   onUsage?: (usage: NormalizedUsage | undefined) => void;
 }): Promise<string> {
+  switch (params.model.api) {
+    case "openai-responses":
+    case "openai-chatgpt-responses":
+    case "openai-completions":
+    case "anthropic-messages":
+      break;
+    default:
+      throw new Error(
+        `Session forks do not support provider API ${params.model.api}. Use OpenAI Responses, Chat Completions, or Anthropic Messages.`,
+      );
+  }
   prune();
   const snapshot = snapshots.get(params.sessionId);
   if (!snapshot) {
@@ -224,7 +240,10 @@ export async function runEmbeddedSessionFork(params: {
   }
   const context = structuredClone(snapshot.context);
   context.messages.push({ role: "user", content: params.question, timestamp: Date.now() });
-  const model = { ...snapshot.model, headers: params.model.headers };
+  const model = getAiTransportHost().inheritManagedTransport(params.model, {
+    ...snapshot.model,
+    headers: params.model.headers,
+  });
   const usage = createUsageAccumulator();
   for (let iteration = 0; iteration < 3; iteration++) {
     assertCurrent();
@@ -277,9 +296,18 @@ export async function runEmbeddedSessionFork(params: {
       },
     };
     independentResponsesRequest.set(options);
-    const stream = await snapshot.streamFn(model, context, options);
-    assertCurrent();
-    const result = await stream.result();
+    // Native ChatGPT WebSockets and SSE use the same send-time lifecycle owner.
+    responsesRequestLifecycle.set(options, {
+      assertCurrent,
+      beforeDispatch: async () => assertCurrent(),
+      accepted: async () => assertCurrent(),
+      settle: async () => assertCurrent(),
+    });
+    const result = await withGuardedFetchRequestAuthority(assertCurrent, async () => {
+      const stream = await snapshot.streamFn(model, context, options);
+      assertCurrent();
+      return await stream.result();
+    });
     assertCurrent();
     mergeUsageIntoAccumulator(usage, normalizeUsage(result.usage));
     params.onUsage?.(toNormalizedUsage(usage));

@@ -87,6 +87,7 @@ import {
   preparedRuntimeSnapshotState,
   setupBtwTestHooks,
 } from "./btw.test-support.js";
+import { testing as cliBackendsTesting } from "./cli-backends.test-support.js";
 import {
   createModelGenerationFixture,
   publishCurrentModelGeneration,
@@ -991,6 +992,39 @@ describe("runBtwSideQuestion", () => {
     ).rejects.toThrow('Selected agent harness "codex" does not support /btw side questions.');
     expect(streamSimpleMock).not.toHaveBeenCalled();
     expect(registerProviderStreamForModelMock).not.toHaveBeenCalled();
+  });
+
+  it("answers ordinary CLI BTW without a side-question tool mode when the backend has no native tools", async () => {
+    cliBackendsTesting.setDepsForTest({
+      resolveRuntimeCliBackends: () => [
+        {
+          id: "claude-cli",
+          pluginId: "no-tools-cli",
+          modelProvider: "anthropic",
+          config: { command: "no-tools-cli" },
+          nativeToolMode: "none",
+          ownsNativeCompaction: false,
+        },
+      ],
+    });
+    try {
+      const { cleanup } = mockCliOutput({ text: "No-tools CLI side answer." });
+
+      await expect(
+        runSideQuestion({
+          cfg: createCliRuntimeConfig(),
+          model: "claude-opus-4-7",
+        }),
+      ).resolves.toEqual({ text: "No-tools CLI side answer." });
+
+      expect(prepareCliRunContextMock).toHaveBeenCalledWith(
+        expect.objectContaining({ executionMode: "side-question", disableTools: true }),
+      );
+      expect(cleanup).toHaveBeenCalledOnce();
+      expect(streamSimpleMock).not.toHaveBeenCalled();
+    } finally {
+      cliBackendsTesting.resetDepsForTest();
+    }
   });
 
   it.each([

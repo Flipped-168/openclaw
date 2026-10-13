@@ -19,7 +19,6 @@ import type { AuthProfileStore } from "./auth-profiles/types.js";
 import { reconcileAuthProfileQuotaBlocks } from "./auth-profiles/usage.js";
 import { buildBtwCliPrompt, buildBtwSystemPrompt } from "./btw-prompts.js";
 import { normalizeBtwContentBlocks } from "./btw-transcript.js";
-import { resolveCliBackendConfig } from "./cli-backends.js";
 import { executePreparedCliRun } from "./cli-runner/execute.runtime.js";
 import { prepareCliRunContext } from "./cli-runner/prepare.runtime.js";
 import type { BlockReplyChunking } from "./embedded-agent-block-chunker.js";
@@ -466,14 +465,6 @@ export async function runCliBtwSideQuestion(params: {
   authorityRunId: string;
   onUsage?: (usage: NormalizedUsage | undefined) => void;
 }): Promise<ReplyPayload> {
-  if (
-    resolveCliBackendConfig(params.cliProvider, params.cfg, { agentId: params.sessionAgentId })
-      ?.sideQuestionToolMode !== "disabled"
-  ) {
-    throw new Error(
-      `CLI backend "${params.cliProvider}" cannot deny side-question tool calls; it must declare sideQuestionToolMode: "disabled".`,
-    );
-  }
   const timeoutMs = resolveAgentTimeoutMs({
     cfg: params.cfg,
     overrideSeconds: params.opts?.timeoutOverrideSeconds,
