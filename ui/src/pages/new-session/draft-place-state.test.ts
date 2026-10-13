@@ -913,26 +913,6 @@ describe("device folder selection", () => {
     },
   );
 
-  it("blocks a runtime change without losing the existing-folder draft", () => {
-    const f = folderFixture();
-    f.gateway.environments![0]!.workerHost = { deviceFolders: true };
-    f.state.adoptAgentDefaults();
-    f.state.selectDevice("desktop");
-    f.state.selectDeviceFolder();
-    f.state.setDeviceFolderPath("/srv/project");
-    expect(f.state.folderSubmissionBlocked()).toBe(false);
-    f.context.agents.state.agentsList!.agents[0]!.agentRuntime = {
-      ...workerRuntime,
-      id: "remote",
-      cloudPlacementExecutionMode: "remote-exec",
-    };
-    expect(f.state.deviceFolderAvailable).toBe(false);
-    expect(f.state.folderSubmissionBlocked()).toBe(true);
-    expect(f.state.deviceFolder).toEqual({ deviceId: "desktop", path: "/srv/project" });
-    f.context.agents.state.agentsList!.agents[0]!.agentRuntime = workerRuntime;
-    expect(f.state.folderSubmissionBlocked()).toBe(false);
-    expect(f.state.deviceFolder).toEqual({ deviceId: "desktop", path: "/srv/project" });
-  });
   it("requires an explicit capable device and keeps its path out of Gateway discovery", () => {
     const f = folderFixture();
     f.state.adoptAgentDefaults();

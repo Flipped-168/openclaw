@@ -5,7 +5,7 @@ import type { InternalSessionEntry } from "../../config/sessions/types.js";
 import { NODE_WORKER_WORKSPACE_EXEC_COMMAND } from "../../infra/node-commands.js";
 import { NODE_WORKER_SUPERVISOR_PROTOCOL_FEATURE } from "../../infra/node-runner-inventory.js";
 import { closeOpenClawStateDatabaseForTest } from "../../state/openclaw-state-db.js";
-import { NODE_WORKSPACE_VALIDATE_DEVICE_FOLDER_COMMAND } from "../../worker/node-device-folder-protocol.js";
+import { NODE_WORKSPACE_VALIDATE_DEVICE_FOLDER_COMMAND } from "../../worker/node-workspace-protocol.js";
 import type {
   NodeWorkerSupervisorNodeProof,
   NodeWorkerSupervisorTransport,

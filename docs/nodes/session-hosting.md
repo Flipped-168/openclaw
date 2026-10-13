@@ -383,7 +383,9 @@ Restart the node host after changing the setting.
 This default uses the existing session-host trust boundary: operators can already
 run agents with exec on the node. Folder restrictions are an optional guardrail,
 not an exec sandbox. Only enable session hosting on a trusted device; use a narrow
-root list or `[]` if you do not want unrestricted in-place folder selection.
+root list or `[]` if you do not want unrestricted in-place folder selection. The
+selected folder becomes the session workspace root, so deployments that contain
+`operator.write` sessions with `tools.fs.workspaceOnly` should also set a root list.
 
 For a specific paired device that advertises `workerHost.deviceFolders: true`,
 choose **Existing folder on device** in the workspace picker and enter an

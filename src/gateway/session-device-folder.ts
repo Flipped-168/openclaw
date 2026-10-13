@@ -8,8 +8,10 @@ import {
 } from "../../packages/gateway-protocol/src/index.js";
 import { formatErrorMessage } from "../infra/errors.js";
 import { NODE_WORKER_WORKSPACE_EXEC_COMMAND } from "../infra/node-commands.js";
-import { NODE_WORKSPACE_VALIDATE_DEVICE_FOLDER_COMMAND } from "../worker/node-device-folder-protocol.js";
-import { parseNodeWorkerWorkspaceExecResult } from "../worker/node-workspace-protocol.js";
+import {
+  NODE_WORKSPACE_VALIDATE_DEVICE_FOLDER_COMMAND,
+  parseNodeWorkerWorkspaceExecResult,
+} from "../worker/node-workspace-protocol.js";
 import type { NodeWorkerSupervisorTransport } from "./node-registry-private.js";
 
 export function validateSessionDeviceFolderSelection(

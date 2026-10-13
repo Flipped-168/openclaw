@@ -490,7 +490,10 @@ dispatch so authorization failures have one canonical structured response:
   Existing device folders (`deviceFolder: { deviceId, path }`) require the broader
   `operator.write` scope, a connected session host advertising folder support, and
   node-local consent through `nodeHost.workerRuns.folders`. They do not grant
-  arbitrary node execution. Incognito sessions and any `execNode` request require
+  arbitrary node execution, but the selected folder becomes the session's
+  workspace root. If you rely on `tools.fs.workspaceOnly` or exec restrictions to
+  contain `operator.write` sessions, also set `nodeHost.workerRuns.folders` on the
+  device. Incognito sessions and any `execNode` request require
   `operator.admin`.
   For non-admin callers, the handler limits `cwd` to configured agent
   workspaces. `projectId` cannot be combined with `cwd` or `execNode`.

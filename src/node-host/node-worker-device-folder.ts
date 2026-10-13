@@ -3,7 +3,7 @@ import path from "node:path";
 import { expandHomePrefix } from "../infra/home-dir.js";
 import { isPathInside } from "../infra/path-guards.js";
 import {
-  NODE_WORKSPACE_VALIDATE_DEVICE_FOLDER_COMMAND,
+  assertNodeWorkspaceDeviceFolderCommand,
   type NodeWorkerWorkspaceExecInput,
 } from "../worker/node-workspace-protocol.js";
 import type { NodeWorkerManagedWorkspaceRequest } from "./node-worker-workspace-identity.js";
@@ -109,28 +109,7 @@ export class NodeWorkerDeviceFolders {
 
   validateCommand(input: NodeWorkerWorkspaceExecInput): string | undefined {
     const folder = input.deviceFolder === undefined ? undefined : this.validate(input.deviceFolder);
-    if (
-      folder &&
-      (input.resetWorkspace !== undefined ||
-        input.transfer ||
-        input.seed ||
-        input.preparationKey !== undefined ||
-        input.quiescence)
-    ) {
-      throw new Error(
-        "INVALID_REQUEST: device folders cannot be prepared, reset, transferred, seeded, or quiesced",
-      );
-    }
-    if (
-      input.argv[0] === NODE_WORKSPACE_VALIDATE_DEVICE_FOLDER_COMMAND &&
-      (!folder ||
-        input.argv.length !== 1 ||
-        input.input !== undefined ||
-        input.process ||
-        input.nativeProcessOwner)
-    ) {
-      throw new Error("INVALID_REQUEST: device folder validation owns its operation");
-    }
+    assertNodeWorkspaceDeviceFolderCommand(input);
     return folder;
   }
 }

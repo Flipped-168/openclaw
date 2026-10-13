@@ -131,6 +131,32 @@ export type NodeWorkerWorkspaceExecResult = SpawnResult & {
   process?: NodeWorkerWorkspaceProcessResult;
 };
 
+/** User-owned folders only run commands; ingress parsing and direct node execution share this rule. */
+export function assertNodeWorkspaceDeviceFolderCommand(input: NodeWorkerWorkspaceExecInput): void {
+  if (
+    input.deviceFolder !== undefined &&
+    (input.preparationKey !== undefined ||
+      input.resetWorkspace !== undefined ||
+      input.transfer ||
+      input.seed ||
+      input.quiescence)
+  ) {
+    throw new Error(
+      "INVALID_REQUEST: device folders cannot be prepared, reset, transferred, seeded, or quiesced",
+    );
+  }
+  if (
+    input.argv[0] === NODE_WORKSPACE_VALIDATE_DEVICE_FOLDER_COMMAND &&
+    (input.deviceFolder === undefined ||
+      input.argv.length !== 1 ||
+      input.input !== undefined ||
+      input.process ||
+      input.nativeProcessOwner)
+  ) {
+    throw new Error("INVALID_REQUEST: device folder validation owns its operation");
+  }
+}
+
 export function parseNodeWorkerWorkspaceExecInput(
   raw?: string | null,
 ): NodeWorkerWorkspaceExecInput {
@@ -162,28 +188,7 @@ export function parseNodeWorkerWorkspaceExecInput(
     );
   }
   const input = parsed.data;
-  if (
-    input.deviceFolder !== undefined &&
-    (input.preparationKey !== undefined ||
-      input.resetWorkspace !== undefined ||
-      input.transfer ||
-      input.seed ||
-      input.quiescence)
-  ) {
-    throw new Error(
-      "INVALID_REQUEST: device folders cannot be prepared, reset, transferred, seeded, or quiesced",
-    );
-  }
-  if (
-    input.argv[0] === NODE_WORKSPACE_VALIDATE_DEVICE_FOLDER_COMMAND &&
-    (input.deviceFolder === undefined ||
-      input.argv.length !== 1 ||
-      input.input !== undefined ||
-      input.process ||
-      input.nativeProcessOwner)
-  ) {
-    throw new Error("INVALID_REQUEST: device folder validation owns its operation");
-  }
+  assertNodeWorkspaceDeviceFolderCommand(input);
   if (input.quiescence || input.argv[0] === NODE_WORKSPACE_QUIESCENCE_COMMAND) {
     if (
       !input.quiescence ||

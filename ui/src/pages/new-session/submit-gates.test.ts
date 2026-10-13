@@ -19,8 +19,9 @@ afterEach(() => {
 });
 
 describe("DraftSubmissionFlow submit gates", () => {
-  it("blocks existing-folder creation after an incompatible runtime change and explains recovery", async () => {
-    const { place, flow, gateway, context } = createDraftFixture({
+  it("retries a restored existing-folder create after its device stops offering free slots", async () => {
+    let freeSlots = 1;
+    const { place, flow, gateway } = createDraftFixture({
       methods: ["environments.list", "sessions.create", "sessions.dispatch"],
       scopes: ["operator.admin", "operator.read", "operator.write"],
       request: async (method) =>
@@ -33,7 +34,7 @@ describe("DraftSubmissionFlow submit gates", () => {
                   status: "available",
                   sessionHost: true,
                   workerHost: { deviceFolders: true },
-                  workerSlots: { total: 1, available: 1 },
+                  workerSlots: { total: 1, available: freeSlots },
                 },
               ],
               profiles: [],
@@ -53,22 +54,26 @@ describe("DraftSubmissionFlow submit gates", () => {
       ],
     });
     await gateway.refreshCloudProfiles();
-    place.selectDevice("runner");
-    place.selectDeviceFolder();
-    place.setDeviceFolderPath("/srv/project");
-    flow.setMessage("Keep my folder");
-    expect(flow.canSubmit()).toBe(true);
-    context.agents.state.agentsList!.agents[0]!.agentRuntime = {
-      id: "remote",
-      source: "agent",
-      cloudPlacementExecutionMode: "remote-exec",
-      devicePlacement: { requiredNodeCommands: [], consumesWorkerSlot: false },
-    };
-    expect(flow.canSubmit()).toBe(false);
-    expect(flow.submitDisabledReason()).toContain("worker-turn runtime");
-    await flow.submit();
-    expect(context.sessions.createResult).not.toHaveBeenCalled();
+    flow.pendingPlacement.stageCreate({
+      agentId: "main",
+      target: { kind: "device", deviceId: "runner" },
+      message: "Keep my folder",
+      gatewayUrl: "ws://gateway.example",
+      recoveryScope: "principal-a",
+      createParams: {
+        agentId: "main",
+        message: "",
+        deviceFolder: { deviceId: "runner", path: "/srv/project" },
+      },
+    });
+    flow.releasePendingPlacementOwner();
+    flow.restorePendingPlacementRecovery("ws://gateway.example", "principal-a");
     expect(place.deviceFolder).toEqual({ deviceId: "runner", path: "/srv/project" });
+    // The pending session itself can hold the device's only slot.
+    freeSlots = 0;
+    await gateway.refreshCloudProfiles();
+    expect(place.deviceFolderAvailable).toBe(false);
+    expect(flow.submitBlock()).toBeUndefined();
   });
 
   it.each(["retry", "choose-workspace"] as const)(

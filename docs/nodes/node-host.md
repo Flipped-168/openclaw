@@ -347,7 +347,8 @@ local configuration so it advertises the updated consent.
 
 The unrestricted default does not expand the existing session-host exec trust
 boundary: operators can already run agents with exec on this device. This list is
-a folder-selection guardrail, not an exec sandbox.
+a folder-selection guardrail for the Gateway's session requests, not an exec
+sandbox or a boundary against a compromised Gateway.
 
 An existing-folder session stays pinned to that device. OpenClaw does not copy,
 reconcile, reset, or remove the selected folder. Worker HOME and metadata use

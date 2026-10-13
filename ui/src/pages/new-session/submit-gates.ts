@@ -258,20 +258,6 @@ export function resolveNewSessionSubmitBlock(
       };
     }
   }
-  if (place.folderSubmissionBlocked()) {
-    return {
-      gate: "folder",
-      reason:
-        (place.deviceFolder && place.deviceFolderRuntimeUnsupportedReason) ||
-        t(
-          place.deviceFolder
-            ? place.deviceFolderAvailable
-              ? "newSession.deviceFolderPathRequired"
-              : "newSession.deviceFolderUnavailable"
-            : "newSession.checkingPlace",
-        ),
-    };
-  }
   if (pendingPlacementActive) {
     const retryReady = Boolean(
       draft.pendingPlacement.retryAllowed &&
@@ -286,6 +272,20 @@ export function resolveNewSessionSubmitBlock(
     return retryReady
       ? emptyDraftBlock(draft, kind, pendingPlacementActive)
       : { gate: "placement-recovery", reason: t("newSession.placementNotReady") };
+  }
+  if (place.folderSubmissionBlocked()) {
+    return {
+      gate: "folder",
+      reason:
+        (place.deviceFolder && place.deviceFolderRuntimeUnsupportedReason) ||
+        t(
+          place.deviceFolder
+            ? place.deviceFolderAvailable
+              ? "newSession.deviceFolderPathRequired"
+              : "newSession.deviceFolderUnavailable"
+            : "newSession.checkingPlace",
+        ),
+    };
   }
   if (!agents?.agentsList) {
     return rosterBlock();
