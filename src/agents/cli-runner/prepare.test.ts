@@ -1090,6 +1090,7 @@ describe("prepareCliRunContext", () => {
         profileId: authProfileId,
         profileType: refreshedCredential.type,
         credential: refreshedCredential,
+        readCurrentCredential: null,
       };
     });
     setCliRunnerPrepareTestDeps({

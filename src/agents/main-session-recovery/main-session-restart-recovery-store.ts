@@ -509,6 +509,11 @@ export async function recoverStore(params: {
       if (stopped()) {
         return result;
       }
+      // Steering changes the transcript tail, not the executing turn's source claim.
+      const hasRetainedHumanSource =
+        expectedRecoverySourceRunId !== undefined &&
+        (entry.restartRecoverySourceIngress === "control-ui" ||
+          entry.restartRecoverySourceIngress === "channel");
       if (
         !recoverableHarnessCompletion &&
         !(
@@ -519,7 +524,7 @@ export async function recoverStore(params: {
             sourceRunId: expectedRecoverySourceRunId,
           })
         ) &&
-        (source === "inter_session" ||
+        ((source === "inter_session" && !hasRetainedHumanSource) ||
           ((source === undefined ||
             source === "internal_system" ||
             source === "harness_completion") &&
