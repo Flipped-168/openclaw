@@ -391,7 +391,7 @@ export function resolveEmptyResponseRetryInstruction(
   if (rejectedBeforeDispatch && params.attempt.lastToolError?.executionStarted === false) {
     const messages = params.attempt.messagesSnapshot;
     const failureIndex = messages.findLastIndex(
-      (message) => message.role === "toolResult" && message.isError === true,
+      (message) => message.role === "toolResult" && message.isError,
     );
     const failure = messages[failureIndex];
     // The latest failure must have reached the model before this rejection.
