@@ -579,7 +579,6 @@ describe("installPluginFromGitSpec", () => {
       .mockResolvedValueOnce({ code: 0, stdout: "abc123\n", stderr: "" })
       .mockResolvedValueOnce({ code: 0, stdout: "", stderr: "" });
     mockSuccessfulPackageInstall();
-    // Native temp creation can bypass fs.mkdtemp; fail the workspace owner itself.
     const workspaceSpy = vi
       .spyOn(installSourceUtils, "withInstallWorkspace")
       .mockRejectedValueOnce(Object.assign(new Error("read-only filesystem"), { code: "EROFS" }));
@@ -590,24 +589,31 @@ describe("installPluginFromGitSpec", () => {
         gitDir,
       });
 
-      expect(result).toMatchObject({ ok: true });
-      expect(workspaceSpy).toHaveBeenCalledTimes(2);
+      expect(result.ok).toBe(true);
+      const cloneWorkspaceCalls = workspaceSpy.mock.calls.filter(
+        ([prefix]) => prefix === "openclaw-git-plugin-",
+      );
+      expect(cloneWorkspaceCalls).toHaveLength(2);
+      const targetRoot = cloneWorkspaceCalls[0]?.[2]?.rootDir;
       const persistentRepoDir = expectedGitRepoDir({
         gitDir,
         normalizedSpec: "git:https://github.com/acme/demo.git",
       });
-      expect(workspaceSpy.mock.calls[0]).toEqual([
-        "openclaw-git-plugin-",
-        expect.any(Function),
-        { rootDir: path.dirname(persistentRepoDir) },
-      ]);
-      expect(workspaceSpy.mock.calls[1]).toEqual(["openclaw-git-plugin-", expect.any(Function)]);
-      const cloneDir = expectDefined(commandArgvAt(0).at(-1), "cloneDir test invariant");
-      expect(path.dirname(path.dirname(cloneDir))).toBe(
+      expect(await fs.realpath(expectDefined(targetRoot, "targetRoot test invariant"))).toBe(
+        await fs.realpath(path.dirname(persistentRepoDir)),
+      );
+      expect(cloneWorkspaceCalls[1]?.[2]).toBeUndefined();
+      const cloneArgv = commandArgvAt(0);
+      const cloneWorkspace = path.dirname(
+        path.resolve(expectDefined(cloneArgv.at(-1), "clone destination test invariant")),
+      );
+      expect(path.basename(cloneWorkspace)).toMatch(/^openclaw-git-plugin-/);
+      expect(path.dirname(cloneWorkspace)).toBe(
         await fs.realpath(resolvePreferredOpenClawTmpDir()),
       );
-      expect((await fs.stat(persistentRepoDir)).isDirectory()).toBe(true);
       expect(runCommandWithTimeoutMock).toHaveBeenCalledTimes(3);
+      expect(installPluginFromInstalledPackageDirMock).toHaveBeenCalledTimes(1);
+      await expect(fs.access(cloneWorkspace)).rejects.toThrow();
     } finally {
       workspaceSpy.mockRestore();
     }
