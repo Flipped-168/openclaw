@@ -140,7 +140,7 @@ it.each([
         exactRead: true,
         readOnly: false,
       });
-      const qualified = prepareQualifiedSessionEntryTarget({
+      const qualified = await prepareQualifiedSessionEntryTarget({
         ...route,
         requestedKey: kind === "alias" ? route.canonicalKey : scope.sessionKey,
         storeKey: route.canonicalKey,
@@ -158,7 +158,7 @@ it.each([
         expect(result.error).toBeNull();
         await withQualifiedGatewaySessionEntry({
           cfg,
-          target: qualified.target,
+          target: qualified,
           logicalStorePath: route.storePath,
           includeMembership: true,
           assertConfigCurrent: () => {},
@@ -212,7 +212,6 @@ it.each([
         expect(host.queries).toEqual([]);
       } finally {
         host.restore();
-        qualified.release();
       }
     });
   },
