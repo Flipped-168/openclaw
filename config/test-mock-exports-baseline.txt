@@ -9644,7 +9644,6 @@
 ["ui/src/app/overlays-update-continuity.test.ts","../lib/toast.ts","68c3a82839bf89ff12172a36802f02e76794e74bef5943b01ea140589a6cb2af",1]
 ["ui/src/app/overlays-update-report.test.ts","./update-failure-report.ts","791cc403b13a7695ebb76971ed6c1d14ece29202adab963104a038925dd12ed6",1]
 ["ui/src/app/overlays.test.ts","../lib/toast.ts","68c3a82839bf89ff12172a36802f02e76794e74bef5943b01ea140589a6cb2af",1]
-["ui/src/app/router-outlet-chat.test.ts","../pages/chat/chat-page.ts","0c0b0e4ed29e9fcbd4b068521e045fa1b22727a9e3cdb000c832517add0b1b19",1]
 ["ui/src/app/service-worker-refresh.runtime.test.ts","./stale-chunk-reload.ts","a10a2db3e4d39b687450c377b506abab507e7e1c7c28ad520aa993277f330b7a",1]
 ["ui/src/app/update-failure-report.test.ts","../components/confirm-dialog.ts","491b4acc036b2467c91641f99c83cbddad6706dde8475fdfbd1b562606a5ae89",1]
 ["ui/src/components/assistant-panel.test.ts","./home-session.runtime.ts","3512d1bf20dbfc4e462ac3729de2780f066179f22fd6371eb101865c315b0ae0",1]
