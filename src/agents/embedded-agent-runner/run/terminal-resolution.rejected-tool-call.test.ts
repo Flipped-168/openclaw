@@ -54,6 +54,38 @@ function rejectedCallAfterSettledTool(
   } satisfies Partial<TerminalInput>;
 }
 
+function refusedExecThenRejectedCall() {
+  const turn = rejectedCallAfterSettledTool(
+    {
+      lastToolError: { toolName: "exec", executionStarted: false, mutatingAction: false },
+      toolMetas: [{ toolName: "exec", toolCallId: "call_exec", isError: true }],
+    },
+    {
+      api: "anthropic-messages",
+      provider: "anthropic",
+      errorCode: "malformed_tool_call_arguments",
+      errorMessage: "Provider completed tool call with malformed JSON arguments",
+    },
+  );
+  turn.attempt.messagesSnapshot = [
+    { role: "user", content: "Inspect the workspace", timestamp: 0 },
+    buildEmbeddedRunnerAssistant({
+      stopReason: "toolUse",
+      content: [{ type: "toolCall", id: "call_exec", name: "exec", arguments: {} }],
+    }),
+    {
+      role: "toolResult",
+      toolCallId: "call_exec",
+      toolName: "exec",
+      content: [{ type: "text", text: "exec preflight: complex interpreter invocation detected" }],
+      isError: true,
+      timestamp: 0,
+    },
+    turn.attemptAssistant,
+  ];
+  return { ...turn, modelApi: "anthropic-messages" };
+}
+
 describe("terminal resolution for a tool call rejected before dispatch", () => {
   beforeEach(() => vi.clearAllMocks());
 
@@ -84,6 +116,75 @@ describe("terminal resolution for a tool call rejected before dispatch", () => {
       return;
     }
     expect(exhausted.result.meta.error).toMatchObject({ kind: "incomplete_turn" });
+  });
+
+  it("continues once after a consumed exec refusal and a malformed different call", async () => {
+    const turn = refusedExecThenRejectedCall();
+    const retryState = createEmbeddedRunTerminalRetryState();
+    const activateInternalPrompt = vi.fn();
+    const input = makeTerminalInput({
+      ...turn,
+      retryState,
+      sessionPromptState: { activateInternalPrompt },
+    });
+
+    await expect(resolveEmbeddedRunTerminal(input)).resolves.toEqual({ action: "retry" });
+    expect(activateInternalPrompt).toHaveBeenCalledExactlyOnceWith(
+      expect.stringContaining("Do not repeat completed tool calls"),
+    );
+    expect(turn.attempt.lastToolError).toEqual({
+      toolName: "exec",
+      executionStarted: false,
+      mutatingAction: false,
+    });
+    expect((await resolveEmbeddedRunTerminal(input)).action).toBe("complete");
+    expect(activateInternalPrompt).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    "started",
+    "unknown",
+    "missing-result",
+    "unconsumed",
+    "prior-turn",
+    "different-tool",
+    "active",
+    "async",
+  ])("does not continue a %s tool failure", async (condition) => {
+    const turn = refusedExecThenRejectedCall();
+    const snapshot = turn.attempt.messagesSnapshot;
+    switch (condition) {
+      case "started":
+        turn.attempt.lastToolError!.executionStarted = true;
+        break;
+      case "unknown":
+        delete turn.attempt.lastToolError!.executionStarted;
+        break;
+      case "missing-result":
+        snapshot.splice(2, 1);
+        break;
+      case "unconsumed":
+        snapshot.push(snapshot.splice(2, 1)[0]);
+        break;
+      case "prior-turn":
+        snapshot.splice(3, 0, { role: "user", content: "New task", timestamp: 1 });
+        break;
+      case "different-tool":
+        turn.attempt.lastToolError!.toolName = "write";
+        break;
+      case "active":
+        turn.attempt.itemLifecycle.activeCount = 1;
+        break;
+      case "async":
+        turn.attempt.toolMetas[0].asyncStarted = true;
+        break;
+    }
+    const activateInternalPrompt = vi.fn();
+    const result = await resolveEmbeddedRunTerminal(
+      makeTerminalInput({ ...turn, sessionPromptState: { activateInternalPrompt } }),
+    );
+    expect(result.action).toBe("complete");
+    expect(activateInternalPrompt).not.toHaveBeenCalled();
   });
 
   it("also covers the malformed-arguments error code", async () => {

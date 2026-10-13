@@ -112,6 +112,7 @@ function shouldSkipNonVisibleTurnRetry(params: {
   attempt: IncompleteTurnAttempt;
   /** Silent classification can tolerate completed effects, never unfinished work or replay. */
   tolerateSideEffects?: boolean;
+  consumedToolFailure?: boolean;
 }): boolean {
   return Boolean(
     params.aborted ||
@@ -120,7 +121,7 @@ function shouldSkipNonVisibleTurnRetry(params: {
     params.attempt.clientToolCalls ||
     params.attempt.yieldDetected ||
     params.attempt.didSendDeterministicApprovalPrompt ||
-    params.attempt.lastToolError ||
+    (params.attempt.lastToolError && !params.consumedToolFailure) ||
     hasAcceptedSessionSpawn(params.attempt.acceptedSessionSpawns) ||
     params.attempt.itemLifecycle.activeCount > 0 ||
     params.attempt.itemLifecycle.completedCount < params.attempt.itemLifecycle.startedCount ||
@@ -386,9 +387,27 @@ export function resolveEmptyResponseRetryInstruction(
     (assistant.errorCode === MALFORMED_TOOL_CALL_ARGUMENTS_ERROR_CODE ||
       isPreDispatchToolCallRejectionMessage(assistant.errorMessage)) &&
     readSettledToolCalls(assistant).length === 0;
-  // Settled earlier effects are tolerated only for a call that never ran;
-  // unfinished, async or failed work still blocks the continuation.
-  if (shouldSkipNonVisibleTurnRetry({ ...params, tolerateSideEffects: rejectedBeforeDispatch })) {
+  let consumedToolFailure = false;
+  if (rejectedBeforeDispatch && params.attempt.lastToolError?.executionStarted === false) {
+    const messages = params.attempt.messagesSnapshot;
+    const failureIndex = messages.findLastIndex(
+      (message) => message.role === "toolResult" && message.isError === true,
+    );
+    const failure = messages[failureIndex];
+    // The latest failure must have reached the model before this rejection.
+    consumedToolFailure =
+      failureIndex > messages.findLastIndex((message) => message.role === "user") &&
+      failureIndex < messages.indexOf(assistant) &&
+      failure?.role === "toolResult" &&
+      failure.toolName === params.attempt.lastToolError.toolName;
+  }
+  if (
+    shouldSkipNonVisibleTurnRetry({
+      ...params,
+      tolerateSideEffects: rejectedBeforeDispatch,
+      consumedToolFailure,
+    })
+  ) {
     return null;
   }
 
