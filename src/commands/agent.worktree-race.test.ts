@@ -27,6 +27,7 @@ const configIoMocks = vi.hoisted(() => ({
   readConfigFileSnapshotForWrite: vi.fn(),
 }));
 
+// mock-isolation: keep config reads and writes inside the controlled worktree fixture.
 vi.mock("../config/io.js", () => ({
   getRuntimeConfig: configIoMocks.loadConfig,
   loadConfig: configIoMocks.loadConfig,
