@@ -290,6 +290,32 @@ describe("conversation registry", () => {
       },
     });
 
+    await upsertCanonicalSessionEntry(scope, {
+      totalTokens: 42,
+      updatedAt: canonicalConversation!.lastSeenAt + 100,
+    });
+    expect(await readConversation(scope, conversationRef)).toEqual(canonicalConversation);
+    expect(
+      await resolveCurrentSessionPrimaryConversation({ ...scope, sessionId: "ops-session" }),
+    ).toEqual(canonicalConversation);
+
+    const observedSnapshot = await loadReplySessionInitializationSnapshot(scope);
+    expect(
+      await commitReplySessionInitialization({
+        activeSessionKey: sessionKey,
+        agentId: "main",
+        expectedRevision: observedSnapshot.revision,
+        routeContext: { peerId: "canonical-ops", guildId: "guild-b" },
+        sessionEntry: observedSnapshot.currentEntry!,
+        sessionKey,
+        snapshotEntry: observedSnapshot.currentEntry,
+        storePath,
+      }),
+    ).toMatchObject({ ok: true });
+    const observed = await readConversation(scope, conversationRef);
+    expect(observed).toMatchObject({ routeContext: { guildId: "guild-b" } });
+    expect(observed!.lastSeenAt).toBeGreaterThan(canonicalConversation!.lastSeenAt);
+
     await upsertCanonicalSessionEntry(scope, { label: "generic current write", updatedAt: 200 });
     expect(
       (await listConversations(scope)).filter((conversation) => conversation.role === "primary"),
@@ -299,8 +325,9 @@ describe("conversation registry", () => {
       conversationRef,
     );
     expect(afterCurrentWrite).toMatchObject({
+      label: "generic current write",
       routeContextObserved: true,
-      routeContext: { guildId: "guild-a" },
+      routeContext: { guildId: "guild-b" },
     });
 
     await closeOpenClawAgentDatabasesAsync(tempDir);

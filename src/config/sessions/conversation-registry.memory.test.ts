@@ -93,6 +93,23 @@ describe("memory conversation registry", () => {
         routeContext: { guildId: "guild-a" },
         routeContextObserved: true,
       });
+      readSessionActorStorageResult(
+        await actor.storage!.mutate(
+          {
+            type: "session.entry.patch",
+            input: { operation: { kind: "fields", patch: { totalTokens: 42, updatedAt: 2 } } },
+          },
+          authority,
+        ),
+      );
+      expect(await readConversation(scope, initial!.conversationRef)).toEqual(initial);
+      expect(
+        await resolveCurrentSessionPrimaryConversation({
+          ...scope,
+          sessionKey,
+          sessionId: created.sessionId,
+        }),
+      ).toEqual(initial);
       const updated = readSessionActorStorageResult(
         await actor.storage!.mutate(
           {

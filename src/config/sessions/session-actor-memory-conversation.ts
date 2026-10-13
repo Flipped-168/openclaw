@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from "node:util";
 import { normalizeOptionalLowercaseString } from "@openclaw/normalization-core/string-coerce";
 import {
   conversationIdentityFromSessionEntry,
@@ -52,6 +53,17 @@ export function syncSessionActorMemoryConversations(
 ): void {
   const entry = state.hot.entry;
   if (!entry) {
+    return;
+  }
+  if (
+    observedContext === undefined &&
+    previousEntry?.sessionId === entry.sessionId &&
+    previousEntry.lifecycleRevision === entry.lifecycleRevision &&
+    isDeepStrictEqual(
+      conversationIdentityFromSessionEntry(entry),
+      conversationIdentityFromSessionEntry(previousEntry),
+    )
+  ) {
     return;
   }
   const routeContext =
