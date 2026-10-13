@@ -166,11 +166,14 @@ export class ComposerDictationSession {
 
   private async stopAndClose(reportStartFailure: boolean): Promise<void> {
     await this.stopCapture();
-    await this.startPromise?.catch((error: unknown) => {
-      if (reportStartFailure && !isAbortError(error)) {
-        this.reportFailure(formatDictationError(error));
-      }
-    });
+    // Startup may already be waiting for a normal close; discard must interrupt it.
+    if (!this.discarded || !this.sessionId) {
+      await this.startPromise?.catch((error: unknown) => {
+        if (reportStartFailure && !isAbortError(error)) {
+          this.reportFailure(formatDictationError(error));
+        }
+      });
+    }
     if (!this.discarded) {
       await this.appendChain;
     }

@@ -308,11 +308,17 @@ describe("ComposerDictationController", () => {
     }
   });
 
-  it("Escape discards a finalization that already sent its normal close", async () => {
+  it("Escape discards startup finalization after capture ends before session creation", async () => {
+    const createStarted = createDeferred();
+    const releaseCreate = createDeferred();
     const closeStarted = createDeferred();
     const release = createDeferred();
     const implementation = request.getMockImplementation();
     request.mockImplementation(async (method, params) => {
+      if (method === "talk.session.create") {
+        createStarted.resolve();
+        await releaseCreate.promise;
+      }
       if (method === "talk.session.close" && !params.discard) {
         closeStarted.resolve();
         await release.promise;
@@ -321,11 +327,21 @@ describe("ComposerDictationController", () => {
     });
     const h = createHarness();
     expect(h.controller.startDirect()).toBe(true);
-    await waitForFast(() =>
-      expect(request).toHaveBeenCalledWith("talk.session.create", expect.anything()),
-    );
+    await createStarted.promise;
+    const processor = processors.at(-1);
+    if (!processor) {
+      throw new Error("expected microphone processor before session creation completes");
+    }
+    processor.onaudioprocess?.({
+      inputBuffer: { getChannelData: () => new Float32Array([0, 1, -1]) },
+    });
     const finishing = h.controller.finishActive();
+    releaseCreate.resolve();
     await closeStarted.promise;
+    expect(request).toHaveBeenCalledWith("talk.session.appendAudio", {
+      sessionId: "dictation-1",
+      audioBase64: "/4AA",
+    });
     try {
       document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
       await vi.advanceTimersByTimeAsync(0);
@@ -344,6 +360,7 @@ describe("ComposerDictationController", () => {
       await expect(finishing).resolves.toBe(false);
       expect(h.onCommit).not.toHaveBeenCalled();
     } finally {
+      releaseCreate.resolve();
       release.resolve();
       h.controller.dispose();
     }
