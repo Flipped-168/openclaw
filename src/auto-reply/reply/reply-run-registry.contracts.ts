@@ -122,6 +122,7 @@ type ReplyTurnParticipantInput = Pick<
 >;
 
 export type ReplyToolAuthoritySnapshot = Readonly<{
+  close?(): void;
   /** Authenticated requester of this execution; absent identities cannot steer. */
   requesterPrincipalKey?: string;
   personalToolOwner?: ReplyTurnParticipantInput;

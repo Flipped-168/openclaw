@@ -71,7 +71,7 @@ afterEach(() => {
   embeddedRunsTesting.resetActiveEmbeddedRuns();
 });
 
-it.each(["missing", "different"] as const)(
+it.each(["missing", "different", "different account"] as const)(
   "explicit sessions_send steering refuses %s requester identity without starting other work",
   async (identity) => {
     const requesterKey = "agent:re-portal:main";
@@ -95,9 +95,15 @@ it.each(["missing", "different"] as const)(
       config: { ...config, session: { ...config.session, store: storePath } },
     });
     const result = await withGatewayToolCallerIdentity(
-      identity === "different"
-        ? { ...caller, requesterOrigin: { ...caller.requesterOrigin, senderId: "bob" } }
-        : undefined,
+      identity === "missing"
+        ? undefined
+        : {
+            ...caller,
+            requesterOrigin: {
+              ...caller.requesterOrigin,
+              ...(identity === "different" ? { senderId: "bob" } : { accountId: "other-account" }),
+            },
+          },
       () =>
         tool.execute("refused-steer", {
           mode: "steer",
@@ -120,11 +126,16 @@ it.each(["missing", "different"] as const)(
 it.each([
   { supportsTranscriptCommitWait: false },
   { supportsTranscriptCommitWait: true },
-  { supportsTranscriptCommitWait: true, mode: "steer" as const, alternateStore: true },
+  {
+    supportsTranscriptCommitWait: true,
+    mode: "steer" as const,
+    alternateStore: true,
+    refreshedDisplay: true,
+  },
   { supportsTranscriptCommitWait: true, mode: "steer" as const, hiddenRun: true },
 ])(
-  "sessions_send persists steered provenance with transcript wait support $supportsTranscriptCommitWait and mode $mode, alternate store $alternateStore, hidden run $hiddenRun",
-  async ({ supportsTranscriptCommitWait, mode, alternateStore, hiddenRun }) => {
+  "sessions_send persists steered provenance with transcript wait support $supportsTranscriptCommitWait and mode $mode, alternate store $alternateStore, hidden run $hiddenRun, refreshed display $refreshedDisplay",
+  async ({ supportsTranscriptCommitWait, mode, alternateStore, hiddenRun, refreshedDisplay }) => {
     const runId = "hidden-sessions-send-steering-run";
     const runScopedCallerKey =
       mode === "steer"
@@ -237,7 +248,15 @@ it.each([
       if (mode === "steer") {
         vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
       }
-      const send = withGatewayToolCallerIdentity(createSessionsSendTestCaller(requesterKey), () =>
+      const caller = createSessionsSendTestCaller(requesterKey);
+      if (refreshedDisplay) {
+        caller.requesterOrigin = {
+          ...caller.requesterOrigin,
+          senderName: "Updated requester name",
+          senderUsername: "updated-requester",
+        };
+      }
+      const send = withGatewayToolCallerIdentity(caller, () =>
         tool.execute("call-run-scoped-caller", {
           mode,
           sessionKey: runScopedCallerKey,

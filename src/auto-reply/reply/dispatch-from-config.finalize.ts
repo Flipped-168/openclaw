@@ -80,6 +80,7 @@ export async function finalizeDispatchAndAudit(state: ExecuteDispatchReadyState)
       text: "Your message is queued for a new turn after the current turn finishes. It hasn’t changed the work already in progress.",
       isStatusNotice: true,
     });
+    setReplyPayloadMetadata(queuedRequesterNotice, { queueAdmissionNotice: true });
     replies.push(queuedRequesterNotice);
   }
   const pendingFinalDeliveryIdentity = replies
@@ -190,10 +191,6 @@ export async function finalizeDispatchAndAudit(state: ExecuteDispatchReadyState)
             finalReply.blockDeliveryOutcome ?? finalReply.routedOutcome ?? "cancelled",
           );
         registerReplyDispatcherSettledTask(dispatcher, () => outcome.then(settle));
-      }
-      if (finalReply.sessionWriterDeliveryRevoked) {
-        sessionWriterDeliveryRevoked = true;
-        continue;
       }
       if (finalReply.suppressionReason) {
         channelTransformSuppressedFinal ||= finalReply.suppressionReason === "channel_transform";

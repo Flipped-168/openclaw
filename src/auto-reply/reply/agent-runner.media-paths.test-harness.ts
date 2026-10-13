@@ -204,8 +204,11 @@ vi.mock("./reply-media-paths.js", async (importOriginal) => {
 
 const { runReplyAgent } = await import("./agent-runner-run.js");
 
-function createMediaFollowupRun(overrides: Parameters<typeof createMockFollowupRun>[0]) {
-  const followupRun = createMockFollowupRun(overrides);
+function createMediaFollowupRun(overrides: Parameters<typeof createMockFollowupRun>[0] = {}) {
+  const followupRun = createMockFollowupRun({
+    ...overrides,
+    run: { senderId: "alice", ...overrides.run },
+  });
   followupRun.run.thinkingCatalog = [
     {
       provider: followupRun.run.provider,
@@ -216,13 +219,13 @@ function createMediaFollowupRun(overrides: Parameters<typeof createMockFollowupR
   return followupRun;
 }
 
-function makeRunReplyAgentParams(
+async function makeRunReplyAgentParams(
   overrides: Partial<Parameters<typeof runReplyAgent>[0]> & {
     provider?: string;
     prompt?: string;
     workspaceDir?: string;
   } = {},
-): Parameters<typeof runReplyAgent>[0] {
+): Promise<Parameters<typeof runReplyAgent>[0]> {
   const provider = overrides.provider ?? "whatsapp";
   const prompt = overrides.prompt ?? "generate chart";
   const runWorkspaceDir = overrides.workspaceDir ?? testWorkspaceDir;
@@ -253,7 +256,7 @@ function makeRunReplyAgentParams(
     }
   }
   if (overrides.isActive === true && !overrides.replyOperation) {
-    replyOperation.bindToolAuthoritySnapshot(prepareReplyToolAuthority(followupRun));
+    await replyOperation.bindToolAuthoritySnapshotAsync(prepareReplyToolAuthority(followupRun));
   }
   if (overrides.isActive === true) {
     replyOperation.attachBackend({

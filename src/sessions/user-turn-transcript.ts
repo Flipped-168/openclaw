@@ -45,6 +45,7 @@ import {
   admittedUserTurnResult,
   persistUserTurnTranscript,
   resolveCommittedUserTurnTranscript,
+  resolveUserTurnTranscriptTarget,
   type CommittedUserTurnTranscript,
 } from "./user-turn-transcript.persistence.js";
 import type {
@@ -55,7 +56,6 @@ import type {
   UserTurnTranscriptPersistResult,
   UserTurnTranscriptRecorder,
   UserTurnTranscriptTarget,
-  UserTurnTranscriptTargetResolver,
   UserTurnTranscriptUpdateMode,
 } from "./user-turn-transcript.types.js";
 
@@ -83,12 +83,6 @@ export {
   preparePersistedUserTurnMessageForTranscriptWrite,
   restorePreparedUserTurnOperationalMetaForRuntime,
 };
-
-async function resolveUserTurnTranscriptTarget(
-  target: UserTurnTranscriptTargetResolver,
-): Promise<UserTurnTranscriptTarget | undefined> {
-  return typeof target === "function" ? await target() : target;
-}
 
 export function createUserTurnTranscriptRecorder(
   params: CreateUserTurnTranscriptRecorderParams,
@@ -446,8 +440,11 @@ export function createUserTurnTranscriptRecorder(
               notifyMessagePersisted(committed.message);
             },
           });
-        // Collection can resolve its media lazily during admission. Bind custody
-        // here too so the canonical append always consumes the exact sources.
+        // Queued input prepares current custody before its worker transaction;
+        // consumed input can still mirror its committed bytes after custody closes.
+        if (pendingInput?.state === "queued" && pendingInput.runAsync) {
+          return await pendingInput.runAsync(persist);
+        }
         return await (pendingInput
           ? withSessionPendingInputPersistence(pendingInput, persist)
           : persist());
@@ -722,7 +719,8 @@ export function createUserTurnTranscriptRecorder(
     inputActorBinding = binding;
   });
   registerUserTurnTranscriptAdmissionOwner(recorder, {
-    requesterOrigin: () => requesterOrigin,
+    requesterOrigin: () =>
+      pendingInput ? readSessionPendingInputRequesterOrigin(pendingInput) : requesterOrigin,
     pendingInput: () => pendingInput,
     withdrawnInputId: () => readWithdrawnSessionPendingInputId(pendingInput),
     receipt: () => admissionReceipt,

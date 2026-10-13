@@ -1,6 +1,5 @@
 /** Native subagent registration and paused-run adoption precede Gateway acceptance. */
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
-import { readAcpSessionMetaForEntries } from "../../acp/runtime/session-meta-readonly.js";
 import type { AgentRunTerminalOutcome } from "../../agents/agent-run-terminal-outcome.js";
 import {
   readFollowupRequest,
@@ -14,8 +13,10 @@ import type {
 import { resolveSubagentChildAuthority } from "../../agents/subagents/registry/subagent-child-owner-match.js";
 import { getLatestLiveSubagentRunByChildSessionKey } from "../../agents/subagents/registry/subagent-registry-read.js";
 import type { SubagentRunRecord } from "../../agents/subagents/registry/subagent-registry.types.js";
+import { isSameSubagentRunOwner } from "../../agents/subagents/registry/subagent-run-generation.js";
 import type { SessionEntry } from "../../config/sessions/types.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import { runWithGatewayDetachedWorkContinuation } from "../../process/gateway-work-admission.js";
 import { isAcpSessionKey } from "../../routing/session-key.js";
 import type { InputProvenance } from "../../sessions/input-provenance.js";
 import type { ChatAbortControllerEntry } from "../chat-abort.js";
@@ -27,13 +28,28 @@ import { formatForLog } from "../ws-log.js";
 import { createAgentRunDiagnostics } from "./agent-run-diagnostics.js";
 import type { AgentTurnContext, AgentTurnPrincipal } from "./types.js";
 
+export function resolveGatewayPluginSubagentToolPolicy(client: AgentTurnPrincipal | null) {
+  // Plugin-owned additive grants stay internal to the authenticated in-process run.
+  // Public agent params cannot supply them, and normal tool policy still filters them.
+  const runtimePluginToolGrant =
+    client?.internal?.agentRunTracking === "plugin_subagent" &&
+    client.internal.pluginRuntimeOwnerId === client.internal.runtimePluginToolGrant?.pluginId
+      ? client.internal.runtimePluginToolGrant
+      : undefined;
+  const pluginSubagentToolsAllow =
+    client?.internal?.agentRunTracking === "plugin_subagent" &&
+    Array.isArray(client.internal.pluginSubagentToolsAllow)
+      ? [...client.internal.pluginSubagentToolsAllow]
+      : undefined;
+  return { runtimePluginToolGrant, pluginSubagentToolsAllow };
+}
+
 export async function prepareGatewaySubagentRun(params: {
   cfg: OpenClawConfig;
   client: AgentTurnPrincipal | null;
   resolvedSessionKey?: string;
   activeSessionAgentId: string;
   inputProvenance?: InputProvenance;
-  sessionEntry?: SessionEntry;
   request: Pick<AgentRunRequest, "message">;
   isOneShotModelRun: boolean;
   runId: string;
@@ -145,16 +161,39 @@ export async function prepareGatewaySubagentRun(params: {
     internalOwner !== "native_subagent" &&
     !isAcpSessionKey(sessionKey),
   );
-  if (!reactivateSubagent || !sessionKey) {
-    return { pluginSubagent, reactivateSubagent: false };
-  }
-  const entry = params.assertResumeAdmissionCurrent() ?? params.sessionEntry;
-  const [acpMeta] = await readAcpSessionMetaForEntries({
-    cfg: params.cfg,
-    entries: [{ agentId: params.activeSessionAgentId, sessionKey, entry }],
-  });
-  params.assertResumeAdmissionCurrent();
-  return { pluginSubagent, reactivateSubagent: acpMeta == null };
+  return { pluginSubagent, reactivateSubagent };
+}
+
+export function settleUnstartedGatewayParentResume(
+  adopted: SubagentRunRecord,
+  failure?: string,
+): Promise<void> {
+  return runWithGatewayDetachedWorkContinuation(async () => {
+    const runtime = await import("../../agents/subagents/registry/subagent-registry.js");
+    const ownsAdoption = () =>
+      isSameSubagentRunOwner(
+        getLatestLiveSubagentRunByChildSessionKey(
+          adopted.childSessionKey,
+          undefined,
+          adopted.childAgentId,
+        ),
+        adopted,
+      );
+    if (!ownsAdoption()) {
+      return;
+    }
+    const settled = await runtime.finalizeInterruptedSubagentRun({
+      runId: adopted.runId,
+      expectedEntry: adopted,
+      error: failure ?? "Parent resume admission ended before acceptance.",
+      suppressSessionEffects: true,
+    });
+    if (!settled && ownsAdoption()) {
+      throw new Error(
+        "Adopted parent resume could not be durably settled after admission rejection",
+      );
+    }
+  }, "subagents:unstarted-resume");
 }
 
 /** Rejection may settle only the exact physical execution already adopted by this admission. */

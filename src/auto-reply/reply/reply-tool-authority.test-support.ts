@@ -1,5 +1,24 @@
 import { createQueueTestRun as createQueuedRun } from "./queue.test-helpers.js";
-import type { ReplyToolAuthorityOverlay } from "./reply-run-registry.contracts.js";
+import type {
+  ReplyToolAuthorityOverlay,
+  ReplyToolAuthorityRoute,
+} from "./reply-run-registry.contracts.js";
+import {
+  prepareFollowupRunToolAuthorityFingerprint,
+  type ReplyToolAuthorityInput,
+} from "./reply-tool-authority.js";
+
+export async function resolveFollowupRunToolAuthorityFingerprintAsync(
+  snapshot: ReplyToolAuthorityInput,
+  route?: ReplyToolAuthorityRoute,
+): Promise<string> {
+  const prepared = await prepareFollowupRunToolAuthorityFingerprint(snapshot, route);
+  try {
+    return prepared.read();
+  } finally {
+    prepared.release();
+  }
+}
 
 export function createQueueTestRun(params: Parameters<typeof createQueuedRun>[0]) {
   const run = createQueuedRun(params);

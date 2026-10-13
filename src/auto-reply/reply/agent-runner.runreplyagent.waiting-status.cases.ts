@@ -15,6 +15,7 @@ import {
 } from "../../agents/subagents/registry/subagent-registry.test-helpers.js";
 import type { MediaGenerationTaskHandle } from "../../agents/tools/media-generate-background-completion.js";
 import { createMediaGenerationTaskLifecycle } from "../../agents/tools/media-generate-background-shared.js";
+import { setRuntimeConfigSnapshot } from "../../config/runtime-snapshot.js";
 import { createOpenClawTestState } from "../../test-utils/openclaw-test-state.js";
 import { getReplyPayloadMetadata, setReplyPayloadMetadata } from "../reply-payload.js";
 import type { ReplyPayload } from "../types.js";
@@ -40,6 +41,7 @@ export async function mockAcceptedWaitingStatusRun(
     | ((params: RunEmbeddedAgentInternalParams) => Promise<EmbeddedAgentRunResult>),
 ): Promise<void> {
   const testState = await createOpenClawTestState({ label: "reply-waiting-child" });
+  setRuntimeConfigSnapshot({});
   await resetSubagentRegistryForTests({ persist: false });
   onTestFinished(async () => {
     await resetSubagentRegistryForTests({ persist: false });

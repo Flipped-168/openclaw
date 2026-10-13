@@ -4,7 +4,7 @@ import fs from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import path from "node:path";
 import { isRecord } from "@openclaw/normalization-core/record-coerce";
-import { afterAll, beforeAll, vi } from "vitest";
+import { afterAll, beforeAll, beforeEach, vi } from "vitest";
 import { writeOpenAiResponsesSse } from "../../test/helpers/openai-responses-sse.js";
 import { createDeferred } from "../../test/helpers/promise.js";
 import { useAutoCleanupTempDirTracker } from "../../test/helpers/temp-dir.js";
@@ -20,7 +20,10 @@ import { resetConfigOverrides } from "../config/runtime-overrides.js";
 import { clearSessionStoreCacheForTest } from "../config/sessions/store-writer-state.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { resetAgentEventsForTest } from "../infra/agent-events.js";
-import { withPluginRuntimeGatewayRequestScope } from "../plugins/runtime/gateway-request-scope.js";
+import {
+  withPluginRuntimeGatewayRequestScope,
+  withPluginRuntimeRegistryScope,
+} from "../plugins/runtime/gateway-request-scope.js";
 import type { Deferred } from "../shared/deferred.js";
 import { captureEnv, deleteTestEnvValue, setTestEnvValue } from "../test-utils/env.js";
 import { acquireTestPortBlock } from "../test-utils/port-claims.js";
@@ -543,6 +546,20 @@ beforeAll(async () => {
     capture.mockRestore();
   }
 }, 90_000);
+
+// Global afterEach retires prepared model runtimes even while this suite's Gateway stays open.
+beforeEach(async () => {
+  const { refreshPreparedModelRuntimeSnapshots } =
+    await import("../agents/prepared-model-runtime.js");
+  await withPluginRuntimeRegistryScope(gatewayKernel.pluginRuntime.registry, () =>
+    refreshPreparedModelRuntimeSnapshots(getRuntimeConfig, {
+      gatewayLifecycle: true,
+      catalogMode: "static",
+      allowGatewaySubagentBinding: true,
+      defaultWorkspaceDir: workspace,
+    }),
+  );
+});
 
 async function cleanupProof() {
   for (const scenario of scenarios) {

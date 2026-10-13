@@ -223,7 +223,7 @@ export function buildTtsSupplementMediaPayload(payload: ReplyPayload): ReplyPayl
 /** WeakMap-backed metadata attached to payload objects without changing wire shape. */
 export type SessionWriterDeliveryAuthority = {
   agentId?: string;
-  /** Current facts from the original process-owned actor, never a replacement. */
+  /** Current facts from the original actor or its receipt-backed delivery preparation. */
   readCurrentSession?: () =>
     | {
         sessionId: string;
@@ -359,6 +359,8 @@ export type ReplyPayloadMetadata = {
   nonTerminalToolErrorWarning?: boolean;
   /** Host label or status about the run (truncation, restart, compaction); not the answer. */
   hostNotice?: true;
+  /** Runtime acknowledgment of a committed queue decision, independent of active reply delivery. */
+  queueAdmissionNotice?: true;
   /** Unresolved mutating tool failure that makes a heartbeat run terminally failed. */
   heartbeatTerminalToolFailure?: {
     toolName: string;

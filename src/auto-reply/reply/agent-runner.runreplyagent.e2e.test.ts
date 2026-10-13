@@ -66,6 +66,7 @@ import { registerImmediateFailurePolicyCases } from "./agent-runner.runreplyagen
 import {
   createMinimalReplyAgentRunFactory,
   createReplyAgentSessionFixture,
+  runSuccessfulReplyModelFixture,
 } from "./agent-runner.runreplyagent.fixture.test-support.js";
 import { registerFollowupDrainCases } from "./agent-runner.runreplyagent.followup-drain.cases.js";
 import { registerRequiredReplyCompletionCases } from "./agent-runner.runreplyagent.required-reply.cases.js";
@@ -97,6 +98,7 @@ import { prepareReplyToolAuthority } from "./reply-tool-authority.js";
 import { runWithReplyOperationLifecycleAdmission } from "./reply-turn-admission.js";
 import { consumeReplyUsageState } from "./reply-usage-state.js";
 import { createReplyRecoveryActorFixture } from "./restart-recovery-claim.test-support.js";
+import * as routedReplies from "./route-reply.js";
 import { buildChannelSourceTurnId } from "./source-turn-id.js";
 import { createMockTypingController } from "./test-helpers.js";
 
@@ -746,8 +748,8 @@ describe("runReplyAgent active steering", () => {
       sessionId: "session",
       resetTriggered: false,
     });
-    active.bindToolAuthoritySnapshot(prepareReplyToolAuthority(followupRun));
-    active.bindToolAuthorityRoute(activeRoute);
+    await active.bindToolAuthoritySnapshotAsync(prepareReplyToolAuthority(followupRun));
+    await active.bindToolAuthorityRouteAsync(activeRoute);
     active.setPhase("running");
 
     await expect(run()).resolves.toBeUndefined();
@@ -780,7 +782,7 @@ describe("runReplyAgent active steering", () => {
         thinkingCatalog: [{ provider: "anthropic", id: "claude", input: ["text", "image"] }],
       },
     });
-    provided.bindToolAuthoritySnapshot({
+    await provided.bindToolAuthoritySnapshotAsync({
       requesterPrincipalKey: prepareReplyToolAuthority(followupRun).requesterPrincipalKey,
       fingerprint: () => "different-authority",
       project: () => "different-authority",
@@ -988,6 +990,9 @@ describe("runReplyAgent active steering", () => {
   });
 
   it("runs one queued fallback after Gateway rejects injection", async () => {
+    using delivery = vi
+      .spyOn(routedReplies, "routeReply")
+      .mockResolvedValue({ ok: true, delivered: true });
     state.beforeAgentReplyHasHooksMock.mockImplementation(
       (hookName) => hookName === "before_agent_reply",
     );
@@ -1020,8 +1025,16 @@ describe("runReplyAgent active steering", () => {
     await requireScheduledFollowupRunner()(followupRun);
     expect(state.beforeAgentReplyRunMock).toHaveBeenCalledOnce();
     expect(state.runEmbeddedAgentMock).toHaveBeenCalledOnce();
-    expect(onBlockReply).toHaveBeenCalledOnce();
-    expect(onBlockReply).toHaveBeenCalledWith(expect.objectContaining({ text: "model reply" }));
+    expect(delivery).toHaveBeenCalledOnce();
+    expect(delivery).toHaveBeenCalledWith(
+      expect.objectContaining({
+        channel: "discord",
+        to: "channel:24680",
+        replyKind: "final",
+        payload: expect.objectContaining({ text: "model reply" }),
+      }),
+    );
+    expect(onBlockReply).not.toHaveBeenCalled();
   });
 
   it("falls back visibly when the active CLI backend cannot accept injection", async () => {
@@ -5129,10 +5142,7 @@ describe("runReplyAgent typing (heartbeat)", () => {
     const sessionStore = { main: sessionEntry };
     let callCount = 0;
 
-    state.runEmbeddedAgentMock.mockResolvedValue({
-      payloads: [{ text: "final" }],
-      meta: {},
-    });
+    state.runEmbeddedAgentMock.mockImplementation(runSuccessfulReplyModelFixture);
     const fallbackSpy = vi
       .spyOn(modelFallbackModule, "runWithModelFallback")
       .mockImplementation(async (params: TestModelFallbackRunnerParams) => {
@@ -5199,10 +5209,7 @@ describe("runReplyAgent typing (heartbeat)", () => {
       const { sessionEntry, sessionStore, storePath } = await makeSessionFixture();
       let callCount = 0;
 
-      state.runEmbeddedAgentMock.mockResolvedValue({
-        payloads: [{ text: "final" }],
-        meta: {},
-      });
+      state.runEmbeddedAgentMock.mockImplementation(runSuccessfulReplyModelFixture);
       const fallbackSpy = vi
         .spyOn(modelFallbackModule, "runWithModelFallback")
         .mockImplementation(async (params: TestModelFallbackRunnerParams) => {
@@ -5507,10 +5514,7 @@ describe("runReplyAgent typing (heartbeat)", () => {
     const sessionStore = { main: sessionEntry };
     let callCount = 0;
 
-    state.runEmbeddedAgentMock.mockResolvedValue({
-      payloads: [{ text: "final" }],
-      meta: {},
-    });
+    state.runEmbeddedAgentMock.mockImplementation(runSuccessfulReplyModelFixture);
     const fallbackSpy = vi
       .spyOn(modelFallbackModule, "runWithModelFallback")
       .mockImplementation(async (params: TestModelFallbackRunnerParams) => {

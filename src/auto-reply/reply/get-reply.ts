@@ -1017,7 +1017,7 @@ async function resolveReplyFromConfig(
   if (
     enableLocalPathSelfServe &&
     resolvedOpts?.disableTools !== true &&
-    canReadReplyAttachmentPaths({
+    (await canReadReplyAttachmentPaths({
       cfg,
       agentId,
       sessionKey,
@@ -1030,7 +1030,8 @@ async function resolveReplyFromConfig(
       modelId: runModel,
       operatorProfileId: resolvedOpts?.operatorAuthority?.profileId,
       toolsAllow: resolvedOpts?.toolsAllow,
-    })
+      sessionEntry,
+    }))
   ) {
     enableLocalPathSelfServe(
       [finalized, sessionCtx],

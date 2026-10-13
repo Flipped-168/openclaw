@@ -97,13 +97,12 @@ export function captureRequesterOrigin(
   });
 }
 
-/** Inputs are canonical host snapshots; no live policy or source-lifetime lookup is implied. */
+/** Compare authenticated requester identity; captured context and display facts are not identity. */
 export function hasSameRequesterOrigin(left: RequesterOrigin, right: RequesterOrigin): boolean {
   const principal = resolveRequesterPrincipalKey({ requesterOrigin: left });
   return (
     principal !== undefined &&
-    principal === resolveRequesterPrincipalKey({ requesterOrigin: right }) &&
-    JSON.stringify(left) === JSON.stringify(captureRequesterOrigin({ requesterOrigin: right }))
+    principal === resolveRequesterPrincipalKey({ requesterOrigin: right })
   );
 }
 

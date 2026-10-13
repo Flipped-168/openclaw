@@ -1214,15 +1214,9 @@ export async function abortAndDrainEmbeddedAgentRun(params: {
   ) {
     return { aborted: true, drained: false, forceCleared: false, recoveringModelAttempt: true };
   }
-  const persistenceSnapshot =
-    params.forceClear === true && params.sessionKey
-      ? tryLoadForceClearSessionSnapshot(
-          params.sessionKey,
-          agentId,
-          embeddedRunHandle?.runId ??
-            (replyOperation ? getAttachedBackend(replyOperation)?.runId : undefined),
-        )
-      : undefined;
+  const persistenceRunId =
+    embeddedRunHandle?.runId ??
+    (replyOperation ? getAttachedBackend(replyOperation)?.runId : undefined);
   const staleExpiryBarrier = isStuckRecovery ? createDeferredCore() : undefined;
   // Terminal recovery stamps expiry before cancellation can re-enter user abort.
   const expiredReplyRun =
@@ -1271,19 +1265,27 @@ export async function abortAndDrainEmbeddedAgentRun(params: {
             params.reason,
           )
         : false;
-    if (forceCleared && params.sessionKey && persistenceSnapshot) {
-      await persistForceClearedEmbeddedRunTerminalState(
-        {
-          ...persistenceSnapshot,
-          sessionId: params.sessionId,
-          sessionKey: params.sessionKey,
-        },
-        (sessionId, sessionKey) =>
-          ACTIVE_EMBEDDED_RUNS.has(sessionId) ||
-          ACTIVE_EMBEDDED_RUN_SESSION_IDS_BY_KEY.has(sessionKey) ||
-          isReplyRunActiveForSessionId(sessionId) ||
-          resolveActiveReplyRunSessionId(sessionKey) !== undefined,
+    if (forceCleared && params.sessionKey) {
+      // Abort and registry cleanup must not wait for the stalled run's storage work.
+      const persistenceSnapshot = await tryLoadForceClearSessionSnapshot(
+        params.sessionKey,
+        agentId,
+        persistenceRunId,
       );
+      if (persistenceSnapshot) {
+        await persistForceClearedEmbeddedRunTerminalState(
+          {
+            ...persistenceSnapshot,
+            sessionId: params.sessionId,
+            sessionKey: params.sessionKey,
+          },
+          (sessionId, sessionKey) =>
+            ACTIVE_EMBEDDED_RUNS.has(sessionId) ||
+            ACTIVE_EMBEDDED_RUN_SESSION_IDS_BY_KEY.has(sessionKey) ||
+            isReplyRunActiveForSessionId(sessionId) ||
+            resolveActiveReplyRunSessionId(sessionKey) !== undefined,
+        );
+      }
     }
     return { aborted, drained, forceCleared };
   } finally {

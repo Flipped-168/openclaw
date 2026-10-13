@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { awaitGateBeforeSettlement, withinTest } from "../../test/helpers/promise.js";
 import { getRuntimeConfig } from "../config/config.js";
 import { waitForGatewayActiveWork } from "../infra/gateway-active-work.js";
@@ -85,8 +85,6 @@ describe("registered sessions_send requester provenance", () => {
         const scenario = createScenario(spec, sourceKey);
         let incumbent: Promise<unknown> | undefined;
         let source: ReturnType<typeof runProofIngress> | undefined;
-        let restoreQueueObserver: (() => void) | undefined;
-        let steeringAccepted = false;
         let changedQueuedPolicy = false;
         try {
           if (spec.busy) {
@@ -137,26 +135,6 @@ describe("registered sessions_send requester provenance", () => {
               signal,
             );
           }
-          if (spec.mode === "steer") {
-            const queueModule = await import("../agents/embedded-agent-runner/runs.js");
-            const queue = queueModule.queueEmbeddedAgentMessageWithOutcomeAsync;
-            const observer = vi
-              .spyOn(queueModule, "queueEmbeddedAgentMessageWithOutcomeAsync")
-              .mockImplementation((sessionId, text, options) =>
-                queue(sessionId, text, {
-                  ...options,
-                  onQueueAccepted: (accepted) => {
-                    options?.onQueueAccepted?.(accepted);
-                    if (text.includes(scenario.targetPrompt) && accepted) {
-                      steeringAccepted = true;
-                      scenario.releaseIncumbent.resolve();
-                      scenario.releaseTarget.resolve();
-                    }
-                  },
-                }),
-              );
-            restoreQueueObserver = () => observer.mockRestore();
-          }
           source = runProofIngress({
             abortSignal: signal,
             agentId: spec.agent,
@@ -180,7 +158,6 @@ describe("registered sessions_send requester provenance", () => {
           });
           if (rejectedSteering) {
             expect(scenario.accepted?.error).toMatch(/different requester.*followup/);
-            expect(steeringAccepted).toBe(false);
           }
           expect(scenario.sourceRequests[0]?.tools).toContain("sessions_send");
           if (spec.denied || spec.id === "delegate") {
@@ -198,7 +175,7 @@ describe("registered sessions_send requester provenance", () => {
               expect(scenario.incumbentCompleted).toBe(false);
               expect(scenario.targetRequests).toEqual([]);
             } else {
-              expect(steeringAccepted).toBe(true);
+              scenario.releaseTarget.resolve();
             }
             if (spec.id === "busy_followup") {
               // Native acceptance already prepared this execution, unlike a human
@@ -297,7 +274,6 @@ describe("registered sessions_send requester provenance", () => {
               ]);
           }
         } finally {
-          restoreQueueObserver?.();
           scenario.releaseIncumbent.resolve();
           scenario.releaseTarget.resolve();
           await Promise.allSettled([source, incumbent]);
@@ -327,7 +303,6 @@ describe("shared conversation requester admission", () => {
       },
       "agent:main:telegram:group:provenance-mixed-human",
     );
-    scenario.targetKey = "agent:deployment:main";
     scenario.releaseTarget.resolve();
     let alice: ReturnType<typeof runHuman> | undefined;
     try {

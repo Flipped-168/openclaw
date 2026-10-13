@@ -2,6 +2,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { awaitGateBeforeSettlement, createDeferred } from "../../../test/helpers/promise.js";
 import { bindWorkerToolPreparation } from "../../agents/harness/host-private-capabilities.js";
 import { createNativeSessionBindingAuthority } from "../../agents/harness/native-session/binding-authority.js";
+import { setRuntimeConfigSnapshot } from "../../config/runtime-snapshot.js";
 import { resolveSessionStorePathCore } from "../../config/sessions/paths.js";
 import {
   deleteSessionEntryLifecycle,
@@ -9,11 +10,11 @@ import {
   upsertSessionEntryCore,
 } from "../../config/sessions/session-accessor.js";
 import * as sessionReads from "../../config/sessions/session-entry-read-runtime.js";
+import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { createUserTurnTranscriptRecorder } from "../../sessions/user-turn-transcript.js";
 import { createTestUserTurnTranscriptTarget } from "../../sessions/user-turn-transcript.test-support.js";
 import { observeMainThreadSql } from "../../test-utils/main-thread-sql-spies.test-support.js";
 import { withOpenClawTestState } from "../../test-utils/openclaw-test-state.js";
-import { createQueueTestRun } from "./queue.test-helpers.js";
 import type {
   ReplyBackendMessageInjectionV2,
   ReplyBackendQueueMessageOptions,
@@ -22,13 +23,14 @@ import { beginReplyMessageInjectionTarget, replyRunRegistry } from "./reply-run-
 import { createTestReplyOperation } from "./reply-run-registry.test-helpers.js";
 import { testing } from "./reply-run-registry.test-support.js";
 import { prepareReplyToolAuthority } from "./reply-tool-authority.js";
+import { createQueueTestRun, toolAuthorityOverlay } from "./reply-tool-authority.test-support.js";
 
 afterEach(() => {
   testing.resetReplyRunRegistry();
   vi.restoreAllMocks();
 });
 
-const overlay = { senderIsOwner: true, disableTools: false, traceAuthorized: false };
+const defaultOverlay = { senderIsOwner: true, disableTools: false, traceAuthorized: false };
 
 async function createPolicyOperation(
   name: string,
@@ -43,6 +45,19 @@ async function createPolicyOperation(
   const policyKey = incognito
     ? `agent:main:dashboard:incognito-${name}`
     : `agent:main:${name}-policy`;
+  const config: OpenClawConfig = {
+    ...(mainAlias || options.store
+      ? {
+          session: {
+            ...(mainAlias ? { mainKey: `${name}-policy` } : {}),
+            ...(options.store ? { store: options.store } : {}),
+          },
+        }
+      : {}),
+    agents: { defaults: { sandbox: { mode: "all" } }, entries: { main: {} } },
+    tools: { sandbox: { tools: { deny: ["exec"] } } },
+  };
+  setRuntimeConfigSnapshot(config);
   const policyEntry = await upsertSessionEntryCore(
     { agentId: "main", sessionKey: policyKey, storePath: options.policyStorePath },
     {
@@ -62,23 +77,12 @@ async function createPolicyOperation(
     sessionKey: `agent:main:${name}`,
     runtimePolicySessionKey: mainAlias ? "agent:main:main" : policyKey,
     senderIsOwner: true,
-    config: {
-      ...(mainAlias || options.store
-        ? {
-            session: {
-              ...(mainAlias ? { mainKey: `${name}-policy` } : {}),
-              ...(options.store ? { store: options.store } : {}),
-            },
-          }
-        : {}),
-      agents: { defaults: { sandbox: { mode: "all" } }, entries: { main: {} } },
-      tools: { sandbox: { tools: { deny: ["exec"] } } },
-    },
+    config,
   });
   const operation = createTestReplyOperation({ sessionKey: run.run.sessionKey, sessionId: name });
   await operation.bindToolAuthoritySnapshotAsync(prepareReplyToolAuthority(run));
   const fingerprint = await operation.bindToolAuthorityRouteAsync(run.run);
-  return { operation, fingerprint, policyKey, policyEntry };
+  return { operation, fingerprint, policyKey, policyEntry, overlay: toolAuthorityOverlay(run) };
 }
 
 function attachPreparedNativeBackend(
@@ -115,6 +119,7 @@ it.each(["worker", "compatibility"] as const)(
   "retains supplied %s source policy alongside an overlay through final native admission",
   async (kind) => {
     await withOpenClawTestState({ scenario: "minimal" }, async () => {
+      setRuntimeConfigSnapshot({});
       const source = await createPolicyOperation("source");
       const target = await createPolicyOperation("target");
       const assertSourcePolicy = (fingerprint: string | undefined) => {
@@ -125,10 +130,12 @@ it.each(["worker", "compatibility"] as const)(
       const sourcePreparation = {
         assertCurrent: vi.fn(),
         prepareCurrent: vi.fn(async () =>
-          assertSourcePolicy(await source.operation.projectToolAuthorityFingerprintAsync(overlay)),
+          assertSourcePolicy(
+            await source.operation.projectToolAuthorityFingerprintAsync(source.overlay),
+          ),
         ),
         compatAssertCurrent: vi.fn(() =>
-          assertSourcePolicy(source.operation.projectToolAuthorityFingerprint(overlay)),
+          assertSourcePolicy(source.operation.projectToolAuthorityFingerprint(source.overlay)),
         ),
       };
       if (kind === "worker") {
@@ -155,7 +162,7 @@ it.each(["worker", "compatibility"] as const)(
           "overlay with retained source",
           {
             isInboundUserMessage: true,
-            toolAuthorityOverlay: overlay,
+            toolAuthorityOverlay: target.overlay,
             toolAuthorityPreparation: sourcePreparation,
           },
         );
@@ -200,6 +207,7 @@ it.each([
   "retains $storage policy lineage in $admission admission after $change",
   async ({ storage, change, admission }) => {
     await withOpenClawTestState({ scenario: "minimal" }, async (state) => {
+      setRuntimeConfigSnapshot({});
       const multipleStores = change.startsWith("other-store") || change === "missing-store";
       const store = state.statePath(
         "configured",
@@ -223,9 +231,8 @@ it.each([
           { sessionId: "unrelated-policy", updatedAt: 1 },
         );
       }
-      const { operation, fingerprint, policyKey, policyEntry } = await createPolicyOperation(
-        "retained-policy",
-        {
+      const { operation, fingerprint, policyKey, policyEntry, overlay } =
+        await createPolicyOperation("retained-policy", {
           incognito: storage === "incognito",
           mainAlias: storage === "file",
           ...(multipleStores
@@ -235,8 +242,7 @@ it.each([
                   change === "missing-store" ? defaultStorePath : configuredStorePath,
               }
             : {}),
-        },
-      );
+        });
       let atBackend = false;
       const effect = attachPreparedNativeBackend(operation, fingerprint, () => {
         atBackend = true;
@@ -365,7 +371,7 @@ it.each(["with-overlay", "separate-caller", "legacy", "legacy-run-with-caller"] 
       {
         isInboundUserMessage: true,
         toolAuthorityFingerprint: "policy",
-        ...(kind === "with-overlay" ? { toolAuthorityOverlay: overlay } : {}),
+        ...(kind === "with-overlay" ? { toolAuthorityOverlay: defaultOverlay } : {}),
         assertCurrent: separateCaller ? assertSource : undefined,
         toolAuthorityPreparation: {
           ...(kind === "legacy-run-with-caller" ? { authorityKind: "run" as const } : {}),

@@ -1,6 +1,9 @@
 import { join } from "node:path";
+import { expectDefined } from "@openclaw/normalization-core/expect";
 import { afterEach, beforeEach, type Mock } from "vitest";
 import { useAutoCleanupTempDirTracker } from "../../../test/helpers/temp-dir.js";
+import type { RunEmbeddedAgentParams } from "../../agents/embedded-agent-runner/run/params.js";
+import type { EmbeddedAgentRunResult } from "../../agents/embedded-agent-runner/types.js";
 import {
   clearRuntimeConfigSnapshot,
   setRuntimeConfigSnapshot,
@@ -55,6 +58,22 @@ export function createReplyAgentSessionFixture() {
       const storePath = join(dir, "sessions.json");
       await replaceSessionEntry({ storePath, sessionKey }, entry);
       return storePath;
+    },
+  };
+}
+
+export async function runSuccessfulReplyModelFixture(
+  params: RunEmbeddedAgentParams,
+): Promise<EmbeddedAgentRunResult> {
+  return {
+    payloads: [{ text: "final" }],
+    meta: {
+      durationMs: 0,
+      agentMeta: {
+        sessionId: params.sessionId,
+        provider: expectDefined(params.provider, "attempt provider"),
+        model: expectDefined(params.model, "attempt model"),
+      },
     },
   };
 }
@@ -162,9 +181,10 @@ export function createMinimalReplyAgentRunFactory({
       },
     } as unknown as FollowupRun;
     const activeOperation = replyRunRegistry.get(sessionKey);
-    if (activeOperation && params?.isActive && params.bindActiveAuthority !== false) {
-      activeOperation.bindToolAuthoritySnapshot(prepareReplyToolAuthority(followupRun));
-    }
+    const activeAuthority =
+      activeOperation && params?.isActive && params.bindActiveAuthority !== false
+        ? prepareReplyToolAuthority(followupRun)
+        : undefined;
 
     return {
       followupRun,
@@ -172,6 +192,9 @@ export function createMinimalReplyAgentRunFactory({
       typing,
       opts,
       run: async () => {
+        if (activeOperation && activeAuthority) {
+          await activeOperation.bindToolAuthoritySnapshotAsync(activeAuthority);
+        }
         const runReplyAgent = await getRunReplyAgent();
         const operation = replyRunRegistry.get(sessionKey);
         if (operation && params?.attachSteerBackend !== false) {
@@ -218,7 +241,7 @@ export function createMinimalReplyAgentRunFactory({
         return runReplyAgent({
           commandBody: "hello",
           followupRun,
-          queueKey: "main",
+          queueKey: sessionKey,
           resolvedQueue,
           shouldSteer: params?.shouldSteer ?? false,
           shouldFollowup: params?.shouldFollowup ?? false,

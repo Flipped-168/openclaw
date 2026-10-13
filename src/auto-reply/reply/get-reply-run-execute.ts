@@ -667,7 +667,7 @@ export async function executePreparedReplyRun(
       shouldFollowup,
       hasQueuedFollowups,
       isActive,
-      isRunActive: () => {
+      isRunActive: async () => {
         const latestSessionState = resolvePreparedSessionState();
         const latestActiveSessionId =
           resolveActiveEmbeddedSessionId(latestSessionState.sessionFile) ??

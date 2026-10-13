@@ -36,7 +36,14 @@ const ACTIVATION_HINT_METADATA = {
   tests: ["src/plugins/activation-planner.test.ts"],
 } as const;
 
-export const PLUGIN_COMPAT_RECORDS = [
+// Keep exact code names without publishing migration prose as literal types.
+function definePluginCompatRecords<const Code extends string>(
+  records: readonly PluginCompatRecord<Code>[],
+): readonly PluginCompatRecord<Code>[] {
+  return records;
+}
+
+export const PLUGIN_COMPAT_RECORDS = definePluginCompatRecords([
   ...PLUGIN_SDK_REMOVED_EXPORT_RECORDS,
   ...AGENT_HARNESS_COMPAT_RECORDS,
   AUTH_ASYNC_COMPAT_RECORD,
@@ -688,4 +695,4 @@ export const PLUGIN_COMPAT_RECORDS = [
     diagnostics: ["setup registry runtime diagnostic"],
     tests: ["src/plugins/setup-registry.test.ts", "src/plugins/setup-registry.runtime.test.ts"],
   },
-] as const satisfies readonly PluginCompatRecord[];
+] as const satisfies readonly PluginCompatRecord[]);

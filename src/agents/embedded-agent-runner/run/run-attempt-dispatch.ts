@@ -690,6 +690,9 @@ export async function prepareAndDispatchEmbeddedRunAttempt(
   if (postCompactionAbortError) {
     throw postCompactionAbortError;
   }
+  if (pluginWorkspace?.sandboxRuntime) {
+    rawAttempt.sandboxRuntime = pluginWorkspace.sandboxRuntime;
+  }
   return {
     dispatchedAttempt: { rawAttempt, preparedAttempt: attemptParams },
     runtimePlan,

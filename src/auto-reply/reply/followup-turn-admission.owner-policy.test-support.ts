@@ -1,5 +1,6 @@
 import { expect, it, vi, type Mock } from "vitest";
 import { createAdmittedRunOperatorAuthority } from "../../agents/admitted-run-context.js";
+import { resolvePreparedSandboxRuntimeStatus } from "../../agents/sandbox/runtime-status.js";
 import {
   createRuntimeConfigReader,
   setRuntimeConfigSnapshot,
@@ -10,9 +11,27 @@ import {
   bindCommandOwnerAuthority,
   captureCommandOwnerAssertion,
 } from "../command-owner-authority.js";
-import type { admitFollowupTurn as admitFollowupTurnImpl } from "./followup-turn-admission.js";
+import type {
+  AdmittedFollowupTurn,
+  admitFollowupTurn as admitFollowupTurnImpl,
+} from "./followup-turn-admission.js";
 import type { FollowupRun } from "./queue/types.js";
 import { resolveReplyToolAuthorityContext } from "./reply-tool-authority.js";
+
+function resolveAdmittedToolAuthority(turn: AdmittedFollowupTurn) {
+  const { run } = turn.queued;
+  return resolveReplyToolAuthorityContext(
+    turn.queued,
+    undefined,
+    resolvePreparedSandboxRuntimeStatus({
+      cfg: run.config,
+      agentId: run.agentId,
+      sessionKey: run.sessionKey,
+      preparedSessionEntry: turn.session.current() ?? null,
+    }),
+    {}, // These admission fixtures have no persisted parent capability lineage.
+  );
+}
 
 export function createRun(overrides: Partial<FollowupRun> = {}): FollowupRun {
   return {
@@ -111,7 +130,7 @@ export function registerFollowupOwnerPolicyCases({
         expect(execution.run.config).toEqual(admittedConfig);
         expect(execution.run.senderIsOwner).toBe(admittedOwner);
         expect(execution.run.traceAuthorized).toBe(admittedOwner);
-        expect(resolveReplyToolAuthorityContext(execution).capabilityProfile.sender.isOwner).toBe(
+        expect(resolveAdmittedToolAuthority(result.turn).capabilityProfile.sender.isOwner).toBe(
           admittedOwner,
         );
         const assertOwner = captureCommandOwnerAssertion(execution.run);
@@ -190,9 +209,7 @@ export function registerFollowupOwnerPolicyCases({
       }
       expect(result.turn.queued.run.senderIsOwner).toBe(true);
       expect(result.turn.queued.run.traceAuthorized).toBe(true);
-      expect(
-        resolveReplyToolAuthorityContext(result.turn.queued).capabilityProfile.sender.isOwner,
-      ).toBe(true);
+      expect(resolveAdmittedToolAuthority(result.turn).capabilityProfile.sender.isOwner).toBe(true);
       expect(assertCurrent).toHaveBeenCalled();
       expect(durableOwnerRead).not.toHaveBeenCalled();
     } finally {

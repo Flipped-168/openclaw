@@ -9,13 +9,11 @@ import type { GroupToolPolicyConfig } from "../config/types.tools.js";
 import type { PluginMetadataSnapshot } from "../plugins/plugin-metadata-snapshot.types.js";
 import type { RuntimePluginToolGrant } from "../plugins/runtime/tool-grant.js";
 import type { InputProvenance } from "../sessions/input-provenance.js";
-import { INTERNAL_MESSAGE_CHANNEL } from "../utils/message-channel-constants.js";
-import { normalizeMessageChannel } from "../utils/message-channel-core.js";
 import { resolveEffectiveToolPolicy, resolveTrustedGroupId } from "./agent-tools.policy.js";
 import type { DelegatedToolDenyFloor } from "./delegated-tool-policy.js";
 import { normalizeInheritedToolDenylist } from "./inherited-tool-deny.js";
 import { captureRequesterOrigin, type RequesterOrigin } from "./requester-origin.js";
-import { resolveRequesterToolPolicies } from "./requester-tool-policy.js";
+import { isInternalOwnerRequester, resolveRequesterToolPolicies } from "./requester-tool-policy.js";
 import { pickSandboxToolPolicy } from "./sandbox-tool-policy.js";
 import type { SandboxToolPolicy } from "./sandbox/types.js";
 import {
@@ -28,6 +26,7 @@ import type {
   PreparedSessionCapabilityEntry,
   SessionCapabilityStore,
 } from "./subagents/spawn/subagent-capabilities.js";
+import { withPreparedSessionCapabilityRead } from "./subagents/spawn/subagent-session-store.js";
 import {
   collectExplicitAllowlist,
   collectExplicitDenylist,
@@ -106,6 +105,11 @@ export type ConversationCapabilityProfileParams = {
   scheduledToolPolicy?: ScheduledToolPolicyContext;
 };
 
+/** Prepare standalone worker reads before running the shared synchronous policy. */
+export function prepareConversationCapabilityProfile(params: ConversationCapabilityProfileParams) {
+  return withPreparedSessionCapabilityRead(() => resolveConversationCapabilityProfile(params));
+}
+
 export function resolveConversationCapabilityProfile(params: ConversationCapabilityProfileParams) {
   const messageProvider = params.messageProvider;
   const senderIsOwner = params.senderIsOwner;
@@ -127,17 +131,7 @@ export function resolveConversationCapabilityProfile(params: ConversationCapabil
   // against; mask them whenever the trust check dropped the caller group id.
   const trustedGroupChannel = trustedGroup.dropped ? null : params.groupChannel;
   const trustedGroupSpace = trustedGroup.dropped ? null : params.groupSpace;
-  // Internal operator/System origins may have no provider. Current admission
-  // verifies owner authority; the destination route cannot replace an origin.
-  const requesterMessageProvider = normalizeMessageChannel(
-    params.requesterOrigin
-      ? params.requesterOrigin.messageProvider
-      : (messageProvider ?? params.messageChannel),
-  );
-  const isOwnerInternalSession =
-    senderIsOwner === true &&
-    (requesterMessageProvider === INTERNAL_MESSAGE_CHANNEL ||
-      (params.requesterOrigin !== undefined && !requesterMessageProvider));
+  const isOwnerInternalSession = isInternalOwnerRequester(params);
   const subagentSessionKey = params.sandboxSessionKey ?? params.sessionKey;
   const callerContext = resolveScheduledToolCallerContext({
     scheduledToolPolicy: params.scheduledToolPolicy,

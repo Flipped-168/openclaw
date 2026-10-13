@@ -24,7 +24,6 @@ import { runReplyAgent } from "./agent-runner-run.js";
 import { runActiveReplySteer } from "./agent-runner-steer-adoption.js";
 import { MessageInjectionTargetUnavailableError } from "./message-injection-authority.js";
 import { enqueueFollowupRun, type FollowupRun } from "./queue.js";
-import { createQueueTestRun } from "./queue.test-helpers.js";
 import { clearFollowupDrainCallback } from "./queue/drain.js";
 import { clearFollowupQueue, getExistingFollowupQueue } from "./queue/state.js";
 import {
@@ -34,6 +33,8 @@ import {
 import { withQuestionCreator } from "./reply-run-question.test-support.js";
 import type { ReplyBackendQueueMessageResult } from "./reply-run-registry.contracts.js";
 import { replyRunRegistry } from "./reply-run-registry.js";
+import { createQueueTestRun } from "./reply-tool-authority.test-support.js";
+import { prepareSteeringDelivery } from "./steering-delivery-preparation.js";
 import { createMockTypingController } from "./test-helpers.js";
 import { createTypingSignaler } from "./typing-mode.js";
 
@@ -471,7 +472,7 @@ describe("question response custody through reply adoption", () => {
             commandBody: text,
             followupRun: incoming,
             sessionKey: key,
-            sessionCtx: { Provider: "webchat" },
+            sessionCtx: { Provider: "webchat", SenderId: run.run.senderId },
             sessionEntry:
               change === "permission"
                 ? { sessionId: run.run.sessionId, updatedAt: 0, permissionMode: "guarded" }
@@ -611,7 +612,6 @@ describe("question response custody through reply adoption", () => {
             throw new Error("unexpected ordinary steering of an answered question");
           });
           const subscribe = vi.fn(() => () => {});
-          let finalAssertion: (() => void) | undefined;
           const queue = async (
             message: string,
             options: QueueOptions,
@@ -621,7 +621,6 @@ describe("question response custody through reply adoption", () => {
             try {
               if (receiptScope) {
                 assertCurrent();
-                finalAssertion = assertCurrent;
                 await updateSessionEntry(receiptScope, () => ({
                   restartRecoveryDeliveryReceiptState: "terminal-pending",
                 }));
@@ -717,7 +716,10 @@ describe("question response custody through reply adoption", () => {
                   shouldFollowup: false,
                   isActive: true,
                   typing,
-                  sessionCtx: {},
+                  sessionCtx: {
+                    Provider: run.run.messageProvider,
+                    SenderId: run.run.senderId,
+                  },
                   sessionKey: key,
                   defaultModel: "openai/gpt-test",
                   resolvedVerboseLevel: "off",
@@ -811,18 +813,19 @@ describe("question response custody through reply adoption", () => {
             expect.soft(adopted).toHaveBeenCalledOnce();
             expect.soft(settled).toHaveBeenCalledOnce();
             expect(nativeSteer).not.toHaveBeenCalled();
-            if (mode === "late-receipt") {
-              expect(finalAssertion).toBeDefined();
-              await expect(
-                queue(
-                  "ordinary input after the answer",
-                  undefined,
-                  finalAssertion!,
-                  "source-bound",
-                ),
-              ).rejects.toMatchObject({
-                cause: expect.any(MessageInjectionTargetUnavailableError),
+            if (receiptScope) {
+              const delivery = prepareSteeringDelivery({
+                ...receiptScope,
+                sessionId: run.run.sessionId,
+                assertCurrent,
               });
+              try {
+                await expect(delivery.prepareCurrent()).rejects.toBeInstanceOf(
+                  MessageInjectionTargetUnavailableError,
+                );
+              } finally {
+                delivery.release();
+              }
               expect(nativeSteer).not.toHaveBeenCalled();
             }
             if (confirmed) {

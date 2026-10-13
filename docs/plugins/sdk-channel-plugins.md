@@ -457,6 +457,8 @@ when initialization must finish before the child runs.
       to avoid reparsing literal text in its own normalization code.
     </Accordion>
 
+    <a id="group-tool-policy-adapters"></a>
+
     ### Conversation tool-policy adapters
 
     Resolve configured permissions at execution admission. Direct conversations

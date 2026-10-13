@@ -1,12 +1,13 @@
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 // Optional utility preprocessing keeps its runtime loaders lazy and cancellation explicit.
 import { resolveSessionAgentId } from "../../agents/agent-scope.js";
-import { resolveConversationCapabilityProfile } from "../../agents/conversation-capability-profile.js";
+import { prepareConversationCapabilityProfile } from "../../agents/conversation-capability-profile.js";
 import { projectConversationToolNames } from "../../agents/conversation-tool-policy-pipeline.js";
-import { resolveSandboxRuntimeStatus } from "../../agents/sandbox.js";
+import { resolveSandboxRuntimeStatusAsync } from "../../agents/sandbox.js";
 import { resolveEffectiveToolFsRootExpansionAllowed } from "../../agents/tool-fs-policy.js";
 import { readConversationBindingRouteFacts } from "../../channels/conversation-binding-route-facts.js";
 import { resolveGroupSessionKey } from "../../config/sessions/group.js";
+import type { SessionEntry } from "../../config/sessions/types.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { logVerbose } from "../../globals.js";
 import { isAbortError } from "../../infra/abort-signal.js";
@@ -109,7 +110,7 @@ export async function resolveReplyAgentScope(params: { cfg: OpenClawConfig; ctx:
 }
 
 /** Expose local attachment paths only when this request can actually read them. */
-export function canReadReplyAttachmentPaths(params: {
+export async function canReadReplyAttachmentPaths(params: {
   cfg: OpenClawConfig;
   agentId: string;
   sessionKey?: string;
@@ -117,12 +118,13 @@ export function canReadReplyAttachmentPaths(params: {
   workspaceDir: string;
   stagedAttachmentCount: number;
   spawnedBy?: string;
+  sessionEntry: SessionEntry;
   senderIsOwner: boolean;
   modelProvider: string;
   modelId: string;
   operatorProfileId?: string;
   toolsAllow?: string[];
-}): boolean {
+}): Promise<boolean> {
   const {
     cfg,
     agentId,
@@ -143,17 +145,20 @@ export function canReadReplyAttachmentPaths(params: {
     ctx: sessionCtx,
     sessionKey,
   });
-  const sandboxed = resolveSandboxRuntimeStatus({
-    cfg,
-    agentId,
-    sessionKey,
-    classificationSessionKey: policySessionKey,
-  }).sandboxed;
+  const sandboxed = (
+    await resolveSandboxRuntimeStatusAsync({
+      cfg,
+      agentId,
+      sessionKey,
+      classificationSessionKey: policySessionKey,
+      ...(policySessionKey === sessionKey ? { preparedSessionEntry: params.sessionEntry } : {}),
+    })
+  ).sandboxed;
   if (
     (sandboxed && stagedAttachmentCount > 0) ||
     (!sandboxed && resolveEffectiveToolFsRootExpansionAllowed({ cfg, agentId }))
   ) {
-    const capabilityProfile = resolveConversationCapabilityProfile({
+    const capabilityProfile = await prepareConversationCapabilityProfile({
       config: cfg,
       sessionKey: policySessionKey,
       runSessionKey: policySessionKey === sessionKey ? undefined : sessionKey,

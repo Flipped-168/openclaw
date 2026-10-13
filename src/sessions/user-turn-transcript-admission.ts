@@ -1,5 +1,4 @@
 import type { RequesterOrigin } from "../agents/requester-origin.js";
-import { readSessionPendingInputRequesterOrigin } from "../config/sessions/session-accessor.pending-inputs.js";
 import type { SessionPendingInputReceipt } from "../config/sessions/session-pending-input-receipt.types.js";
 import type { SessionReactionWrite } from "../config/sessions/session-reaction-store.types.js";
 import type {
@@ -57,8 +56,7 @@ export function getUserTurnTranscriptAdmissionOwner(
 /** Preserve prepared producer facts; accepted input takes precedence after durable custody. */
 export function readUserTurnRequesterOrigin(recorder: UserTurnTranscriptRecorder | undefined) {
   const owner = recorder && admissionOwners.get(recorder);
-  const pending = owner?.pendingInput();
-  return pending ? readSessionPendingInputRequesterOrigin(pending) : owner?.requesterOrigin();
+  return owner?.requesterOrigin();
 }
 
 export function bindUserTurnPromptReactionSource(

@@ -45,8 +45,8 @@ describe("reply requester authority", () => {
       }
       const operation = createTestReplyOperation({ sessionId: "requester-identity" });
       const snapshot = prepareReplyToolAuthority(run);
-      operation.bindToolAuthoritySnapshot(snapshot);
-      operation.bindToolAuthorityRoute(run.run);
+      await operation.bindToolAuthoritySnapshotAsync(snapshot);
+      await operation.bindToolAuthorityRouteAsync(run.run);
       const queueMessage = vi.fn(async () => {});
       const cancel = vi.fn();
       operation.attachBackend({ kind: "embedded", cancel, queueMessage });
@@ -93,8 +93,8 @@ describe("reply requester authority", () => {
       },
     };
     const operation = createTestReplyOperation({ sessionId: "continuation-human-steering" });
-    operation.bindToolAuthoritySnapshot(prepareReplyToolAuthority(continuation));
-    operation.bindToolAuthorityRoute(run.run);
+    await operation.bindToolAuthoritySnapshotAsync(prepareReplyToolAuthority(continuation));
+    await operation.bindToolAuthorityRouteAsync(run.run);
     const queueMessage = vi.fn(async () => {});
     operation.attachBackend({ kind: "embedded", cancel: vi.fn(), queueMessage });
     operation.setPhase("running");

@@ -1,5 +1,7 @@
 import path from "node:path";
 import { expect, it, vi } from "vitest";
+import { createAdmittedRunOperatorAuthority } from "../../agents/admitted-run-context.js";
+import { prepareOperatorModelPolicy } from "../../agents/operator-model-policy.js";
 import { createQueueTestRun } from "../../auto-reply/reply/queue.test-helpers.js";
 import type { ReplyBackendMessageInjectionV2 } from "../../auto-reply/reply/reply-run-registry.contracts.js";
 import {
@@ -7,6 +9,7 @@ import {
   replyRunRegistry,
 } from "../../auto-reply/reply/reply-run-registry.js";
 import { prepareReplyToolAuthority } from "../../auto-reply/reply/reply-tool-authority.js";
+import { replaceSessionEntry } from "../../config/sessions/session-accessor.entry.js";
 import { clearAgentRunContext, registerAgentRunContext } from "../../infra/agent-run-registry.js";
 import { createSubsystemLogger } from "../../logging/subsystem.js";
 import { createUserTurnTranscriptRecorder } from "../../sessions/user-turn-transcript.js";
@@ -25,6 +28,10 @@ it.each(
       const runId = "gateway-hidden-question-owner";
       const text = "Green";
       const storePath = path.join(state.sessionsDir(), "sessions.json");
+      await replaceSessionEntry(
+        { agentId: "main", sessionKey, storePath },
+        { sessionId, updatedAt: 1 },
+      );
       const owner = createQueueTestRun({ prompt: "child coordination" });
       owner.run = {
         ...owner.run,
@@ -47,8 +54,15 @@ it.each(
         },
       };
       const operation = createReplyOperation({ sessionKey, sessionId, resetTriggered: false });
-      operation.bindToolAuthoritySnapshot(prepareReplyToolAuthority(owner));
-      const fingerprint = operation.bindToolAuthorityRoute({
+      owner.operatorAuthority = createAdmittedRunOperatorAuthority({
+        profileId: "question-owner",
+        scopes: ["operator.admin"],
+        gatewayAccessGrant: null,
+        modelPolicy: prepareOperatorModelPolicy({ cfg: {}, policy: {} }),
+        assertCurrent: () => operation.abortSignal.throwIfAborted(),
+      });
+      await operation.bindToolAuthoritySnapshotAsync(prepareReplyToolAuthority(owner));
+      const fingerprint = await operation.bindToolAuthorityRouteAsync({
         provider: owner.run.provider,
         model: owner.run.model,
       });
@@ -90,6 +104,7 @@ it.each(
         const start = createChatSendMessageInjectionStarter({
           target,
           abortSignal: operation.abortSignal,
+          operatorAuthority: owner.operatorAuthority,
           assertCurrent: () => operation.abortSignal.throwIfAborted(),
           request: {
             p: { sessionKey, message: text, idempotencyKey: "gateway-question-answer" },

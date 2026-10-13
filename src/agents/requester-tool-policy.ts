@@ -9,6 +9,7 @@ import { getLoadedChannelPlugin } from "../channels/plugins/index.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import type { InputProvenance } from "../sessions/input-provenance.js";
 import { normalizeInputProvenance } from "../sessions/input-provenance.js";
+import { INTERNAL_MESSAGE_CHANNEL } from "../utils/message-channel-constants.js";
 import { normalizeMessageChannel } from "../utils/message-channel-core.js";
 import {
   resolveGroupToolPolicy,
@@ -57,6 +58,26 @@ type RequesterToolPolicyResolution = {
 };
 
 type SenderPolicyMode = "always" | "when-sender-id" | "never";
+
+/** Current owner authority may accompany an internal origin without a provider. */
+export function isInternalOwnerRequester(params: {
+  requesterOrigin?: RequesterOrigin;
+  messageProvider?: string | null;
+  messageChannel?: string | null;
+  senderIsOwner?: boolean;
+}): boolean {
+  // An inherited origin cannot be reclassified by the destination's route.
+  const requesterMessageProvider = normalizeMessageChannel(
+    params.requesterOrigin
+      ? params.requesterOrigin.messageProvider
+      : (params.messageProvider ?? params.messageChannel),
+  );
+  return (
+    params.senderIsOwner === true &&
+    (requesterMessageProvider === INTERNAL_MESSAGE_CHANNEL ||
+      (params.requesterOrigin !== undefined && !requesterMessageProvider))
+  );
+}
 
 type RequesterToolPolicyParams = {
   requesterOrigin?: RequesterOrigin;

@@ -58,6 +58,7 @@ async function withQuestion(
     agentId: "main",
     sessionKey,
     messageProvider: "whatsapp",
+    senderId: "+1000",
     agentAccountId: "default",
     chatType: "direct",
   });
@@ -66,8 +67,8 @@ async function withQuestion(
     sessionId: run.run.sessionId,
     resetTriggered: false,
   });
-  operation.bindToolAuthoritySnapshot(prepareReplyToolAuthority(run));
-  const fingerprint = operation.bindToolAuthorityRoute({
+  await operation.bindToolAuthoritySnapshotAsync(prepareReplyToolAuthority(run));
+  const fingerprint = await operation.bindToolAuthorityRouteAsync({
     provider: run.run.provider,
     model: run.run.model,
   });
@@ -191,6 +192,7 @@ describe("routed channel question input delivery order", () => {
             ctx: buildTestCtx({
               SessionKey: sessionKey,
               AccountId: "default",
+              SenderId: "+1000",
               MessageSid: messageId,
               OriginatingChannel: "whatsapp",
               OriginatingTo: "whatsapp:+1000",
@@ -299,6 +301,7 @@ describe("routed channel question input delivery order", () => {
             ctx: buildTestCtx({
               SessionKey: sessionKey,
               AccountId: "default",
+              SenderId: "+1000",
               MessageSid: messageId,
               OriginatingChannel: "whatsapp",
               OriginatingTo: "whatsapp:+1000",

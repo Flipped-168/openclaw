@@ -161,7 +161,6 @@ export function buildReplyRunStateParams(run: FollowupRun["run"]) {
     requesterOrigin: run.requesterOrigin,
     operatorProfileId: run.operatorProfileId,
     conversationId: run.conversationId,
-    messageThreadId: run.messageThreadId,
     channelContext: run.channelContext,
     approvalReviewerDeviceId: run.approvalReviewerDeviceId,
     terminalReplyExpectation: run.terminalReplyExpectation,
