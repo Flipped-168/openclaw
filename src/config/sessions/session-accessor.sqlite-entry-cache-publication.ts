@@ -9,6 +9,7 @@ import { invalidateOpenClawAgentWritableProjections } from "../../state/openclaw
 import { invalidateOpenClawAgentReadOnlyProjections } from "../../state/openclaw-agent-db-readonly-scope.js";
 import {
   publishRetainedSessionEntryChange,
+  markSessionSharingAuthorityUnknown,
   recordCommittedSessionEntryPublication,
   recordCommittedSessionMetadataPublication,
   retainedSharingReads,
@@ -126,7 +127,11 @@ export function invalidateSessionEntryCaches(databaseIdentity: string): void {
 export function invalidateSessionEntryPublication(
   database: SessionEntryCacheDatabase,
   sessionKey: string,
+  authorityChanged = true,
 ): void {
+  if (authorityChanged) {
+    markSessionSharingAuthorityUnknown(database, sessionKey);
+  }
   publishRetainedSessionEntryChange(database, sessionKey, undefined, undefined, false);
   if (!database.db.location()) {
     commitIncognitoSessionSharingFacts(database.db, sessionKey, null);
@@ -310,7 +315,7 @@ export function publishSessionSharingFieldChange(
         sessionKey,
         change.kind === "category" ? undefined : change,
       ),
-    () => invalidateSessionEntryPublication(database, sessionKey),
+    () => invalidateSessionEntryPublication(database, sessionKey, change.kind !== "category"),
   );
 }
 
@@ -347,7 +352,7 @@ export function publishSessionSharingEntryChange(
       () =>
         recordCommittedSessionMetadataPublication(database, update.sessionKey, facts, update.entry),
       undefined,
-      () => invalidateSessionEntryPublication(database, update.sessionKey),
+      () => invalidateSessionEntryPublication(database, update.sessionKey, false),
     );
   }
   const previousIdentity = update.previousEntry && {

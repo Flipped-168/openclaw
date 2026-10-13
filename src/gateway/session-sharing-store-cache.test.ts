@@ -21,6 +21,7 @@ import type { GatewayClient } from "./server-methods/types.js";
 import { getSessionRowProjection } from "./session-row-projection-access.js";
 import {
   canReceiveSessionEvent,
+  prepareProjectedSessionSharing,
   invalidateSessionSharingSnapshot,
   resolveSessionMutationAuthorization,
   resolveSessionSharingTargetAsync,
@@ -143,20 +144,35 @@ describe("session event authorization store work", () => {
           projection: "list",
         });
         const materializedKeys: string[] = [];
+        const context = requestContext({});
+        await initializeSessionReadContext(context);
+        const projection = getSessionRowProjection(context)!;
+        await projection.ensureMaterialized();
         const listEntries = sessionAccessor.listSessionEntriesCore;
         vi.spyOn(sessionAccessor, "listSessionEntriesCore").mockImplementation((scope) => {
           const entries = listEntries(scope);
           materializedKeys.push(...entries.map(({ sessionKey }) => sessionKey));
           return entries;
         });
-        const receive = (user: string, event = "session.suggestion") =>
-          canReceiveSessionEvent({
+        const receive = (user: string, event = "session.suggestion") => {
+          const client = identifiedClient(user);
+          return canReceiveSessionEvent({
             cfg: {},
-            client: identifiedClient(user),
+            client,
             sessionKeys,
             event,
             payload: { suggestion: { author: { id: "author" } } },
+            prepared: {
+              sharing: prepareProjectedSessionSharing({
+                cfg: {},
+                client,
+                isMember: (target, id) =>
+                  projection.hasMembership(target.storePath, target.storeKey, id),
+              }),
+              target: (key) => projection.sharingTarget({ key, agentId: "main" }),
+            },
           });
+        };
         expect(receive("member", "session.message")).toBe(true);
         materializedKeys.length = 0;
         expect(receive("member", "session.message")).toBe(true);

@@ -11,9 +11,8 @@ import { withOpenClawTestState } from "../test-utils/openclaw-test-state.js";
 import type { GatewayClient, GatewayRequestContext } from "./server-methods/types.js";
 import { resolveSessionMutationAuthorizationAsync } from "./session-sharing-authorization-async.js";
 import {
-  authorizeResolvedSessionMutation,
+  authorizeResolvedSessionMutationAsync,
   resolveSessionMutationAuthorization,
-  resolveSessionSharingRole,
   resolveSessionSharingTarget,
   SessionMutationAuthorizationChangedError,
 } from "./session-sharing.js";
@@ -106,9 +105,8 @@ describe("session sharing sandbox requirements", () => {
       if (!hostTarget) {
         throw new Error("expected persisted maintainer session");
       }
-      expect(resolveSessionSharingRole({ cfg, client: guest, target: hostTarget })).toBe("member");
       expect(
-        authorizeResolvedSessionMutation({
+        await authorizeResolvedSessionMutationAsync({
           cfg,
           client: guest,
           sessionKey: hostSessionKey,

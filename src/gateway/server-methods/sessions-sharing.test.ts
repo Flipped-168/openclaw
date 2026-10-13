@@ -33,7 +33,7 @@ import {
 import { getSessionRowProjection } from "../session-row-projection-access.js";
 import { SessionMutationFactsUnavailableError } from "../session-sharing-preparation.js";
 import {
-  authorizeResolvedSessionMutation,
+  authorizeResolvedSessionMutationAsync,
   resolveSessionMutationAuthorization,
   SessionMutationAuthorizationChangedError,
   canReceiveSessionEvent,
@@ -478,7 +478,7 @@ describe("session sharing handlers", () => {
       // The agent-run handler authorizes this resolved (default/effective) key
       // even when the request omitted sessionKey; a non-participant is blocked.
       expect(
-        authorizeResolvedSessionMutation({
+        await authorizeResolvedSessionMutationAsync({
           cfg: {},
           client: outsider,
           sessionKey,
@@ -487,7 +487,7 @@ describe("session sharing handlers", () => {
       ).toMatchObject({ details: { code: "SESSION_PARTICIPATION_REQUIRED" } });
       // The owner, and a not-yet-created session, both pass.
       expect(
-        authorizeResolvedSessionMutation({
+        await authorizeResolvedSessionMutationAsync({
           cfg: {},
           client: identifiedClient(owner.id, owner.label),
           sessionKey,
@@ -495,7 +495,7 @@ describe("session sharing handlers", () => {
         }),
       ).toBeNull();
       expect(
-        authorizeResolvedSessionMutation({
+        await authorizeResolvedSessionMutationAsync({
           cfg: {},
           client: outsider,
           sessionKey: "agent:main:fresh",

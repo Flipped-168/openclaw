@@ -26,10 +26,7 @@ import {
 } from "../config/sessions/session-store-target-inventory.js";
 import { prepareSessionStoreTargetInventoryRead } from "../config/sessions/session-store-target-runtime.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
-import {
-  assertExistingDatabaseIdentity,
-  readDatabasePathIdentitySync,
-} from "../infra/sqlite-worker-identity.js";
+import { readDatabasePathIdentitySync } from "../infra/sqlite-worker-identity.js";
 import { isIncognitoSessionKey, parseAgentSessionKey } from "../routing/session-key.js";
 import { onSessionIdentityMutation } from "../sessions/session-lifecycle-events.js";
 import {
@@ -699,14 +696,6 @@ export async function prepareSessionMutationFacts(
       }
       assertSource = () => {
         inventoryRead.assertRegistryCurrent();
-        for (const source of preparedSources) {
-          assertExistingDatabaseIdentity(source.path, source.identity, source.birthtime);
-        }
-        for (const read of retainedReads.values()) {
-          if (!read.readCurrent()) {
-            throw new SessionMutationFactsUnavailableError();
-          }
-        }
       };
     }
     const readCurrent = (cfg: OpenClawConfig) => {

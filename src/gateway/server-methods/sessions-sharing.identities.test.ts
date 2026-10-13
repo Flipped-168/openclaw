@@ -34,7 +34,7 @@ import {
 import { createSessionRowProjection } from "../session-row-projection.js";
 import { SessionMutationFactsUnavailableError } from "../session-sharing-preparation.js";
 import {
-  authorizeResolvedSessionMutation,
+  authorizeResolvedSessionMutationAsync,
   resolveSessionMutationAuthorization,
 } from "../session-sharing.js";
 import { createWorkerSessionPlacementStore } from "../worker-environments/placement-store.js";
@@ -235,7 +235,7 @@ describe("session member picker identities", () => {
         profileReads.mockRestore();
       }
       expect(
-        authorizeResolvedSessionMutation({
+        await authorizeResolvedSessionMutationAsync({
           cfg: {},
           client: identifiedClient(profile.id, "Member"),
           sessionKey,

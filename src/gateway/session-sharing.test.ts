@@ -9,16 +9,22 @@ import { withOpenClawTestState } from "../test-utils/openclaw-test-state.js";
 import { prepareGatewayRecipientProfile } from "./expected-profile.js";
 import { authorizeOperatorScopesForMethod } from "./method-scopes.js";
 import { createDirectChatContext } from "./server-chat.agent-events.test-helpers.js";
+import {
+  initializeSessionReadContext,
+  requestContext,
+} from "./server-methods/sessions-read-cache.test-support.js";
 import type { GatewayClient, GatewayRequestContext } from "./server-methods/types.js";
+import { getSessionRowProjection } from "./session-row-projection-access.js";
 import { resolveSessionMutationAuthorizationAsync } from "./session-sharing-authorization-async.js";
 import {
   allowedSessionVisibilities,
   authorizeIncognitoSessionTarget,
-  authorizeResolvedSessionMutation,
+  authorizeResolvedSessionMutationAsync,
   authorizeSessionSharingTarget,
   resolveSessionMutationAuthorization,
   canReceiveSessionEvent,
   createSessionListEntryFilter,
+  prepareProjectedSessionSharing,
   resolveSessionSharingRole,
   resolveSessionSharingTarget,
   resolveSessionVisibility,
@@ -160,7 +166,9 @@ describe("session sharing policy", () => {
       ).toBe(true);
       expect(mutation(member).error).toMatchObject({ code: "FORBIDDEN" });
       // The generic owner must not subtract an independently admitted capability.
-      expect(authorizeResolvedSessionMutation({ cfg, client: member, ...scope })).toBeNull();
+      expect(
+        await authorizeResolvedSessionMutationAsync({ cfg, client: member, ...scope }),
+      ).toBeNull();
       owner.connect.scopes = ["operator.sessions.write"];
       const owned = mutation(owner);
       expect(owned.error).toBeNull();
@@ -221,7 +229,7 @@ describe("session sharing policy", () => {
       );
 
       expect(
-        authorizeResolvedSessionMutation({
+        await authorizeResolvedSessionMutationAsync({
           cfg,
           client: writer,
           sessionKey,
@@ -295,11 +303,16 @@ describe("session sharing policy", () => {
 
       for (const roleName of ["view", "suggest"] as const) {
         const viewer = roleClient(roleName);
-        expect(resolveSessionSharingRole({ cfg, client: viewer, target: sharedTarget })).toBe(
-          "viewer",
-        );
         expect(
-          authorizeSessionSharingTarget({ cfg, client: viewer, target: sharedTarget }),
+          resolveSessionSharingRole({ cfg, client: viewer, target: sharedTarget, isMember: false }),
+        ).toBe("viewer");
+        expect(
+          authorizeSessionSharingTarget({
+            cfg,
+            client: viewer,
+            target: sharedTarget,
+            isMember: false,
+          }),
         ).toMatchObject({
           details: { code: "SESSION_PARTICIPATION_REQUIRED", visibility: "shared" },
         });
@@ -366,11 +379,16 @@ describe("session sharing policy", () => {
             expectedSessionId: "session-team-shared",
           },
         );
-        expect(resolveSessionSharingRole({ cfg, client: viewer, target: sharedTarget })).toBe(
-          "member",
-        );
         expect(
-          authorizeSessionSharingTarget({ cfg, client: viewer, target: sharedTarget }),
+          resolveSessionSharingRole({ cfg, client: viewer, target: sharedTarget, isMember: false }),
+        ).toBe("member");
+        expect(
+          authorizeSessionSharingTarget({
+            cfg,
+            client: viewer,
+            target: sharedTarget,
+            isMember: false,
+          }),
         ).toBeNull();
       }
 
@@ -446,9 +464,9 @@ describe("session sharing policy", () => {
         if (!restricted) {
           throw new Error("expected persisted restricted session");
         }
-        expect(resolveSessionSharingRole({ cfg, client: writer, target: restricted })).toBe(
-          "viewer",
-        );
+        expect(
+          resolveSessionSharingRole({ cfg, client: writer, target: restricted, isMember: false }),
+        ).toBe("viewer");
         const context = { getRuntimeConfig: () => cfg } as GatewayRequestContext;
         expect(
           resolveSessionMutationAuthorization({
@@ -929,6 +947,9 @@ describe("session sharing policy", () => {
     await withOpenClawTestState({ scenario: "minimal" }, async () => {
       const cfg = {};
       setRuntimeConfigSnapshot(cfg);
+      const context = requestContext(cfg);
+      await initializeSessionReadContext(context);
+      const projection = getSessionRowProjection(context)!;
       for (const [visibility, recipients] of [
         [
           "suggest",
@@ -969,12 +990,22 @@ describe("session sharing policy", () => {
             expectedSessionId: sessionId,
           });
         }
+        await projection.ensureMaterialized();
         const check = (recipient: GatewayClient, event?: string) =>
           canReceiveSessionEvent({
             cfg,
             client: recipient,
             sessionKeys: [sessionKey],
             event,
+            prepared: {
+              sharing: prepareProjectedSessionSharing({
+                cfg,
+                client: recipient,
+                isMember: (target, id) =>
+                  projection.hasMembership(target.storePath, target.storeKey, id),
+              }),
+              target: (key) => projection.sharingTarget({ key, agentId: "main" }),
+            },
             ...(event === "session.suggestion"
               ? { payload: { suggestion: { author: { id: "author" } } } }
               : {}),
