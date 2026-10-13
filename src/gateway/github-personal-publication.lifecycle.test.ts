@@ -145,7 +145,9 @@ describe("personal publication session lifecycle", () => {
       });
       await remove();
       expect(session.read().sessionId).toBe(receipt!.session_id);
-      expect(() => owner.assertCurrent()).toThrow("session lifecycle changed");
+      expect(() => owner.assertCurrent()).toThrow(
+        "GitHub publication lifecycle authority is unavailable; retry after owner recovery",
+      );
     } finally {
       owner.release();
     }
