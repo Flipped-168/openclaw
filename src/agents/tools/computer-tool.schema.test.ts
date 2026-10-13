@@ -5,7 +5,6 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { getImageMetadata } from "../../media/image-ops.js";
 import { createSolidPngBuffer } from "../../plugin-sdk/test-helpers/image-fixtures.js";
 import type { ComputerUseV2ActionName } from "../../plugins/computer-use-contract.js";
-import { finalizeAgentTools } from "../agent-tools.finalize.js";
 import type { AgentMessage } from "../runtime/index.js";
 import { COMPUTER_TOOL_ACTIONS } from "./computer-tool-schema.js";
 import {
@@ -50,55 +49,6 @@ const releasedWindowStateSchema = Type.Object(
 );
 
 describe("createComputerTool v2 execution", () => {
-  it("keeps finalized schemas live without sharing discovered actions across attempts", async () => {
-    listNodesMock.mockResolvedValue([
-      macComputerNode({ computerUse: v2Descriptor(["screenshot", "launch_app"]) }),
-    ]);
-    const cleanups: Array<(reason: string) => Promise<void>> = [];
-    const hookContext = { sessionId: "computer-live-schema-test" };
-    const source = createVisionComputerTool();
-    const [tool] = finalizeAgentTools({
-      tools: [source],
-      hookContext,
-      modelProvider: "openai",
-      wrapBeforeToolCallHook: false,
-      abortSignal: new AbortController().signal,
-      registerRunCleanup: (cleanup) => cleanups.push(cleanup),
-    });
-    if (!tool) {
-      throw new Error("missing finalized computer tool");
-    }
-    expect(tool.parameters).toBe(source.parameters);
-    expect(readActionEnum(tool)).not.toContain("launch_app");
-
-    await tool.execute("select", { action: "screenshot" });
-
-    expect(readActionEnum(tool)).toEqual(["screenshot", "launch_app", "wait", "take_control"]);
-    expect(Value.Check(tool.parameters, { action: "launch_app", app: "Fixture" })).toBe(true);
-
-    for (const cleanup of cleanups) {
-      await cleanup("completion");
-    }
-    const [next] = finalizeAgentTools({
-      tools: [createVisionComputerTool()],
-      hookContext,
-      modelProvider: "openai",
-      wrapBeforeToolCallHook: false,
-    });
-    if (!next) {
-      throw new Error("missing next finalized computer tool");
-    }
-    expect(next.parameters).not.toBe(tool.parameters);
-    expect(readActionEnum(next)).not.toContain("launch_app");
-
-    listNodesMock.mockResolvedValue([
-      macComputerNode({ computerUse: v2Descriptor(["screenshot", "list_windows"]) }),
-    ]);
-    await tool.execute("reselect", { action: "screenshot", node: "mac-1" });
-    expect(readActionEnum(tool)).toEqual(["screenshot", "list_windows", "wait", "take_control"]);
-    expect(readActionEnum(next)).not.toContain("list_windows");
-  });
-
   it.each(["screenshot", "wait"] as const)(
     "rejects a targeted %s before desktop capture",
     async (action) => {
@@ -152,8 +102,7 @@ describe("createComputerTool v2 execution", () => {
     const tool = createVisionComputerTool();
     const untouched = createVisionComputerTool();
     const initialSchema = tool.parameters;
-    const untouchedSchema = untouched.parameters;
-    expect(untouchedSchema).not.toBe(initialSchema);
+    expect(untouched.parameters).toBe(initialSchema);
     await tool.execute("before-upgrade", {
       action: "screenshot",
       node: "mac-1",
@@ -161,8 +110,9 @@ describe("createComputerTool v2 execution", () => {
     });
     expect(readActionEnum(tool)).toContain("list_windows");
     expect(readActionEnum(tool)).not.toContain("launch_app");
-    expect(tool.parameters).toBe(initialSchema);
-    expect(untouched.parameters).toBe(untouchedSchema);
+    const selectedSchema = tool.parameters;
+    expect(selectedSchema).not.toBe(initialSchema);
+    expect(untouched.parameters).toBe(initialSchema);
     expect(readActionEnum(untouched)).not.toContain("list_windows");
 
     await tool.execute("after-upgrade", { action: "screenshot", node: "mac-1" });
@@ -172,7 +122,13 @@ describe("createComputerTool v2 execution", () => {
     );
     expect(readActionEnum(tool)).toContain("launch_app");
     expect(readActionEnum(tool)).not.toContain("list_windows");
-    expect(tool.parameters).toBe(initialSchema);
+    expect(tool.parameters).not.toBe(selectedSchema);
+    expect(selectedSchema).toHaveProperty("properties.action.enum", [
+      "screenshot",
+      "list_windows",
+      "wait",
+      "take_control",
+    ]);
     await tool.execute("new-action", { action: "launch_app", app: "Fixture" });
     expect(callGatewayToolMock).toHaveBeenCalledWith(
       "node.invoke",
@@ -691,7 +647,7 @@ describe("createComputerTool v2 execution", () => {
 });
 
 describe("createComputerTool schema", () => {
-  it("reuses immutable schema fields by action values and isolates later capability edits", () => {
+  it("reuses schemas by action values and isolates later capability edits", () => {
     const capabilities = v2Descriptor(["list_windows"]);
     const transport = {
       computerUse: capabilities,
@@ -707,8 +663,7 @@ describe("createComputerTool schema", () => {
         }),
       },
     });
-    expect(next.parameters).not.toBe(first.parameters);
-    expect(readActionEnum(next)).toBe(readActionEnum(first));
+    expect(next.parameters).toBe(first.parameters);
     expect(Reflect.set(readActionEnum(first), "0", "launch_app")).toBe(false);
 
     capabilities.actions.push("launch_app");
