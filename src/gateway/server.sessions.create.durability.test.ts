@@ -516,12 +516,12 @@ test.for(["lost-worker-response", "restart-before-ack"] as const)(
   },
 );
 
-test("accepts neither idle input custody nor transcript when its atomic commit is refused", async () => {
+test("leaves idle chat input unaccepted when its durable commit is refused", async () => {
   const { storePath } = await createSessionStoreDir();
   const { ws } = await openClient();
-  const key = "agent:main:dashboard:idle-atomic-refusal";
-  const message = "Idle input is retained only with its transcript commit.";
-  const runId = "idle-atomic-refusal";
+  const key = "agent:main:dashboard:idle-commit-refused";
+  const message = "Idle input is accepted only after its durable commit.";
+  const runId = "idle-commit-refused";
   const target = { agentId: "main", sessionKey: key, storePath };
   dispatch.start.mockClear();
   dashboardTitleScheduleMocks.schedule.mockImplementation(() => {});
@@ -547,8 +547,7 @@ test("accepts neither idle input custody nor transcript when its atomic commit i
     const entry = expectDefined(loadSessionEntry(target), "idle session");
     expect(entry.restartRecoveryDeliveryRunId).toBeUndefined();
     const scope = { ...target, sessionId: entry.sessionId };
-    const pending = await listSessionPendingInputs(scope);
-    expect(pending).toEqual({ total: 0, items: [] });
+    expect(await listSessionPendingInputs(scope)).toEqual({ items: [], total: 0 });
     expect(
       (await loadTranscriptEvents(scope)).filter((event) =>
         JSON.stringify(event).includes(message),
