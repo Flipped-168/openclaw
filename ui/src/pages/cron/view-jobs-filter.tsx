@@ -1,8 +1,8 @@
-import { For, createSignal } from "solid-js";
+import { For } from "solid-js";
 import type { CronJobsScheduleKindFilter } from "../../api/types.ts";
 import type { PickerOption } from "../../components/select-picker.ts";
 import { Icon } from "../../components/solid/icon.tsx";
-import { Popover } from "../../components/solid/popover.tsx";
+import { Popover, type PopoverHandle } from "../../components/solid/popover.tsx";
 import { registerCronEnglish } from "../../i18n/locales/en-cron.ts";
 import { registerEnglishCatalog, t } from "../../lib/reactive/i18n.ts";
 import type { CronProps } from "./view-types.ts";
@@ -54,7 +54,7 @@ export function JobsFilterPopover(
   },
 ) {
   let trigger!: HTMLButtonElement;
-  const [open, setOpen] = createSignal(false);
+  let popover!: PopoverHandle;
   return (
     <>
       <button
@@ -68,19 +68,18 @@ export function JobsFilterPopover(
         aria-label={t("cron.list.filters")}
         aria-haspopup="dialog"
         aria-controls="cron-jobs-filter-popover"
-        aria-expanded={open() ? "true" : "false"}
-        onClick={() => setOpen(!open())}
+        aria-expanded="false"
+        onClick={() => popover.overlay.request(!popover.overlay.open)}
       >
         <Icon name="listFilter" />
       </button>
       <Popover
+        ref={(handle) => (popover = handle)}
         id="cron-jobs-filter-popover"
         class="cron-filter-popover"
         label={t("cron.list.filters")}
         anchor={trigger}
         placement="bottom-end"
-        open={open()}
-        onOpenChange={setOpen}
       >
         <div class="cron-filter-popover__panel">
           <JobsFilter
