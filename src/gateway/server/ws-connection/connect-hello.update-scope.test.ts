@@ -560,6 +560,7 @@ describe("sendGatewayHello update detail scope", () => {
       includeUpdateDetails: false,
     });
     expectRedactedHelloSnapshot(context);
+    expect(helloPayload(context)?.features.capabilities).toContain("node-permission-errors");
   });
 
   it.each([
