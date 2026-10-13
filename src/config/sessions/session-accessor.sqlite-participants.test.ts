@@ -17,6 +17,7 @@ import {
   openOpenClawAgentDatabase,
   runOpenClawAgentWriteTransaction,
 } from "../../state/openclaw-agent-db.js";
+import { prepareUserProfileCatalog } from "../../state/user-profile-list.js";
 import { linkEmail } from "../../state/user-profile-writes.worker.js";
 import { ensureProfileForEmail } from "../../state/user-profiles.js";
 import { withOpenClawTestState } from "../../test-utils/openclaw-test-state.js";
@@ -653,7 +654,7 @@ describe("SQLite session participants", () => {
   });
 
   it.each([false, true])(
-    "updates a merged profile at the admission bound (canonical row: %s)",
+    "updates a merged profile at the admission bound using resident native aliases (canonical row: %s)",
     async (hasCanonicalRow) => {
       await withOpenClawTestState({ scenario: "minimal" }, async (state) => {
         await captureRuntimeConfigAsyncReader()();
@@ -661,6 +662,9 @@ describe("SQLite session participants", () => {
         const old = ensureProfileForEmail("old@example.test", { env: state.env });
         const other = ensureProfileForEmail("other@example.test", { env: state.env });
         const current = ensureProfileForEmail("current@example.test", { env: state.env });
+        using _ = {
+          [Symbol.dispose]: (await prepareUserProfileCatalog({ env: state.env })).release,
+        };
         await upsertSessionEntryCore(scope, { sessionId: "merged-full", updatedAt: 1 });
         recordSessionParticipant(scope, { identity: profile(old.id), promptedAt: 10 });
         recordSessionParticipant(scope, { identity: profile(other.id), promptedAt: 10 });
@@ -699,7 +703,7 @@ describe("SQLite session participants", () => {
               const aliases = profileReads.queries.filter((sql) =>
                 sql.includes('from "user_profiles"'),
               );
-              if (writer === "worker" && hasCanonicalRow) {
+              if (writer === "native" || hasCanonicalRow) {
                 expect(aliases).toHaveLength(0);
               } else {
                 expect(aliases.length).toBeGreaterThan(0);
@@ -812,6 +816,62 @@ describe("SQLite session participants", () => {
       });
       expect(deletion.deleted).toBe(true);
       expect(listSessionParticipantsReadOnly(scope).get(scope.sessionKey)).toBeUndefined();
+    });
+  });
+
+  it("merges alias contributions with current destination writes and unknown timestamps", async () => {
+    await withOpenClawTestState({ scenario: "minimal" }, async (state) => {
+      await captureRuntimeConfigAsyncReader()();
+      const makeScope = (name: string) => ({
+        agentId: "main",
+        env: state.env,
+        sessionKey: `agent:main:${name}`,
+      });
+      const canonical = makeScope("canonical");
+      const first = makeScope("first-alias");
+      const second = makeScope("second-alias");
+      for (const scope of [canonical, first, second]) {
+        await upsertSessionEntryCore(scope, { sessionId: scope.sessionKey, updatedAt: 1 });
+      }
+      recordSessionParticipant(canonical, { identity: profile("shared"), promptedAt: 20 });
+      recordSessionParticipant(first, { identity: profile("shared"), promptedAt: 10 });
+      recordSessionParticipant(first, { identity: profile("shared"), promptedAt: 30 });
+      recordSessionParticipant(second, { identity: profile("shared"), promptedAt: 40 });
+      const database = openOpenClawAgentDatabase(canonical);
+      database.db
+        .prepare("UPDATE session_participants SET first_prompted_at = NULL WHERE session_key = ?")
+        .run(second.sessionKey);
+      const reads = trackSqliteStatementExecutions(database.db, ["participants"], (sql) =>
+        sql.includes('from "session_participants"') ? "participants" : null,
+      );
+      try {
+        runOpenClawAgentWriteTransaction(() => {
+          copySessionNodeArtifactsForRepair(
+            database,
+            database,
+            [canonical.sessionKey, first.sessionKey, second.sessionKey],
+            canonical.sessionKey,
+          );
+          // A second transfer must consume the aggregate written earlier in this transaction.
+          copySessionNodeArtifactsForRepair(
+            database,
+            database,
+            [first.sessionKey],
+            canonical.sessionKey,
+          );
+        }, canonical);
+        expect(reads.counts.participants).toBe(2);
+      } finally {
+        reads.restore();
+      }
+      expect(listSessionParticipantsReadOnly(canonical).get(canonical.sessionKey)).toEqual([
+        {
+          identity: profile("shared"),
+          contributionCount: 6,
+          firstPromptedAt: null,
+          lastPromptedAt: 40,
+        },
+      ]);
     });
   });
 
