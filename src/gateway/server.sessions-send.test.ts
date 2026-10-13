@@ -317,12 +317,12 @@ describe("sessions_send gateway loopback", () => {
           return await prepareFacts(params);
         } catch (error) {
           preparationFailure = error;
-          if (error instanceof Error) {
-            const frames = error.stack
+          for (let failure: unknown = error; failure instanceof Error; failure = failure.cause) {
+            const frames = failure.stack
               ?.split("\n")
               .slice(1)
               .map((frame) => frame.replaceAll(":", " at "));
-            console.error("Session preparation failure source locations", frames);
+            console.error("Session preparation failure source locations", failure.name, frames);
           }
           throw error;
         }
