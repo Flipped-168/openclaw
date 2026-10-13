@@ -496,7 +496,7 @@ export async function appendSessionTurnInWorker(
               authority,
               async (snapshot) => {
                 const before = snapshot ?? (await actor.read(authority));
-                // Rebase the cache version, retaining the originally selected lifecycle.
+                // Metadata may advance; the writer checks the captured lifecycle at commit.
                 expectedState ??= buildRestartRecoveryExpectedState(
                   before.entry ?? { sessionId: options.expectedSessionId, updatedAt: 0 },
                 );
@@ -532,8 +532,6 @@ export async function appendSessionTurnInWorker(
                 const command = {
                   commandId: randomUUID(),
                   phaseId: `${inputActor.phase}:${options.expectedSessionId}`,
-                  // Memory commands use their FIFO owner's current state, not a cached version.
-                  expected: memory ? undefined : before.version,
                   expectedState,
                   lifecycle: {},
                   turn: plan,
