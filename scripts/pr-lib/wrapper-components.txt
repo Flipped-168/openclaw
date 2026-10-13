@@ -2285,6 +2285,7 @@ src/config/sessions/session-transcript-search-policy.ts
 src/config/sessions/session-transcript-turn-state.ts
 src/config/sessions/session-window-created-at.ts
 src/config/sessions/session-work-start.ts
+src/config/sessions/session-worker-receipt.ts
 src/config/sessions/transcript-event-media.ts
 src/config/sessions/transcript-message-equality.ts
 src/config/sessions/transcript-replay.ts
