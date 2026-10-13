@@ -649,6 +649,9 @@ describe("Settings agent selector", () => {
       expect(
         selector.querySelector(".agent-select__trigger")?.getAttribute("aria-label"),
       ).toContain("Main");
+      for (const item of selector.querySelectorAll<HTMLElement>('[role="menuitemradio"]')) {
+        item.scrollIntoView = vi.fn();
+      }
       const trigger = selector.querySelector<HTMLButtonElement>(".agent-select__trigger")!;
       trigger.click();
       await waitForSolid(() => expect(trigger.getAttribute("aria-expanded")).toBe("true"));

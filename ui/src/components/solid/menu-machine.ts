@@ -496,11 +496,11 @@ export function useMenuMachine(
             keydown(e);
             return;
           }
-          if (
-            e.key === "Tab" ||
-            e.key === "Escape" ||
-            target.matches("input,textarea,select,[data-form-control]")
-          ) {
+          if (e.key === "Escape") {
+            overlay.keydown(e);
+            return;
+          }
+          if (e.key === "Tab" || target.matches("input,textarea,select,[data-form-control]")) {
             return;
           }
           focusFromKeyboard = true;

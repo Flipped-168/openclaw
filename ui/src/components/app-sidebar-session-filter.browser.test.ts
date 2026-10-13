@@ -335,6 +335,16 @@ describe.runIf("__vitest_browser__" in globalThis)("sidebar session filter popov
     await expect
       .element(sidebar.querySelector<HTMLElement>(".sidebar-session-filter-panel")!)
       .toBeVisible();
+
+    // A closed Solid picker must not shrink the outer sheet's Tab boundary to itself.
+    const grouping = sidebar.querySelector<HTMLButtonElement>("#sidebar-sessions-group")!;
+    grouping.focus();
+    await userEvent.tab();
+    await expect
+      .element(page.getByRole("button", { name: "Sort by: Created", exact: true }))
+      .toHaveFocus();
+    await userEvent.tab({ shift: true });
+    await expect.element(grouping).toHaveFocus();
   });
 
   it("fades the owner list at the edges it scrolls past", async () => {
