@@ -227,7 +227,8 @@ it("keeps shared credentials denied after worker death without a native outcome"
       expect(terminated).toBeDefined();
       expect(hasSqliteWorkerOutcomeUnknown(failure)).toBe(true);
       expect(readCurrent).toThrow();
-      await expect(prepareCredentialReader(state.env)).rejects.toThrow();
+      const recaptured = await prepareCredentialReader(state.env);
+      expect(recaptured).toThrow("Auth profile credential authority is unavailable");
     } finally {
       await terminated;
     }
