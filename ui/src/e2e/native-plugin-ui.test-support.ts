@@ -33,10 +33,12 @@ export async function captureNativeWorkspaceFailure(page: Page): Promise<void> {
         rectCount: node.getClientRects().length,
       };
     };
+    const app = document.querySelector("openclaw-app");
+    const appShell = document.querySelector("openclaw-app-shell");
     const hosts = [...document.querySelectorAll("openclaw-plugin-view")];
+    // ContextProvider ignores its own host; an existing child can still request after shell failure.
     const requestTarget =
-      hosts.find((host) => host.surface === "workspace") ??
-      document.querySelector("openclaw-app-shell");
+      hosts.find((host) => host.surface === "workspace") ?? appShell ?? app?.firstElementChild;
     let owner: unknown = null;
     requestTarget?.dispatchEvent(
       Object.assign(new Event("context-request", { bubbles: true, composed: true }), {
@@ -75,6 +77,20 @@ export async function captureNativeWorkspaceFailure(page: Page): Promise<void> {
       route: location.pathname,
       viewport: { width: innerWidth, height: innerHeight },
       owner,
+      contextRequestTarget: facts(requestTarget),
+      app: facts(app),
+      appShell: facts(appShell),
+      connectingSplash: facts(document.querySelector(".connect-splash--skeleton")),
+      lazyViewErrors: [...document.querySelectorAll(".lazy-view-error")]
+        .slice(0, 3)
+        .map((element) =>
+          Object.assign(facts(element), {
+            detail: element
+              .querySelector(".lazy-view-error__detail")
+              ?.textContent?.trim()
+              .slice(0, 1_000),
+          }),
+        ),
       bridgeRegistered: Boolean(customElements.get("openclaw-plugin-view")),
       hosts: hosts.map((host) =>
         Object.assign(facts(host), {
