@@ -24,6 +24,7 @@ import { closeOpenClawAgentDatabaseByPathAsync } from "../../state/openclaw-agen
 import {
   closeOpenClawStateDatabaseByPathAsync,
   openOpenClawStateDatabase,
+  runOpenClawStateWriteTransaction,
 } from "../../state/openclaw-state-db.js";
 import { captureOpenClawStateWorkerContext } from "../../state/openclaw-state-worker-context.js";
 import {
@@ -608,9 +609,13 @@ describe.each(["shared-state", "agent"] as const)("%s released SDK credential wr
       const current = fixture(kind);
       const rootPath = current.context.admission.databasePath;
       let observed: AuthProfileCredential | undefined;
+      const runOuterTransaction = (operation: () => void) =>
+        kind === "shared-state"
+          ? runOpenClawStateWriteTransaction(operation, { env: current.env })
+          : runSqliteImmediateTransactionSync(current.database.db, operation);
       const save = () =>
         inSdkEnvironment(current, () =>
-          runSqliteImmediateTransactionSync(current.database.db, () => {
+          runOuterTransaction(() => {
             // This observer predates the save; committed facts must still precede every observer.
             deferSqlitePostCommitPublication(current.database.db, () => {
               observed = current.authority.readCurrentCredential();
