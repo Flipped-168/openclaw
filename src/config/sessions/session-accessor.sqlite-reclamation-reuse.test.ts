@@ -165,7 +165,7 @@ test.each(["two-leases-missing", "revoked-after-open", "revoked-during-open"] as
         kind: "lifecycle-artifacts",
         value: { removedEntries: 1 },
       });
-      expect(fullChecks()).toBe(proof === "revoked-after-open" ? 1 : 0);
+      expect(fullChecks()).toBe(proof.startsWith("revoked") ? 1 : 0);
       expect(wasRevokedDuringOpen()).toBe(proof === "revoked-during-open");
       expect(loadSessionEntryReadOnly(scopes[0]!)).toBeUndefined();
     } finally {
