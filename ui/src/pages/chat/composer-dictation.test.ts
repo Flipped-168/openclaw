@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { render } from "lit";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createDeferred } from "../../../../test/helpers/promise.js";
 import type { GatewayBrowserClient, GatewayEventFrame } from "../../api/gateway.ts";
 import { loadSettings, patchSettings } from "../../app/settings.ts";
 import { waitForFast } from "../../test-helpers/wait-for.ts";
@@ -265,7 +266,7 @@ describe("ComposerDictationController", () => {
     }
   });
 
-  it.each(["Escape", "hidden"])("cancels direct dictation on %s", async (action) => {
+  it.each(["Escape", "hidden"])("discards direct dictation on %s", async (action) => {
     const { controller, onCommit } = createHarness();
     const stopTrack = vi.fn();
     getUserMedia.mockResolvedValue({
@@ -296,12 +297,53 @@ describe("ComposerDictationController", () => {
       await waitForFast(() =>
         expect(request).toHaveBeenCalledWith(
           "talk.session.close",
-          { sessionId: "dictation-1" },
+          { sessionId: "dictation-1", discard: true },
           { timeoutMs: null },
         ),
       );
     } finally {
       controller.dispose();
+    }
+  });
+
+  it("Escape discards a finalization that already sent its normal close", async () => {
+    const closeStarted = createDeferred();
+    const release = createDeferred();
+    const implementation = request.getMockImplementation();
+    request.mockImplementation(async (method: string, params: { discard?: boolean }) => {
+      if (method === "talk.session.close" && !params.discard) {
+        closeStarted.resolve();
+        await release.promise;
+      }
+      return implementation?.(method, params);
+    });
+    const h = createHarness();
+    expect(h.controller.startDirect()).toBe(true);
+    await waitForFast(() =>
+      expect(request).toHaveBeenCalledWith("talk.session.create", expect.anything()),
+    );
+    const finishing = h.controller.finishActive();
+    await closeStarted.promise;
+    try {
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(request).toHaveBeenCalledWith(
+        "talk.session.close",
+        { sessionId: "dictation-1", discard: true },
+        { timeoutMs: null },
+      );
+      emit({
+        transcriptionSessionId: "dictation-1",
+        type: "transcript",
+        text: "discarded words",
+        final: true,
+      });
+      emit({ transcriptionSessionId: "dictation-1", type: "close", reason: "completed" });
+      await expect(finishing).resolves.toBe(false);
+      expect(h.onCommit).not.toHaveBeenCalled();
+    } finally {
+      release.resolve();
+      h.controller.dispose();
     }
   });
 

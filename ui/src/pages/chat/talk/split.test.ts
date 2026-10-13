@@ -409,6 +409,46 @@ it("waits for buffered local STT to finish instead of dropping a slow final tran
   await h.state.toggleRealtimeTalk();
 });
 
+it("discards buffered STT when Stop interrupts finalization instead of sending a chat turn", async () => {
+  const h = harness();
+  const closing = createDeferred();
+  const release = createDeferred();
+  const settled = createDeferred();
+  const implementation = expectDefined(h.request.getMockImplementation(), "Gateway fixture");
+  h.request.mockImplementation(async (method, params) => {
+    if (method === "talk.session.close") {
+      if (asOptionalRecord(params)?.discard === true) {
+        return { ok: true };
+      }
+      closing.resolve();
+      await release.promise;
+    }
+    const result = await implementation(method, params);
+    if (method === "talk.session.close") {
+      settled.resolve();
+    }
+    return result;
+  });
+  await h.state.toggleRealtimeTalk();
+  h.utterance();
+  await closing.promise;
+  try {
+    await h.state.toggleRealtimeTalk();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(h.request).toHaveBeenCalledWith(
+      "talk.session.close",
+      { sessionId: "capture-1", discard: true },
+      { timeoutMs: null },
+    );
+  } finally {
+    release.resolve();
+    await settled.promise;
+  }
+  expect(h.state.realtimeTalkStatus).toBe("idle");
+  expect(h.request.mock.calls.some(([method]) => method === "chat.send")).toBe(false);
+  expect(h.request.mock.calls.some(([method]) => method === "tts.speak")).toBe(false);
+});
+
 it.each(["stop", "provider review"])(
   "cancels pending configuration on %s without acquiring the microphone",
   async (reason) => {

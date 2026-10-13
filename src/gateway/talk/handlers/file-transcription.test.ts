@@ -1,7 +1,11 @@
 import { afterEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { awaitGateBeforeSettlement, createDeferred } from "../../../../test/helpers/promise.js";
 import type { OpenClawConfig } from "../../../config/types.js";
-import type { AudioTranscriptionRequest } from "../../../media-understanding/types.js";
+import type {
+  AudioTranscriptionConfigContext,
+  AudioTranscriptionRequest,
+  MediaUnderstandingProvider,
+} from "../../../media-understanding/types.js";
 import type { RealtimeTranscriptionProviderPlugin } from "../../../plugins/capability-provider.types.js";
 import { createPluginMetadataSnapshotFixture } from "../../../plugins/plugin-metadata.test-support.js";
 import { createEmptyPluginRegistry } from "../../../plugins/registry-empty.js";
@@ -38,13 +42,14 @@ function withFileProvider(
   run: (requests: AudioTranscriptionRequest[]) => Promise<void>,
   beforeTranscription?: () => Promise<void>,
   streamingProvider?: RealtimeTranscriptionProviderPlugin,
+  audioProvider?: MediaUnderstandingProvider,
 ) {
   const requests: AudioTranscriptionRequest[] = [];
   const registry = createEmptyPluginRegistry();
   registry.mediaUnderstandingProviders.push({
     pluginId: "local-stt",
     source: "test",
-    provider: {
+    provider: audioProvider ?? {
       id: "local-stt",
       capabilities: ["audio"],
       transcribeAudio: async (request) => {
@@ -87,6 +92,90 @@ describe("configured file transcription through Talk RPCs", () => {
     vi.useRealTimers();
     cleanupTalkConnection("conn-1", { warn: vi.fn() });
   });
+
+  it.each([
+    { configured: false, withHook: true },
+    { configured: true, withHook: true },
+    { configured: true, withHook: false },
+  ])(
+    "uses context-provider readiness without requiring a hook: %j",
+    async ({ configured, withHook }) => {
+      const contexts: AudioTranscriptionConfigContext[] = [];
+      const config: OpenClawConfig = {
+        ...cfg,
+        tools: {
+          media: {
+            audio: { enabled: true, headers: { "x-source": "audio", "x-audio": "yes" } },
+            models: [
+              {
+                provider: "local-stt",
+                model: "whisper",
+                capabilities: ["audio"],
+                baseUrl: "https://speech.example/v1",
+                headers: { "x-source": "entry" },
+                profile: "local-stt:audio",
+              },
+            ],
+          },
+        },
+      };
+      const context = {
+        getRuntimeConfig: () => config,
+        broadcastToConnIds: vi.fn(),
+        logGateway: { warn: vi.fn() },
+      };
+      await withFileProvider(
+        async () => {
+          const call = createTalkHandlerCaller(talkHandlers);
+          const respond = vi.fn();
+          await call("talk.catalog", { params: {}, context, respond });
+          expect(expectRespondOk(respond)).toMatchObject({
+            transcription: {
+              ready: configured,
+              providers: [expect.objectContaining({ id: "local-stt", configured })],
+            },
+          });
+          const created = vi.fn();
+          await call("talk.session.create", {
+            params: { mode: "transcription" },
+            context,
+            respond: created,
+          });
+          if (configured) {
+            expectRespondOk(created, { provider: "local-stt" });
+          } else {
+            expectRespondError(created, {
+              message: expect.stringContaining("No configured audio transcription provider"),
+            });
+          }
+          if (withHook) {
+            expect(contexts[0]).toMatchObject({
+              cfg: config,
+              model: "whisper",
+              profile: "local-stt:audio",
+              baseUrl: "https://speech.example/v1",
+              headers: { "x-source": "entry", "x-audio": "yes" },
+            });
+          }
+        },
+        undefined,
+        undefined,
+        {
+          id: "local-stt",
+          capabilities: ["audio"],
+          transcribeAudioWithContext: async () => ({ ok: true, value: { text: "unused" } }),
+          ...(withHook
+            ? {
+                isAudioConfigured: async (context: AudioTranscriptionConfigContext) => {
+                  contexts.push(context);
+                  return configured;
+                },
+              }
+            : {}),
+        },
+      );
+    },
+  );
 
   it("transcribes captured browser audio with the configured media model", async () => {
     const transcribing = createDeferred();
@@ -173,6 +262,71 @@ describe("configured file transcription through Talk RPCs", () => {
       },
     );
   });
+
+  it.each(["buffered", "finalizing"])(
+    "discards %s audio through talk.session.close without publishing its transcript",
+    async (phase) => {
+      const entered = createDeferred();
+      const release = createDeferred();
+      await withFileProvider(
+        async (requests) => {
+          const events: Array<{ type?: string; text?: string }> = [];
+          const context = {
+            getRuntimeConfig: () => cfg,
+            broadcastToConnIds: (_event: string, payload: { type?: string; text?: string }) =>
+              events.push(payload),
+            logGateway: { warn: vi.fn() },
+          };
+          const call = createTalkHandlerCaller(talkSessionHandlers);
+          const created = vi.fn();
+          await call("talk.session.create", {
+            params: { mode: "transcription" },
+            respond: created,
+            context,
+          });
+          const sessionId = expectRespondOk(created).sessionId;
+          await call("talk.session.appendAudio", {
+            params: { sessionId, audioBase64: Buffer.alloc(1600, 0xff).toString("base64") },
+            respond: vi.fn(),
+            context,
+          });
+          const finished = vi.fn();
+          const finishing =
+            phase === "finalizing"
+              ? call("talk.session.close", { params: { sessionId }, respond: finished, context })
+              : undefined;
+          try {
+            if (finishing) {
+              await awaitGateBeforeSettlement(entered.promise, finishing, "STT did not start");
+            }
+            const discarded = vi.fn();
+            await call("talk.session.close", {
+              params: { sessionId, discard: true },
+              respond: discarded,
+              context,
+            });
+            expectRespondOk(discarded, { ok: true });
+            expect(requests).toHaveLength(finishing ? 1 : 0);
+            if (finishing) {
+              expect(requests[0]?.signal?.aborted).toBe(true);
+            }
+          } finally {
+            release.resolve();
+            await finishing;
+          }
+          if (finishing) {
+            expectRespondOk(finished, { ok: true });
+          }
+          expect(events.filter((event) => event.text || event.type === "error")).toEqual([]);
+          expect(events.filter((event) => event.type === "close")).toHaveLength(1);
+        },
+        async () => {
+          entered.resolve();
+          await release.promise;
+        },
+      );
+    },
+  );
 
   it("rejects oversized captures before dispatching them to the media provider", async () => {
     await withFileProvider(async (requests) => {

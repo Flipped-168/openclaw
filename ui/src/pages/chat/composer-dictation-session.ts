@@ -68,7 +68,7 @@ export class ComposerDictationSession {
   private readonly pendingAudio: Float32Array[] = [];
   private pendingAudioSamples = 0;
   private appendChain: Promise<void> = Promise.resolve();
-  private closePromise: Promise<void> | null = null;
+  private closeRequest: { discard: boolean; promise: Promise<void> } | null = null;
   private stopped = false;
   private discarded = false;
   private failed = false;
@@ -133,7 +133,9 @@ export class ComposerDictationSession {
       this.flushPendingAudio();
     }
     if (this.stopped) {
-      await this.appendChain;
+      if (!this.discarded) {
+        await this.appendChain;
+      }
       await this.closeRemote();
     }
   }
@@ -156,6 +158,9 @@ export class ComposerDictationSession {
 
   async cancel(): Promise<void> {
     this.discarded = true;
+    this.pendingAudio.length = 0;
+    this.pendingAudioSamples = 0;
+    this.settleLateFinalDrain?.(true);
     await this.stopAndClose(false);
   }
 
@@ -166,7 +171,9 @@ export class ComposerDictationSession {
         this.reportFailure(formatDictationError(error));
       }
     });
-    await this.appendChain;
+    if (!this.discarded) {
+      await this.appendChain;
+    }
     await this.closeRemote();
   }
 
@@ -174,10 +181,6 @@ export class ComposerDictationSession {
     this.gatewayDisconnected = true;
     this.settleLateFinalDrain?.(false);
     return this.hasTranscript();
-  }
-
-  cancelPendingFinal(): void {
-    this.settleLateFinalDrain?.(true);
   }
 
   private appendAudio(samples: Float32Array): void {
@@ -231,6 +234,9 @@ export class ComposerDictationSession {
     const audioBase64 = bytesToBase64(floatToG711Ulaw(samples));
     this.appendChain = this.appendChain
       .then(async () => {
+        if (this.discarded) {
+          return;
+        }
         await this.client.request("talk.session.appendAudio", { sessionId, audioBase64 });
       })
       .catch((error: unknown) => {
@@ -306,17 +312,23 @@ export class ComposerDictationSession {
     if (!this.sessionId) {
       return Promise.resolve();
     }
-    if (!this.closePromise) {
+    if (!this.closeRequest || (this.discarded && !this.closeRequest.discard)) {
       // Buffered STT finalizes during close; its media owner bounds the request.
       // The browser's late-event grace starts only after that work completes.
       this.pauseFinalDrain?.();
-      this.closePromise = this.client
-        .request("talk.session.close", { sessionId: this.sessionId }, { timeoutMs: null })
+      const discard = this.discarded;
+      const promise = this.client
+        .request(
+          "talk.session.close",
+          { sessionId: this.sessionId, ...(discard ? { discard } : {}) },
+          { timeoutMs: null },
+        )
         .then(() => undefined)
         .catch(() => undefined)
         .finally(() => this.resumeFinalDrain?.());
+      this.closeRequest = { discard, promise };
     }
-    return this.closePromise;
+    return this.closeRequest.promise;
   }
 
   private waitForLateFinal(): Promise<string> {

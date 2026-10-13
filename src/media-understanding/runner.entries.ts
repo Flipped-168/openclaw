@@ -2,7 +2,6 @@
 // rotation, output extraction, and decision summaries.
 import fs from "node:fs/promises";
 import path from "node:path";
-import { findNormalizedProviderValue } from "@openclaw/model-catalog-core/provider-id";
 import { expectDefined } from "@openclaw/normalization-core";
 import { ok, type Result } from "@openclaw/normalization-core/result";
 import { normalizeLowercaseStringOrEmpty } from "@openclaw/normalization-core/string-coerce";
@@ -15,11 +14,6 @@ import {
   estimateBase64Size,
   resolveVideoMaxBase64Bytes,
 } from "../../packages/media-understanding-common/src/video.js";
-import {
-  mergeModelProviderRequestOverrides,
-  sanitizeConfiguredModelProviderRequest,
-  sanitizeConfiguredProviderRequest,
-} from "../agents/provider-request-config.js";
 import type { RuntimeMsgContext as MsgContext, TemplateContext } from "../auto-reply/templating.js";
 import { applyTemplate } from "../auto-reply/templating.js";
 import { formatCliCommand } from "../cli/command-format.js";
@@ -58,6 +52,7 @@ import {
   assertMediaExecutionCurrent,
   executeProviderRequest,
   resolveProviderExecutionAuth,
+  resolveProviderRequestContext,
   type MediaExecutionContext,
 } from "./provider-execution.js";
 import { getMediaUnderstandingProvider, normalizeMediaProviderId } from "./provider-registry.js";
@@ -347,34 +342,6 @@ export function buildModelDecision(params: {
 }
 
 export type MediaRequestOverrides = Pick<AudioTranscriptionRequest, "prompt" | "language">;
-
-function resolveProviderRequestContext(
-  params: Pick<Parameters<typeof runProviderEntry>[0], "cfg" | "entry" | "config"> & {
-    providerId: string;
-  },
-) {
-  const providerConfig = findNormalizedProviderValue(
-    params.cfg.models?.providers,
-    params.providerId,
-  );
-  const baseUrl = params.entry.baseUrl ?? params.config?.baseUrl ?? providerConfig?.baseUrl;
-  const mergedHeaders: Record<string, string> = {};
-  for (const headers of [providerConfig?.headers, params.config?.headers, params.entry.headers]) {
-    for (const [key, value] of Object.entries(headers ?? {})) {
-      // Literal marker-shaped headers are valid here; discovery sanitizes its own headers.
-      if (typeof value === "string") {
-        mergedHeaders[key] = value;
-      }
-    }
-  }
-  const headers = Object.keys(mergedHeaders).length > 0 ? mergedHeaders : undefined;
-  const request = mergeModelProviderRequestOverrides(
-    sanitizeConfiguredModelProviderRequest(providerConfig?.request),
-    sanitizeConfiguredProviderRequest(params.config?.request),
-    sanitizeConfiguredProviderRequest(params.entry.request),
-  );
-  return { baseUrl, headers, request };
-}
 
 /** Formats a compact operator-facing summary of a media-understanding decision. */
 export function formatDecisionSummary(decision: MediaUnderstandingDecision): string {

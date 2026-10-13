@@ -235,7 +235,7 @@ export class ComposerDictationController {
   };
 
   private readonly handleDocumentKeyDown = (event: KeyboardEvent): void => {
-    if (event.key !== "Escape" || this.phase === "idle") {
+    if (event.key !== "Escape" || (this.phase === "idle" && !this.pendingCommitSession)) {
       return;
     }
     event.preventDefault();
@@ -314,6 +314,9 @@ export class ComposerDictationController {
   }
 
   private stop(options: { commit: boolean }): Promise<boolean> {
+    if (!options.commit) {
+      this.retirePendingCommit();
+    }
     if (this.phase === "idle" || this.phase === "stopping") {
       return Promise.resolve(false);
     }
@@ -343,12 +346,14 @@ export class ComposerDictationController {
     // The composer unlocks immediately, while this exact stopped session keeps
     // ownership of its bounded final accumulator until a new session supersedes it.
     this.pendingCommitSession = session;
+    this.syncCancellationListeners();
     return session
       .finish(true)
       .then((lateTranscript) => {
         const ownsPendingCommit = this.pendingCommitSession === session;
         if (ownsPendingCommit) {
           this.pendingCommitSession = null;
+          this.syncCancellationListeners();
         }
         if (!ownsPendingCommit || !lateTranscript || !wasActive || this.disposed) {
           return false;
@@ -359,6 +364,7 @@ export class ComposerDictationController {
       .catch(() => {
         if (this.pendingCommitSession === session) {
           this.pendingCommitSession = null;
+          this.syncCancellationListeners();
         }
         return false;
       });
@@ -370,8 +376,10 @@ export class ComposerDictationController {
   }
 
   private retirePendingCommit(): void {
-    this.pendingCommitSession?.cancelPendingFinal();
+    const session = this.pendingCommitSession;
     this.pendingCommitSession = null;
+    this.syncCancellationListeners();
+    void session?.cancel().catch(() => undefined);
   }
 
   private clearPointerGesture(): void {
@@ -419,16 +427,20 @@ export class ComposerDictationController {
     if (this.phase === phase) {
       return;
     }
-    if (this.phase === "idle") {
+    this.phase = phase;
+    this.syncCancellationListeners();
+    this.options.onStateChange();
+  }
+
+  private syncCancellationListeners(): void {
+    if (this.phase !== "idle" || this.pendingCommitSession) {
       document.addEventListener("keydown", this.handleDocumentKeyDown);
       document.addEventListener("visibilitychange", this.handleVisibilityChange);
       window.addEventListener("blur", this.handleWindowBlur);
-    } else if (phase === "idle") {
+    } else {
       document.removeEventListener("keydown", this.handleDocumentKeyDown);
       document.removeEventListener("visibilitychange", this.handleVisibilityChange);
       window.removeEventListener("blur", this.handleWindowBlur);
     }
-    this.phase = phase;
-    this.options.onStateChange();
   }
 }

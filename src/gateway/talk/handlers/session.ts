@@ -606,12 +606,16 @@ export const talkSessionHandlers: GatewayRequestHandlers = {
         await stopTalkTranscriptionRelaySession({
           transcriptionSessionId: session.transcriptionSessionId,
           connId,
+          discard: params.discard,
         });
       } else {
         getTalkHandoff(session.handoffId);
         revokeTalkHandoff(session.handoffId);
       }
-      forgetUnifiedTalkSession(params.sessionId);
+      // Transcription owns its final drain and accepts discard until that drain ends.
+      if (session.kind !== "transcription-relay") {
+        forgetUnifiedTalkSession(params.sessionId);
+      }
       respondOk(respond);
     },
     talkSessionError,

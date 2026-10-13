@@ -337,6 +337,7 @@ export function createTalkTranscriptionRelaySession(
 function getTranscriptionSession(
   transcriptionSessionId: string,
   connId: string,
+  allowDraining = false,
 ): TranscriptionRelaySession {
   const relay = requireActiveTalkRelaySession({
     sessions: transcriptionSessions,
@@ -345,7 +346,7 @@ function getTranscriptionSession(
     closeSession: (session) => closeTranscriptionSession(session, "completed"),
     unknownSessionMessage: "Unknown transcription Talk session",
   });
-  if (relay.draining) {
+  if (relay.draining && !allowDraining) {
     throw new Error("Unknown transcription Talk session");
   }
   return relay;
@@ -381,12 +382,21 @@ export function sendTalkTranscriptionRelayAudio(params: {
   });
 }
 
-/** Commits the current transcription turn and closes the relay. */
+/** Finalizes captured audio unless the caller explicitly discards it. */
 export function stopTalkTranscriptionRelaySession(params: {
   transcriptionSessionId: string;
   connId: string;
+  discard?: boolean;
 }): void | Promise<void> {
-  const session = getTranscriptionSession(params.transcriptionSessionId, params.connId);
+  const session = getTranscriptionSession(
+    params.transcriptionSessionId,
+    params.connId,
+    params.discard,
+  );
+  if (params.discard) {
+    closeTranscriptionSession(session, "completed");
+    return;
+  }
   const turnId = session.talk.activeTurnId;
   if (!turnId && !session.receivedAudio) {
     closeTranscriptionSession(session, "completed");
@@ -411,6 +421,9 @@ export function stopTalkTranscriptionRelaySession(params: {
     return session.sttSession.finish().then(
       () => closeTranscriptionSession(session, "completed"),
       (error: unknown) => {
+        if (transcriptionSessions.get(session.id) !== session) {
+          return;
+        }
         failTranscriptionSession(session, error instanceof Error ? error.message : String(error));
         throw error;
       },

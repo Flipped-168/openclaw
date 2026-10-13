@@ -400,6 +400,35 @@ describe("talk transcription gateway relay", () => {
     expect(sttSession.close).toHaveBeenCalledOnce();
   });
 
+  it("discards provider close-time transcripts instead of committing captured audio", async () => {
+    vi.useFakeTimers();
+    let request: RealtimeTranscriptionSessionCreateRequest | undefined;
+    const sttSession = createSttSessionMock();
+    const { events, session } = await createStartedRelaySession(sttSession, {}, (value) => {
+      request = value;
+    });
+    sttSession.close.mockImplementation(() => request?.onTranscript?.("discarded words"));
+    sendTalkTranscriptionRelayAudio({
+      transcriptionSessionId: session.transcriptionSessionId,
+      connId: "conn-1",
+      audioBase64: "AQI=",
+    });
+    try {
+      await stopTalkTranscriptionRelaySession({
+        transcriptionSessionId: session.transcriptionSessionId,
+        connId: "conn-1",
+        discard: true,
+      });
+      expect(
+        events.filter((event) => isRecord(event.payload) && event.payload.type === "transcript"),
+      ).toEqual([]);
+      expect(findPayloadByType(events, "close").reason).toBe("completed");
+      expect(sttSession.close).toHaveBeenCalledOnce();
+    } finally {
+      cleanupTalkConnection("conn-1", { warn: vi.fn() });
+    }
+  });
+
   it("preserves partial activity between provider finals while graceful draining continues", async () => {
     vi.useFakeTimers();
     let request: RealtimeTranscriptionSessionCreateRequest | undefined;

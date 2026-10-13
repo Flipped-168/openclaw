@@ -6,8 +6,16 @@ import {
   executeWithApiKeyRotation,
 } from "../agents/api-key-rotation.js";
 import { CUSTOM_LOCAL_AUTH_MARKER } from "../agents/model-auth-markers.js";
+import {
+  mergeModelProviderRequestOverrides,
+  sanitizeConfiguredModelProviderRequest,
+  sanitizeConfiguredProviderRequest,
+} from "../agents/provider-request-config.js";
 import type { OpenClawConfig } from "../config/types.js";
-import type { MediaUnderstandingModelConfig } from "../config/types.tools.js";
+import type {
+  MediaUnderstandingConfig,
+  MediaUnderstandingModelConfig,
+} from "../config/types.tools.js";
 import { resolveExecutablePath } from "../infra/executable-path.js";
 import {
   providerOperationRetryConfig,
@@ -26,6 +34,36 @@ import type {
 } from "./types.js";
 
 type ProviderRegistry = Map<string, MediaUnderstandingProvider>;
+
+export function resolveProviderRequestContext(params: {
+  cfg: OpenClawConfig;
+  entry: MediaUnderstandingModelConfig;
+  config?: MediaUnderstandingConfig;
+  providerId: string;
+}) {
+  const providerConfig = findNormalizedProviderValue(
+    params.cfg.models?.providers,
+    params.providerId,
+  );
+  const baseUrl = params.entry.baseUrl ?? params.config?.baseUrl ?? providerConfig?.baseUrl;
+  const mergedHeaders: Record<string, string> = {};
+  for (const headers of [providerConfig?.headers, params.config?.headers, params.entry.headers]) {
+    for (const [key, value] of Object.entries(headers ?? {})) {
+      // Literal marker-shaped headers are valid here; discovery sanitizes its own headers.
+      if (typeof value === "string") {
+        mergedHeaders[key] = value;
+      }
+    }
+  }
+  const headers = Object.keys(mergedHeaders).length > 0 ? mergedHeaders : undefined;
+  const request = mergeModelProviderRequestOverrides(
+    sanitizeConfiguredModelProviderRequest(providerConfig?.request),
+    sanitizeConfiguredProviderRequest(params.config?.request),
+    sanitizeConfiguredProviderRequest(params.entry.request),
+  );
+  return { baseUrl, headers, request };
+}
+
 const loadModelAuth = createLazyRuntimeModule(async () => await import("../agents/model-auth.js"));
 const loadHasAvailableAuthForProvider = createLazyRuntimeNamedExport(
   () => import("../agents/model-auth.js"),
@@ -128,6 +166,19 @@ export async function isAudioModelEntryAvailable(params: {
     assertRuntimeMediaRequestSecretOwnerAvailable({ capability: "audio", entry });
     if (params.secretOwnerId) {
       assertSecretOwnerAvailable("capability", params.secretOwnerId);
+    }
+    if (provider.isAudioConfigured) {
+      return await provider.isAudioConfigured({
+        cfg: params.cfg,
+        profile: entry.profile,
+        preferredProfile: entry.preferredProfile,
+        model: entry.model,
+        ...resolveProviderRequestContext({
+          ...params,
+          providerId,
+          config: params.cfg.tools?.media?.audio,
+        }),
+      });
     }
     if (!provider.transcribeAudioWithContext) {
       await resolveProviderExecutionAuth({ ...params, capability: "audio", providerId, provider });

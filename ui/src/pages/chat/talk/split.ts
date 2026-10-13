@@ -42,7 +42,6 @@ export class SplitTalkTransport implements RealtimeTalkTransport {
     this.closed = true;
     const capture = this.capture;
     this.capture = null;
-    capture?.cancelPendingFinal();
     void capture?.cancel().catch(() => undefined);
     this.options.playback.stop();
     this.chatAbort?.abort();
