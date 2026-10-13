@@ -557,14 +557,13 @@ it.each([
             const [databaseOptions, native, configuration] = args;
             const worker = await original<Operations>(databaseOptions, native, {
               ...configuration,
-              assertAdmission(request) {
-                const admitted = configuration.assertAdmission?.(request) ?? request;
-                if (admitted.stage === "commit") {
+              onAdmitted(request) {
+                configuration.onAdmitted?.(request);
+                if (request.stage === "commit") {
                   expect(() => sharing.readCurrent(cfg)).toThrow(
                     "Session access facts are unavailable",
                   );
                 }
-                return admitted;
               },
             });
             const intercept = async <T>(
