@@ -138,7 +138,7 @@ it("admits foreground writes while 65 prepared history reads remain queued", asy
   });
   const reads = Array.from({ length: 65 }, () =>
     withSessionHistoryWorkerDatabase(request.database, (owner) =>
-      owner.readWatermark({ scope: request.scope }),
+      owner.readWatermark({ scope: { ...request.scope, sessionId: "history-backlog" } }),
     ),
   );
   let writer: Promise<string> | undefined;
