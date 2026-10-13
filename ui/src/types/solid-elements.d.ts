@@ -13,6 +13,7 @@ import type { JSX } from "@solidjs/web";
 import type { UpdateRunRecord } from "../../../src/infra/update-run-record.ts";
 import type { ControlUiSurfaceProps } from "../../../src/plugin-sdk/control-ui.js";
 import type { ClawHubRecommendation } from "../../../src/shared/clawhub-recommendations.js";
+import type { LobsterPetProps } from "../components/lobster-pet-contract.ts";
 import type { MascotMood } from "../components/mascot-pose.ts";
 import type { SelectPicker } from "../components/select-picker.ts";
 import type { MessageActionDetails } from "../pages/chat/components/chat-message-markdown.types.ts";
@@ -41,6 +42,7 @@ declare module "@solidjs/web" {
       messageActions: MessageActionDetails | null | undefined;
     }
     interface IntrinsicElements {
+      "openclaw-lobster-pet": HTMLAttributes<HTMLElement> & ElementProperties<LobsterPetProps>;
       // Each caller validates the picker option/callback pairing before the DOM boundary.
       "openclaw-select-picker": HTMLAttributes<SelectPicker> & { "prop:params": unknown };
       "openclaw-update-run-view": HTMLAttributes<HTMLElement> & {
@@ -73,6 +75,7 @@ declare module "@solidjs/web" {
         onResize: (event: CustomEvent<{ splitRatio: number }>) => void;
         "onResize-end"?: () => void;
       };
+
       "wa-switch": LegacyAttributes<WaSwitch> & {
         size?: WaSwitch["size"];
         checked?: boolean;
@@ -89,9 +92,6 @@ declare module "@solidjs/web" {
         "prop:disabled"?: Tooltip["disabled"];
         "prop:anchor"?: Tooltip["anchor"];
         "prop:placement"?: Tooltip["placement"];
-        "prop:closeDelay"?: Tooltip["closeDelay"];
-        "prop:hoverDismissDelay"?: Tooltip["hoverDismissDelay"];
-        "prop:delay"?: Tooltip["delay"];
         "prop:autoSize"?: Tooltip["autoSize"];
         content?: string;
         disabled?: boolean;
@@ -174,6 +174,8 @@ declare module "@solidjs/web" {
           Pick<
             WaPopup,
             | "active"
+            | "anchor"
+            | "sync"
             | "placement"
             | "strategy"
             | "distance"
