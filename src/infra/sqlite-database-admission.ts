@@ -91,11 +91,8 @@ export function readSqliteDatabaseIntegrityVerification(
   return verifiedAt === undefined ? undefined : { verifiedAt };
 }
 
-export function recordSqliteDatabaseIntegrity(
-  database: DatabaseSync,
-  verifiedAt = Date.now(),
-): void {
-  publishSqliteDatabaseAdmission(database, integrityVerificationKey, verifiedAt);
+export function recordSqliteDatabaseIntegrity(db: DatabaseSync, verifiedAt = Date.now()): void {
+  publishSqliteDatabaseAdmission(db, integrityVerificationKey, verifiedAt);
 }
 
 /** Capture admitted facts before close; publish only after successful TRUNCATE and native close. */
@@ -185,16 +182,14 @@ export function retainSqliteDatabaseAdmissionLocation(location: string): void {
 }
 
 function pathAdmission(location: string): Admission | undefined {
-  const retained = state.registry.forLocation(location);
+  let retained = state.registry.forLocation(location);
+  if (!retained) {
+    exchange(location);
+    retained = state.registry.forLocation(location);
+  }
   if (retained) {
     state.seals.load(retained);
     return retained;
-  }
-  exchange(location);
-  const shared = state.registry.forLocation(location);
-  if (shared) {
-    state.seals.load(shared);
-    return shared;
   }
   try {
     retainSqliteDatabaseAdmissionLocation(location);

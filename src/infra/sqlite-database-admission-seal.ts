@@ -154,13 +154,14 @@ export class SqliteDatabaseCleanCloseSeals {
       // Native close must not retire this generation before its seal is published.
       this.references.retain(record);
     }
+    let retained = record;
     return {
-      publish: () => record !== undefined && publish(),
+      publish: () => retained !== undefined && publish(),
       [Symbol.dispose]: () => {
-        const retained = record;
-        record = undefined;
-        if (retained) {
-          this.references.release(retained);
+        const released = retained;
+        retained = undefined;
+        if (released) {
+          this.references.release(released);
         }
       },
     };
