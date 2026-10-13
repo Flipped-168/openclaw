@@ -99,6 +99,9 @@ it("serves the published model-list projection and replaces it with its metadata
       try {
         await harness.runtime.refresh();
         expect(JSON.stringify(await read())).toBe(JSON.stringify(expected));
+        await expect(
+          harness.runtime.read({ agentId: "main", includeModels: false }),
+        ).resolves.toMatchObject({ commands: [{ name: "command-1-1" }] });
         const enterPluginScope = vi.spyOn(pluginScope, "withPluginRuntimeRegistryScope");
         const resolvePolicy = vi.spyOn(
           providerPolicySurface,
@@ -130,7 +133,12 @@ it("serves the published model-list projection and replaces it with its metadata
         setRuntimeConfigSnapshot(currentConfig, currentConfig);
         harness.setConfig(currentConfig);
         harness.setOwner({ ...owner, config: currentConfig });
+        harness.setSkillsVersion(2);
         await harness.runtime.refresh();
+        await expect(
+          harness.runtime.read({ agentId: "main", includeModels: false }),
+        ).resolves.toMatchObject({ commands: [{ name: "command-2-1" }] });
+        expect(harness.buildCommands).toHaveBeenCalledTimes(2);
         expect(await read()).toEqual(expected);
         expect(prepareProjection).toHaveBeenCalledOnce();
         owner.modelCatalog.pendingProviders = ["test"];
