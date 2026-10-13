@@ -99,9 +99,6 @@ export abstract class ChatPaneBase extends ControllerHost {
   get renderRoot() {
     return this.element;
   }
-  get parentElement() {
-    return this.element.parentElement;
-  }
   querySelector: HTMLElement["querySelector"] = this.element.querySelector.bind(this.element);
   querySelectorAll: HTMLElement["querySelectorAll"] = this.element.querySelectorAll.bind(
     this.element,
@@ -137,10 +134,9 @@ export abstract class ChatPaneBase extends ControllerHost {
   }
 
   prepareRender(): void {
-    const changed = new Map(this.changedProperties);
+    this.lastCommittedProperties = new Map(this.changedProperties);
     this.changedProperties.clear();
-    this.lastCommittedProperties = changed;
-    this.willUpdate(changed);
+    this.willUpdate(this.lastCommittedProperties);
   }
 
   commitRender(): void {
@@ -178,7 +174,7 @@ export abstract class ChatPaneBase extends ControllerHost {
     }
   };
   connectedCallback() {
-    this.paneLifecycleRoot = this.closest("openclaw-app-shell") ?? this.parentElement;
+    this.paneLifecycleRoot = this.closest("openclaw-app-shell") ?? this.element.parentElement;
     document.addEventListener("visibilitychange", this.handleVisibilityChange);
     super.connect();
     this.addEventListener(
@@ -560,10 +556,17 @@ export abstract class ChatPaneBase extends ControllerHost {
         selfInstanceId: snapshot?.client?.instanceId,
       })
     ) {
-      this.requestUpdate("presencePayload", previous);
+      this.chatState.requestBackgroundUpdate();
     }
   }
-  @viewState() protected sessionSharingStates = new Map<string, ChatSessionSharingState>();
+  private sessionSharingStatesValue = new Map<string, ChatSessionSharingState>();
+  protected get sessionSharingStates(): Map<string, ChatSessionSharingState> {
+    return this.sessionSharingStatesValue;
+  }
+  protected set sessionSharingStates(value: Map<string, ChatSessionSharingState>) {
+    this.sessionSharingStatesValue = value;
+    this.chatState.requestBackgroundUpdate();
+  }
   protected readonly sessionSharingHydrationTargets = new Map<string, string>();
   protected readonly sessionParticipationTracker = new SessionParticipationTracker();
   @viewState() protected resetConfirmation:
