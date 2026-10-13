@@ -223,19 +223,19 @@ export class DraftGatewayState {
             profiles: readDraftCloudProfiles(required ? [required] : []),
             environments: [],
           })
-        : requestPlaceCatalog(client, runtimeId).then((catalog) => ({
-            ...catalog,
-            profiles: isAdmin ? catalog.profiles : [],
+        : requestPlaceCatalog(client, runtimeId).then((placeCatalog) => ({
+            ...placeCatalog,
+            profiles: isAdmin ? placeCatalog.profiles : [],
           }));
     this.cloudProfileComplete = result
-      .then((catalog) => {
+      .then((placeCatalog) => {
         if (this.cloudProfileRequest !== request) {
           return;
         }
         this.cloudProfileStatus = "complete";
         this.resetCloudProfileRetry();
-        this.environmentsValue = catalog.environments;
-        this.applyCloudProfiles(catalog.profiles);
+        this.environmentsValue = placeCatalog.environments;
+        this.applyCloudProfiles(placeCatalog.profiles);
         this.cloudProfilesReadyValue = true;
       })
       .catch(() => {

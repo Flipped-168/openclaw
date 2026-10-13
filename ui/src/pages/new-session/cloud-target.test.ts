@@ -31,7 +31,7 @@ function mountCloudProfiles(initial: CloudProfileMenuItemsOptions, container: HT
   );
   return {
     ...mounted,
-    update(next: CloudProfileMenuItemsOptions) {
+    update: (next: CloudProfileMenuItemsOptions) => {
       setParams(next);
       flush();
     },
