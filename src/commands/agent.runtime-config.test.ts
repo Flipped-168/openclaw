@@ -26,6 +26,7 @@ const loadConfigMock = vi.hoisted(() => vi.fn<() => OpenClawConfig>());
 const readConfigFileSnapshotForWriteMock = vi.hoisted(() =>
   vi.fn<() => Promise<ConfigSnapshotForWrite>>(),
 );
+// mock-isolation: Runtime-config cases supply their config and authored write snapshot.
 vi.mock("../config/io.js", () => ({
   captureRuntimeConfigAsyncReader: () => async () => loadConfigMock(),
   getRuntimeConfig: loadConfigMock,
