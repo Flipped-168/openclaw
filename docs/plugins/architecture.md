@@ -148,6 +148,8 @@ One `PluginCache` starts on the first plugin metadata access, including CLI pref
 
 Plugin-aware config validation, startup auto-enable, and Gateway plugin bootstrap consume that snapshot instead of rebuilding manifest/index metadata independently. `PluginLookUpTable` is derived from the same snapshot and adds the startup plugin plan for the current runtime config.
 
+Async config reads, writes, and validation prepare the machine-owned bundled-discovery policy and installed index through the shared-state read worker. Cold preparation reads both facts together; later reads reuse the plugin cache until its owner refreshes it. Private inspection snapshots keep their own policy facts without replacing the live process cache.
+
 Channel setup catalogs retain the requested workspace and load-path scope, including raw plugin shadows, so trust filtering can select the appropriate installed alternative.
 
 After startup, runtime readers reuse that inventory without filesystem discovery, manifest rereads, or freshness checks. Narrow plugin selections are in-memory views of the same inventory. Changing an account or an agent's run workspace does not invalidate it. Explicit plugin lifecycle operations prepare a new inventory for installs, updates, removals, source or manifest edits, and discovery-root changes before publishing it to the running Gateway.

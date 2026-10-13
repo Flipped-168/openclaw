@@ -78,7 +78,7 @@ function fixture(raw?: string) {
   return { ...options, io: createConfigIO(options) };
 }
 
-it.each(["load", "snapshot", "policy"] as const)(
+it.each(["load", "snapshot", "host-snapshot", "metadata", "write-snapshot", "policy"] as const)(
   "%s consumes canonical config without reading pending migrations or changing artifacts",
   async (method) => {
     const raw = JSON.stringify({
@@ -101,7 +101,7 @@ it.each(["load", "snapshot", "policy"] as const)(
     const mainSql = observeMainThreadSql();
     const synchronousSnapshot = vi.spyOn(sqliteReadOnlyWorker, "runSqliteReadOnlyWorkerSync");
     const unregister =
-      method === "snapshot"
+      method === "host-snapshot"
         ? registerManagedRuntimeConfigWriteOwner(
             options.configPath,
             undefined,
@@ -118,7 +118,12 @@ it.each(["load", "snapshot", "policy"] as const)(
           if (method === "load") {
             return await io.loadConfigAsync();
           }
-          const snapshot = await io.readConfigFileSnapshot();
+          const snapshot =
+            method === "metadata"
+              ? (await io.readConfigFileSnapshotWithPluginMetadata()).snapshot
+              : method === "write-snapshot"
+                ? (await io.readConfigFileSnapshotForWrite()).snapshot
+                : await io.readConfigFileSnapshot();
           expect(snapshot).toMatchObject({ valid: true, raw });
           return snapshot.config;
         }),

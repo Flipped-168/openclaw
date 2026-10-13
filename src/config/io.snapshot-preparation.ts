@@ -29,6 +29,20 @@ export function materializeConfigSnapshotDefaults(
   });
 }
 
+export async function materializeConfigSnapshotDefaultsAsync(
+  context: ConfigSnapshotPreparationContext,
+  config: OpenClawConfig,
+  metadata: ConfigSnapshotMetadataLoader,
+): Promise<RuntimeConfig> {
+  if (
+    context.options.pluginValidation !== "core-only" &&
+    (config.models?.providers || hasAnthropicDefaultSignal(config, context.deps.env))
+  ) {
+    await metadata.loadAsync(config);
+  }
+  return materializeConfigSnapshotDefaults(context, config, metadata);
+}
+
 /** Supplied by a native Gateway host, never selected by generic config readers. */
 export function prepareHostConfigSnapshot(request: ValidationRequest): Promise<PreparedValidation>;
 export function prepareHostConfigSnapshot(request: MaterializationRequest): Promise<RuntimeConfig>;
@@ -43,14 +57,7 @@ export async function prepareHostConfigSnapshot(
   }
   const { context, metadata } = request;
   if (request.kind === "materialize") {
-    if (
-      context.options.pluginValidation !== "core-only" &&
-      (request.config.models?.providers ||
-        hasAnthropicDefaultSignal(request.config, context.deps.env))
-    ) {
-      await metadata.loadAsync(request.config);
-    }
-    return materializeConfigSnapshotDefaults(context, request.config, metadata);
+    return materializeConfigSnapshotDefaultsAsync(context, request.config, metadata);
   }
   return prepareConfigSnapshotValidation(request);
 }

@@ -479,10 +479,12 @@ it("keeps captured async policy and inventory in pinned roots after a concurrent
             captured.resolve();
             await resume.promise;
             const previousReads = policyReads.mock.calls.length;
-            await resolveConfigWidePluginMetadataSnapshotAsync({
-              config: {},
-              env: readEnv,
-              allowCurrent: false,
+            await withoutMainThreadSql(async () => {
+              await resolveConfigWidePluginMetadataSnapshotAsync({
+                config: {},
+                env: readEnv,
+                allowCurrent: false,
+              });
             });
             const stored = readPersistedInstalledPluginIndexSync({ env: readEnv });
             const mode = bundledDiscovery.readBundledDiscoveryModeMemoized(readEnv);
@@ -493,7 +495,7 @@ it("keeps captured async policy and inventory in pinned roots after a concurrent
               policyReads.mock.calls
                 .slice(previousReads)
                 .filter(([key]) => key === "plugins.bundledDiscovery"),
-            ).toHaveLength(1);
+            ).toHaveLength(0);
             descendant = afterCleanup.promise.then(() =>
               bundledDiscovery.readBundledDiscoveryModeMemoized(readEnv),
             );
