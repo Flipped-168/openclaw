@@ -103,13 +103,7 @@ export function withAuthProfileCredentialOwner<T>(
       },
     },
     "auth profile credential custody",
-    () =>
-      lease.run(() => {
-        if (database) {
-          retainTransaction(database);
-        }
-        return operation(retainTransaction);
-      }),
+    () => lease.run(() => operation(retainTransaction)),
   );
 }
 
@@ -131,5 +125,12 @@ export function withAuthProfileCredentialWriteCustody<T>(
   if (!databasePath) {
     throw new Error("Auth profile credential database has no captured state owner");
   }
-  return withAuthProfileCredentialOwner(databasePath, operation, database);
+  return withAuthProfileCredentialOwner(
+    databasePath,
+    (retain) => {
+      retain?.(database);
+      return operation();
+    },
+    database,
+  );
 }
