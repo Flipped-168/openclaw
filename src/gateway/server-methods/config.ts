@@ -447,7 +447,7 @@ async function prepareConfigReplacementOrRespond(
     respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, parsedRes.error));
     return null;
   }
-  const schema = loadSchemaWithPlugins();
+  const schema = loadGatewayConfigSchema();
   const restored = restoreRedactedValues(parsedRes.parsed, snapshot.config, schema.uiHints);
   if (!restored.ok) {
     respond(
@@ -684,7 +684,7 @@ async function commitConfigRestartWrite(params: {
   writeResult.queueFollowUp();
 }
 
-function loadSchemaWithPlugins(): ConfigSchemaResponse {
+export function loadGatewayConfigSchema(): ConfigSchemaResponse {
   const pluginRegistryVersion = getActivePluginRegistryVersion();
   if (
     configSchemaResponseCache &&
@@ -766,7 +766,7 @@ export const configHandlers: GatewayRequestHandlers = {
     const recoveryAtStart = configWriteRecovery.get(gateway);
     const snapshot = await readConfigGetResponse({
       getHotReloadStatus: context.getConfigReloaderHotReloadStatus,
-      loadUiHints: () => loadSchemaWithPlugins().uiHints,
+      loadUiHints: () => loadGatewayConfigSchema().uiHints,
       revisionProjector: context.configRevisionProjector,
     });
     const recovery = configWriteRecovery.get(gateway);
@@ -785,7 +785,7 @@ export const configHandlers: GatewayRequestHandlers = {
     if (!assertValidParams(params, validateConfigSchemaParams, "config.schema", respond)) {
       return;
     }
-    respond(true, loadSchemaWithPlugins(), undefined);
+    respond(true, loadGatewayConfigSchema(), undefined);
   },
   "config.schema.lookup": ({ params, respond }) => {
     if (
@@ -794,7 +794,7 @@ export const configHandlers: GatewayRequestHandlers = {
       return;
     }
     const { path } = params;
-    const schema = loadSchemaWithPlugins();
+    const schema = loadGatewayConfigSchema();
     const result = lookupConfigSchema(schema, path, resolveConfigReloadMetadata);
     if (!result) {
       respond(
@@ -941,7 +941,7 @@ export const configHandlers: GatewayRequestHandlers = {
       mergeObjectArraysById: true,
       replaceArrayPaths: replacePaths,
     });
-    const schemaPatch = loadSchemaWithPlugins();
+    const schemaPatch = loadGatewayConfigSchema();
     const restoredMerge = restoreRedactedValues(mergedSource, snapshot.config, schemaPatch.uiHints);
     if (!restoredMerge.ok) {
       respond(
