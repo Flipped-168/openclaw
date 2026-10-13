@@ -1,6 +1,13 @@
 import type { DatabaseSync } from "node:sqlite";
+import { captureSqliteSchemaFacts } from "../infra/sqlite-schema-admission.js";
+import { getAdmittedSqliteSchemaFacts } from "../infra/sqlite-schema-facts.js";
 import { quoteSqliteIdentifier } from "../infra/sqlite-schema-sql.js";
-import { ensureColumn, tableExists, tableHasColumn } from "./openclaw-state-db-schema-helpers.js";
+import {
+  ensureColumn,
+  readTableColumns,
+  tableExists,
+  tableHasColumn,
+} from "./openclaw-state-db-schema-helpers.js";
 
 export const STATE_CURSOR_TABLES_V22 = [
   "operator_approvals",
@@ -18,32 +25,20 @@ export function migratePortableIdentityColumnsV22(
     return false;
   }
   let changed = false;
+  const schema = getAdmittedSqliteSchemaFacts(db) ?? captureSqliteSchemaFacts(db);
   for (const table of STATE_CURSOR_TABLES_V22) {
     if (!tableExists(db, table) || tableHasColumn(db, table, "cursor_id")) {
       continue;
     }
     // Preserve historical constraints and local indexes/triggers, including older
     // shapes whose additive/STRICT repairs still belong to the existing owners.
-    // sqlite-allow-raw -- One-time v22 catalog capture for an atomic table rebuild.
-    const objects = db
-      .prepare("SELECT type, sql FROM sqlite_schema WHERE tbl_name = ? AND sql IS NOT NULL")
-      .all(table);
-    const create = objects.find((object) => object.type === "table")?.sql;
+    const create = schema.tableSql.get(table);
     if (typeof create !== "string") {
       throw new Error(`Missing v22 cursor migration schema: ${table}`);
     }
     const temporary = quoteSqliteIdentifier(`${table}_migration_v22`);
     const name = quoteSqliteIdentifier(table);
-    // sqlite-allow-raw -- Native column names are quoted before the lossless copy.
-    const columns = db
-      .prepare(`PRAGMA table_xinfo(${name})`)
-      .all()
-      .flatMap((column) =>
-        column.hidden === 0 && typeof column.name === "string"
-          ? [quoteSqliteIdentifier(column.name)]
-          : [],
-      )
-      .join(", ");
+    const columns = [...readTableColumns(db, table)].map(quoteSqliteIdentifier).join(", ");
     // Keep gaps and native 64-bit identities: issued cursors must still find the
     // same row. New writes subsequently allocate max(cursor_id) + 1.
     // sqlite-allow-raw -- One-time v22 rowid preservation, inside schema maintenance.
@@ -51,8 +46,8 @@ export function migratePortableIdentityColumnsV22(
       INSERT INTO ${temporary} (rowid, ${columns}, cursor_id) SELECT rowid, ${columns}, rowid FROM ${name} ORDER BY rowid;
       DROP TABLE ${name};
       ALTER TABLE ${temporary} RENAME TO ${name};`);
-    for (const object of objects) {
-      if (object.type !== "table" && typeof object.sql === "string") {
+    for (const object of [...schema.indexDefinitions.values(), ...schema.triggers.values()]) {
+      if (object.table === table && typeof object.sql === "string") {
         // sqlite-allow-raw -- Replay the table's own captured index/trigger definitions.
         db.exec(object.sql);
       }
