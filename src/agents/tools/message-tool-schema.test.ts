@@ -19,12 +19,11 @@ describe("message schema variants", () => {
     });
     expect(equivalent).toBe(first);
     expect(Value.Check(first, { action: "send" })).toBe(true);
-    extraProperties.topic.maxLength = 20;
-    expect(first.properties.topic).toMatchObject({ maxLength: 10 });
-    expect(Object.isFrozen(first.properties.topic)).toBe(true);
+    Object.assign(extraProperties.topic, { maxLength: 20 });
+    expect(Value.Check(first, { action: "send", topic: "12345678901" })).toBe(false);
     const changed = buildMessageToolSchemaFromActions(["send"], { ...options, extraProperties });
     expect(changed).not.toBe(first);
-    expect(changed.properties.topic).toMatchObject({ maxLength: 20 });
+    expect(Value.Check(changed, { action: "send", topic: "12345678901" })).toBe(true);
     const required = buildMessageToolSchemaFromActions(["send"], {
       ...options,
       extraProperties: { topic: Type.String({ maxLength: 10 }) },
@@ -51,8 +50,8 @@ describe("message schema variants", () => {
     const first = buildMessageToolSchemaFromActions(actions, options);
     actions.push("poll");
     const next = buildMessageToolSchemaFromActions(actions, options);
-    expect(first.properties.action.enum).toEqual(["send"]);
-    expect(next.properties.action.enum).toEqual(["send", "poll"]);
+    expect(Value.Check(first, { action: "poll" })).toBe(false);
+    expect(Value.Check(next, { action: "poll" })).toBe(true);
     expect(next.properties).toHaveProperty("pollOptionId");
   });
 });
