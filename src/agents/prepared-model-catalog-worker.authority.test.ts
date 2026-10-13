@@ -27,7 +27,7 @@ const transport = vi.hoisted(() => ({
   run: vi.fn<() => Promise<PreparedModelWorkerResult>>(),
 }));
 
-// Only the transport is controlled; the host and retained credential owner are real.
+// mock-isolation: only transport is controlled; the host and retained credential owner are real.
 vi.mock("./prepared-model-catalog-worker.pool.js", () => ({
   GATEWAY_CATALOG_WORKERS: 1,
   CatalogWorkerTaskPool: class {
