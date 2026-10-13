@@ -7,6 +7,7 @@ import {
   attachRuntimeConfigWriteApplication,
   createRuntimeConfigWriteApplication,
 } from "../config/runtime-write-application.js";
+import { resolveSessionStorePathCore } from "../config/sessions/paths.js";
 import { loadSessionEntry, loadTranscriptEventsSync } from "../config/sessions/session-accessor.js";
 import { initializeGlobalHookRunner } from "../plugins/hook-runner-global.js";
 import { getSessionWorkAdmissionRelease } from "../sessions/session-lifecycle-admission.js";
@@ -16,7 +17,6 @@ import {
   chatSendOwner,
   dashboardTitleScheduleMocks,
 } from "./server.sessions.create.test-support.js";
-import { resolveGatewaySessionStoreTarget } from "./session-utils-store-lookup.js";
 import { loadGatewayTestConfig } from "./test-helpers.config-runtime.js";
 import {
   connectOk,
@@ -49,10 +49,8 @@ it("retains committed initial turns through fencing and denies their final write
   };
   const cases = ["retained", "revoked"].map((name) => {
     const key = `agent:main:dashboard:initial-source-${name}`;
-    const { storePath } = resolveGatewaySessionStoreTarget({
-      cfg: configIO.getRuntimeConfig(),
+    const storePath = resolveSessionStorePathCore(configIO.getRuntimeConfig().session?.store, {
       agentId: "main",
-      key,
     });
     return {
       key,
