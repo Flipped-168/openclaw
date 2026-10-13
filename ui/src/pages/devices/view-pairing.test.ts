@@ -1,8 +1,13 @@
 /* @vitest-environment jsdom */
-import { nothing, render } from "lit";
+import { createComponent } from "solid-js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { DevicePairSetupLifecycle } from "../../lib/device-pair-setup.ts";
-import { renderDevicePairSetup } from "./view-pairing.runtime.ts";
+import { mountSolid } from "../../test-helpers/mount-solid.ts";
+import { DevicePairSetup, type DevicePairSetupProps } from "./view-pairing.tsx";
+
+function renderPairing(props: DevicePairSetupProps, container: HTMLElement) {
+  mountSolid(() => createComponent(DevicePairSetup, props), { container });
+}
 
 const containers: HTMLElement[] = [];
 function createContainer() {
@@ -12,7 +17,6 @@ function createContainer() {
 }
 afterEach(() => {
   for (const container of containers.splice(0)) {
-    render(nothing, container);
     container.remove();
   }
 });
@@ -47,8 +51,8 @@ describe("device pairing dialog", () => {
     "keeps access choices within the $lifecycle.phase lifecycle",
     ({ lifecycle, choices, selectable }) => {
       const container = createContainer();
-      render(
-        renderDevicePairSetup({
+      renderPairing(
+        {
           open: true,
           lifecycle,
           nowMs: 0,
@@ -58,7 +62,7 @@ describe("device pairing dialog", () => {
           onClose: vi.fn(),
           onManageDevices: vi.fn(),
           onGetApps: vi.fn(),
-        }),
+        },
         container,
       );
       const fieldset = container.querySelector("fieldset");
@@ -81,8 +85,8 @@ describe("device pairing dialog", () => {
   ])("links $access setup help to the matching workflow", ({ access, href }) => {
     const container = createContainer();
 
-    render(
-      renderDevicePairSetup({
+    renderPairing(
+      {
         open: true,
         lifecycle: { phase: "selection", access },
         nowMs: 0,
@@ -92,7 +96,7 @@ describe("device pairing dialog", () => {
         onClose: vi.fn(),
         onManageDevices: vi.fn(),
         onGetApps: vi.fn(),
-      }),
+      },
       container,
     );
 
@@ -108,8 +112,8 @@ describe("device pairing dialog", () => {
   it("renders the node one-paste command and quiet expiry countdown", () => {
     const container = createContainer();
 
-    render(
-      renderDevicePairSetup({
+    renderPairing(
+      {
         open: true,
         lifecycle: {
           phase: "waiting",
@@ -131,7 +135,7 @@ describe("device pairing dialog", () => {
         onClose: vi.fn(),
         onManageDevices: vi.fn(),
         onGetApps: vi.fn(),
-      }),
+      },
       container,
     );
 

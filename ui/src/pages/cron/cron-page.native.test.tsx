@@ -1,32 +1,26 @@
-import { nothing, render } from "lit";
-import { createComponent } from "solid-js";
 import { expect, it } from "vitest";
-import { renderSolidRoute } from "../../app/solid-route-legacy.tsx";
+import { createApplicationRouter } from "../../app-routes.ts";
+import { RouterOutlet } from "../../app/router-outlet.tsx";
 import { createTestGatewayClient } from "../../test-helpers/gateway-client.ts";
+import { mountSolid } from "../../test-helpers/mount-solid.ts";
+import { createSolidApplicationContextProvider } from "../../test-helpers/solid-application-context.tsx";
 import { waitForSolid } from "../../test-helpers/solid-settle.ts";
 import { createContext, createGateway, createRequest } from "./cron-page.test-support.tsx";
-import { CronPageBridge } from "./cron-page.tsx";
 
 it("loads the empty automation suggestions when its Solid route host is attached", async () => {
   const context = createContext(createGateway(createTestGatewayClient(createRequest()), true));
-  const host = document.body.appendChild(document.createElement("div"));
+  const router = createApplicationRouter();
+  const provider = createSolidApplicationContextProvider(context);
+  const mounted = mountSolid(() => <RouterOutlet router={router} retryContext={context} />, {
+    wrapper: provider.wrapper,
+  });
   try {
-    render(
-      renderSolidRoute({
-        render: () => createComponent(CronPageBridge, {}),
-        context,
-        host,
-        data: undefined,
-        loaderPending: false,
-        presented: true,
-      }),
-      host,
-    );
+    await router.navigate("cron", context);
     await waitForSolid(() => {
-      expect(host.querySelectorAll(".cron-suggestion").length).toBeGreaterThan(0);
+      expect(mounted.container.querySelectorAll(".cron-suggestion").length).toBeGreaterThan(0);
     });
   } finally {
-    render(nothing, host);
-    host.remove();
+    mounted.unmount();
+    router.stop();
   }
 });

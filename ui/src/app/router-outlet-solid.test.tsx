@@ -1,23 +1,18 @@
 /* @vitest-environment jsdom */
 import { createRouter, definePage, type Router } from "@openclaw/uirouter";
 import type { JSX } from "@solidjs/web";
-import type { LitElement } from "lit";
 import { createSignal, onCleanup } from "solid-js";
 import { expect, it, vi } from "vitest";
 import { createDeferredCore } from "../../../src/shared/deferred.js";
 import type { SolidRouteProps } from "../app-routes.ts";
-import { settleLitElement } from "../test-helpers/lit-settle.ts";
-import { flush } from "../test-helpers/solid-settle.ts";
-import type { ControlUiReadinessOutlet } from "./control-ui-readiness.ts";
-import "./router-outlet.ts";
+import { flush, waitForSolid } from "../test-helpers/solid-settle.ts";
+import { mountRouterOutlet, settleRouterOutlet } from "./router-outlet.test-support.tsx";
 
 type RouteModule = { renderSolid: (props: SolidRouteProps) => JSX.Element };
 type TestContext = { label: string };
 type TestRouter = Router<"page" | "next", TestContext, RouteModule, string>;
-type TestOutlet = LitElement &
-  ControlUiReadinessOutlet & { router: TestRouter; retryContext: TestContext };
 
-it("preserves a routed page's focused draft through loader updates and retires it on navigation", async () => {
+it("preserves a routed page's focused draft through loader updates and retryable errors, then retires it on navigation", async () => {
   const firstCleanup = vi.fn();
   const secondCleanup = vi.fn();
   function FirstPage(props: SolidRouteProps) {
@@ -42,6 +37,7 @@ it("preserves a routed page's focused draft through loader updates and retires i
     return <p>Replacement page: {String(props.data)}</p>;
   }
   const reload = createDeferredCore<string>();
+  const failingReload = createDeferredCore<string>();
   let loads = 0;
   const router: TestRouter = createRouter({
     routes: [
@@ -49,7 +45,16 @@ it("preserves a routed page's focused draft through loader updates and retires i
         id: "page",
         path: "/page",
         component: () => ({ renderSolid: FirstPage }),
-        loader: () => (++loads === 1 ? "Initial" : reload.promise),
+        loader: () => {
+          loads += 1;
+          return loads === 1
+            ? "Initial"
+            : loads === 2
+              ? reload.promise
+              : loads === 3
+                ? failingReload.promise
+                : "Recovered";
+        },
       }),
       definePage({
         id: "next",
@@ -60,14 +65,10 @@ it("preserves a routed page's focused draft through loader updates and retires i
     ],
   });
   const context = { label: "test" };
-  // SAFETY: The registered outlet supplies Lit lifecycle and the readiness contract.
-  const outlet = document.createElement("openclaw-router-outlet") as TestOutlet;
-  outlet.router = router;
-  outlet.retryContext = context;
-  document.body.append(outlet);
+  const outlet = mountRouterOutlet({ router, retryContext: context });
   try {
     await router.navigate("page", context);
-    await settleLitElement(outlet);
+    await settleRouterOutlet(outlet);
     const input = outlet.querySelector<HTMLInputElement>("input")!;
     input.focus();
     input.value = "Unsaved notes";
@@ -75,7 +76,7 @@ it("preserves a routed page's focused draft through loader updates and retires i
     flush();
 
     const revalidation = router.revalidate(context, "page");
-    await settleLitElement(outlet);
+    await settleRouterOutlet(outlet);
     expect(outlet.querySelector("p")?.textContent).toBe("Initial / loading");
     expect(outlet.querySelector("input")).toBe(input);
     expect(input.value).toBe("Unsaved notes");
@@ -84,20 +85,40 @@ it("preserves a routed page's focused draft through loader updates and retires i
 
     reload.resolve("Loaded");
     await revalidation;
-    await settleLitElement(outlet);
+    await settleRouterOutlet(outlet);
     expect(outlet.querySelector("p")?.textContent).toBe("Loaded / ready");
     expect(outlet.querySelector("input")).toBe(input);
     expect(input.value).toBe("Unsaved notes");
     expect(document.activeElement).toBe(input);
     expect(firstCleanup).not.toHaveBeenCalled();
 
+    const failure = router.revalidate(context, "page");
+    await settleRouterOutlet(outlet);
+    failingReload.reject(new Error("Fixture refresh failed"));
+    await failure.catch(() => undefined);
+    await settleRouterOutlet(outlet);
+    expect(outlet.textContent).toContain("Fixture refresh failed");
+    expect(outlet.querySelector(".lazy-view-error--inline")).not.toBeNull();
+    expect(outlet.querySelector("input")).toBe(input);
+    expect(document.activeElement).toBe(input);
+    expect(firstCleanup).not.toHaveBeenCalled();
+
+    outlet.querySelector<HTMLButtonElement>(".lazy-view-error__action")!.click();
+    await waitForSolid(() =>
+      expect(outlet.querySelector("p")?.textContent).toBe("Recovered / ready"),
+    );
+    expect(outlet.querySelector("input")).toBe(input);
+    expect(input.value).toBe("Unsaved notes");
+    expect(outlet.querySelector(".lazy-view-error__action")).toBeNull();
+    expect(firstCleanup).not.toHaveBeenCalled();
+
     await router.navigate("next", context);
-    await settleLitElement(outlet);
+    await settleRouterOutlet(outlet);
     expect(outlet.querySelector("input")).toBeNull();
     expect(outlet.querySelector("p")?.textContent).toBe("Replacement page: Next");
     expect(firstCleanup).toHaveBeenCalledOnce();
   } finally {
-    outlet.remove();
+    outlet.dispose();
     router.stop();
     await Promise.resolve();
   }
