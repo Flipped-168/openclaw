@@ -9,13 +9,11 @@ describe("LM Studio model-load error transport", () => {
   ])(
     "allows a slow cold load without overriding an explicit timeout ($loaded)",
     async (testCase) => {
+      const timeoutError = new DOMException("Model load timed out", "TimeoutError");
       vi.useFakeTimers();
       vi.spyOn(AbortSignal, "timeout").mockImplementation((delay) => {
         const controller = new AbortController();
-        setTimeout(
-          () => controller.abort(new DOMException("Model load timed out", "TimeoutError")),
-          delay,
-        );
+        setTimeout(() => controller.abort(timeoutError), delay);
         return controller.signal;
       });
       const modelKey = "qwen3-8b-instruct";
@@ -27,7 +25,7 @@ describe("LM Studio model-load error transport", () => {
           const signal = init.signal;
           const onAbort = () => {
             clearTimeout(timer);
-            reject(signal?.reason);
+            reject(timeoutError);
           };
           const timer = setTimeout(() => {
             signal?.removeEventListener("abort", onAbort);
