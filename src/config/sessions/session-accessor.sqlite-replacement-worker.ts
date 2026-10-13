@@ -38,6 +38,8 @@ import { publishCommittedSessionIdentity } from "./session-accessor.sqlite-ident
 import type {
   SessionEntryReplacementCandidate,
   SessionEntryReplacementCommitted,
+  SessionEntryWorkerMutationResult,
+  SessionEntryWorkerPreparation,
 } from "./session-accessor.sqlite-replacement-types.js";
 import type { SessionEntryCommitContext } from "./session-accessor.types.js";
 import { withSessionEntryWriterReads } from "./session-entry-read-facts.js";
@@ -52,15 +54,6 @@ import {
 import { parseSessionTranscriptAuthorityReceipts } from "./session-transcript-authority.js";
 
 type ReplacementDatabaseOptions = OpenClawAgentDatabaseOptions & { path: string };
-
-export type SessionEntryWorkerPreparation = (
-  execution: OpenClawAgentDatabaseExecution,
-  source: AgentDatabaseRequestExecutionSource,
-) => {
-  prepare: () => Promise<void>;
-  beforeWrite: () => void;
-  release: () => Promise<void>;
-};
 
 function rejectUnknownSessionEntryOutcome(message: string, cause: unknown): never {
   if (hasSqliteWorkerOutcomeUnknown(cause)) {
@@ -448,13 +441,9 @@ export async function initializeSessionTranscriptInWorker(
   );
 }
 
-export type SessionEntryWorkerMutationResult<T> =
-  | { kind: "committed"; value: T; publication: SessionEntryReplacementPublication }
-  | { kind: "not-committed"; value: T };
-
 export async function runSessionEntryWorkerMutation<T>(
   options: ReplacementDatabaseOptions,
-  databaseIdentity: string,
+  databaseIdentity: string | undefined,
   assertCurrent: () => void,
   run: (worker: AgentDatabaseExecutionScope) => Promise<SessionEntryWorkerMutationResult<T>>,
   lifecycle: {
@@ -468,20 +457,21 @@ export async function runSessionEntryWorkerMutation<T>(
     signal?: AbortSignal;
     prepare?: SessionEntryWorkerPreparation;
     onTransaction?: (facts: unknown) => void;
+    errors?: { identity: string; unknown: string; missing: string; publication: string };
   } = {},
 ): Promise<T> {
   const unknownMessage =
+    executionOptions.errors?.unknown ??
     "Session entry mutation has no confirmed native completion and commit receipt";
-  const publication = retainSessionEntryWorkerPublication({
-    agentId: lifecycle.identityAgentId,
-    storePath: options.path,
-    databaseIdentity,
-  });
+  let publication: ReturnType<typeof retainSessionEntryWorkerPublication> | undefined;
   let completed: SessionEntryWorkerMutationResult<T> | undefined;
   let admitted:
     | { admission: SqliteWorkerOperationAdmission; retained: RetainedWorkerTransactionAdmission }
     | undefined;
-  const settle = async () => {
+  const settle = async (
+    retainedPublication: ReturnType<typeof retainSessionEntryWorkerPublication>,
+    identity: string,
+  ) => {
     if (!admitted) {
       if (completed?.kind === "committed") {
         return true;
@@ -512,11 +502,11 @@ export async function runSessionEntryWorkerMutation<T>(
         }
       } finally {
         // Result adoption precedes observers, but its failure cannot retain publication custody.
-        const published = publication.settle(receipt, unknown);
+        const published = retainedPublication.settle(receipt, unknown);
         if (published) {
           publishCommittedSessionIdentity(
             lifecycle.identityAgentId,
-            databaseIdentity,
+            identity,
             published.previous,
             published.current,
             published.prepared,
@@ -538,6 +528,18 @@ export async function runSessionEntryWorkerMutation<T>(
     (execution, source, context) =>
       execution
         .runExisting(source, async (worker) => {
+          const identity = databaseIdentity ?? execution.fileIdentity?.physicalIdentity;
+          if (!identity) {
+            throw new Error(
+              executionOptions.errors?.identity ??
+                "Session entry mutation has no prepared native database identity",
+            );
+          }
+          publication = retainSessionEntryWorkerPublication({
+            agentId: lifecycle.identityAgentId,
+            storePath: execution.path,
+            databaseIdentity: identity,
+          });
           const outcome = await run(worker).then(
             (value) => ({ ok: true as const, value }),
             (error: unknown) => ({ ok: false as const, error }),
@@ -547,7 +549,7 @@ export async function runSessionEntryWorkerMutation<T>(
           }
           // Keep the executing scope and FIFO writer through native publication settlement.
           // Close joins this callback; a delayed result cannot borrow a successor owner.
-          if (await settle()) {
+          if (await settle(publication, identity)) {
             rejectUnknownSessionEntryOutcome(
               unknownMessage,
               outcome.ok ? undefined : outcome.error,
@@ -563,7 +565,9 @@ export async function runSessionEntryWorkerMutation<T>(
         })
         .then((result) => {
           if (!result) {
-            throw new Error("Session database disappeared before mutation");
+            throw new Error(
+              executionOptions.errors?.missing ?? "Session database disappeared before mutation",
+            );
           }
           return result.value;
         }),
@@ -571,9 +575,13 @@ export async function runSessionEntryWorkerMutation<T>(
       if (
         !isRecord(facts) ||
         !isRecord(facts.publication) ||
-        facts.publication.kind !== "session-entry-replacements"
+        facts.publication.kind !== "session-entry-replacements" ||
+        !publication
       ) {
-        throw new Error("Session entry mutation commit omitted its publication keys");
+        throw new Error(
+          executionOptions.errors?.publication ??
+            "Session entry mutation commit omitted its publication keys",
+        );
       }
       admitted = { admission, retained };
       // SAFETY: This command's native kernel supplies the typed publication, not external input.
@@ -612,7 +620,6 @@ export async function commitSessionEntryReplacementsInWorker(
   nativeDeletion?: ReturnType<typeof captureNativeSessionWorkerDeletion>,
 ): Promise<SessionEntryReplacementCommitted> {
   const source = await prepareSessionSourceAuthority(assertCurrent);
-  const assertPreparedCurrent = source.assertCurrent;
   const sameStore = source.checks.every(
     ({ predicate }) => predicate.source.databaseIdentity === databaseIdentity,
   );
@@ -641,7 +648,7 @@ export async function commitSessionEntryReplacementsInWorker(
         databaseIdentity,
         agentId: lifecycle.identityAgentId,
         retainedExecution,
-        assertCurrent: assertPreparedCurrent,
+        assertCurrent: source.assertCurrent,
         captured: nativeDeletion,
         entries: nativeDeletion.participants.map(({ sessionKey, entry }) => ({
           sessionKey,
@@ -676,7 +683,7 @@ export async function commitSessionEntryReplacementsInWorker(
     return await runSessionEntryWorkerMutation<SessionEntryReplacementCommitted>(
       options,
       databaseIdentity,
-      assertPreparedCurrent,
+      source.assertCurrent,
       async (worker) => {
         const value = await worker.execute({
           type: "session.entries.replace",

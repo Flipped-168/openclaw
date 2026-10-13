@@ -22,10 +22,8 @@ import { retainSessionEntryWorkerPublication } from "./session-accessor.sqlite-e
 import type { SessionEntryReplacementPublication } from "./session-accessor.sqlite-entry-cache.types.js";
 import type { SqliteLifecycleTargetSnapshot } from "./session-accessor.sqlite-entry-equality.js";
 import { publishCommittedSessionIdentity } from "./session-accessor.sqlite-identity.js";
-import {
-  withSessionEntryWorker,
-  type SessionEntryWorkerPreparation,
-} from "./session-accessor.sqlite-replacement-worker.js";
+import type { SessionEntryWorkerPreparation } from "./session-accessor.sqlite-replacement-types.js";
+import { withSessionEntryWorker } from "./session-accessor.sqlite-replacement-worker.js";
 import type { SessionEntryCommitContext } from "./session-accessor.types.js";
 import type {
   SessionEntryPatchCommit,
