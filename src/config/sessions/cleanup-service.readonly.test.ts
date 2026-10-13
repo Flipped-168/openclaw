@@ -15,6 +15,7 @@ import {
   resolveOpenClawStateSqlitePath,
   resolveQuarantineStorePath,
 } from "../../state/openclaw-state-db.paths.js";
+import * as cleanupReads from "./cleanup-service-read.js";
 import { runSessionsCleanup } from "./cleanup-service.js";
 import { replaceSessionEntrySync } from "./session-accessor.entry.js";
 import { memorySessionActorOwners } from "./session-actor-memory-owner.js";
@@ -38,10 +39,63 @@ vi.mock("./store-maintenance-runtime.js", () => ({
 const tempDirs = useAutoCleanupTempDirTracker(afterEach);
 afterEach(() => {
   memorySessionActorOwners.reset();
+  maintenance.mode = "enforce";
   closeOpenClawAgentDatabasesForTest();
   closeOpenClawStateDatabaseForTest();
   vi.unstubAllEnvs();
 });
+
+it.each(["warn", "enforce"])(
+  "does not materialize session payloads for a no-op cleanup in %s mode",
+  async (mode) => {
+    const stateDir = tempDirs.make("openclaw-cleanup-noop-");
+    vi.stubEnv("OPENCLAW_STATE_DIR", stateDir);
+    maintenance.mode = mode;
+    maintenance.maxDiskBytes = null;
+    maintenance.highWaterBytes = null;
+    const storePath = path.join(stateDir, "agents", "main", "sessions", "sessions.json");
+    for (let i = 0; i < 32; i++) {
+      replaceSessionEntrySync(
+        { agentId: "main", sessionKey: `agent:main:noop-${i}`, storePath },
+        { sessionId: `noop-${i}`, updatedAt: Date.now() },
+      );
+    }
+    const withStore = cleanupReads.withSessionCleanupStore;
+    let materializedEntries = 0;
+    const readObserver = vi
+      .spyOn(cleanupReads, "withSessionCleanupStore")
+      .mockImplementation((target, consume, options) =>
+        withStore(
+          target,
+          (owner) =>
+            consume({
+              ...owner,
+              read: async (fixMissing) => {
+                const snapshot = await owner.read(fixMissing);
+                materializedEntries += Object.keys(snapshot.store).length;
+                return snapshot;
+              },
+            }),
+          options,
+        ),
+      );
+    try {
+      const result = await runSessionsCleanup({
+        cfg: {},
+        opts: {},
+        targets: [{ agentId: "main", storePath }],
+      });
+      expect(result.appliedSummaries[0]).toMatchObject({
+        beforeCount: 32,
+        afterCount: 32,
+        wouldMutate: false,
+      });
+      expect(materializedEntries).toBe(0);
+    } finally {
+      readObserver.mockRestore();
+    }
+  },
+);
 
 function readMetadata() {
   const state = openNodeSqliteDatabase(resolveOpenClawStateSqlitePath(), { readOnly: true });
