@@ -67,8 +67,10 @@ export function migratePortableIdentityColumnsV22(
       "char(9,10,11,12,13,32,160,5760,8192,8193,8194,8195,8196,8197,8198,8199,8200,8201,8202,8232,8233,8239,8287,12288,65279)";
     // sqlite-allow-raw -- Backfill with the shipped JSON1 expressions; canonical DDL installs column indexes next.
     db.exec(`UPDATE acp_sessions SET
-      resume_agent_session_id = trim(json_extract(${identity}, '$.agentSessionId'), ${whitespace}),
-      resume_acpx_session_id = trim(json_extract(${identity}, '$.acpxSessionId'), ${whitespace});
+      resume_agent_session_id = CASE WHEN json_type(${identity}, '$.agentSessionId') = 'text'
+        THEN trim(json_extract(${identity}, '$.agentSessionId'), ${whitespace}) END,
+      resume_acpx_session_id = CASE WHEN json_type(${identity}, '$.acpxSessionId') = 'text'
+        THEN trim(json_extract(${identity}, '$.acpxSessionId'), ${whitespace}) END;
       DROP INDEX IF EXISTS idx_acp_sessions_resume_agent;
       DROP INDEX IF EXISTS idx_acp_sessions_resume_acpx;`);
   }

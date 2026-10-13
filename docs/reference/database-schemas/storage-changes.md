@@ -148,9 +148,9 @@ semantics. These are ten subpredicates; six CHECKs reported `instr` as their fir
 unsupported construct, while four more guards were hidden behind byte casts.
 
 Schema 22 promotes the two ACP resume index expressions to columns. The single
-metadata writer derives both values with SQLite-compatible scalar conversion,
-first-duplicate-wins JSON lookup, and the existing whitespace rules. Resume
-lookups retain their text-only eligibility check. JSON stays canonical; receipt
+metadata writer trims string identity values using the existing whitespace rules;
+missing and non-string values become NULL. Migration preserves SQLite's first
+duplicate-key behavior. Resume lookups compare the columns directly. JSON stays canonical; receipt
 publication and cohort-cache lifetime are unchanged.
 
 Approvals, cron receipts, execution decision facts, and Skill Workshop changes

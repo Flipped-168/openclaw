@@ -28,7 +28,6 @@ import type {
   AcpSessionReadResult,
   AcpSessionRow,
 } from "./session-meta-read.types.js";
-import { matchesAcpResumeIdentity } from "./session-meta-resume-columns.js";
 
 /** Admission validates the marker before publishing metadata from the same statement. */
 export function prepareAcpSessionMetadataRead(
@@ -109,7 +108,7 @@ function selectAcpResumeSessions(
     db,
     getAcpSessionKysely(db)
       .selectFrom("acp_sessions")
-      .select(["session_key", "session_id", "updated_at", "backend", "agent", "identity_json"])
+      .select(["session_key", "session_id", "updated_at", "backend", "agent"])
       .$if(input.sessionKey !== undefined, (query) =>
         query.where(
           "session_key",
@@ -131,7 +130,6 @@ function selectAcpResumeSessions(
       const key = parseAcpDatabaseSessionKey(row.session_key);
       // Point readers accept aliases; orphan metadata must not reattach through that coercion.
       return key?.agentId === agentId &&
-        matchesAcpResumeIdentity(row.identity_json, input.resumeSessionId) &&
         key.storeSessionKey === resolveSqliteSessionKey(key.storeSessionKey, agentId) &&
         !isInternalSessionEffectsKey(key.storeSessionKey) &&
         !isIncognitoSessionKey(key.storeSessionKey) &&

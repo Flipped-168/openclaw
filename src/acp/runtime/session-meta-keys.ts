@@ -26,7 +26,6 @@ import type {
   AcpSessionEntryBinding,
   AcpSessionReadInput,
 } from "./session-meta-read.types.js";
-import { deriveAcpResumeColumns } from "./session-meta-resume-columns.js";
 
 type AcpSessionMetaDatabase = Pick<OpenClawStateKyselyDatabase, "acp_sessions">;
 
@@ -263,7 +262,7 @@ export function upsertAcpSessionMetaRow(db: DatabaseSync, row: Insertable<AcpSes
     db,
     getAcpSessionKysely(db)
       .insertInto("acp_sessions")
-      .values({ ...row, ...deriveAcpResumeColumns(row.identity_json ?? null) })
+      .values(row)
       .onConflict((conflict) =>
         conflict.column("session_key").doUpdateSet({
           session_id: (eb) => eb.ref("excluded.session_id"),

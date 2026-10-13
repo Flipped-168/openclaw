@@ -1,6 +1,7 @@
 import { DatabaseSync } from "node:sqlite";
 import { expect, it, vi } from "vitest";
 import { extractSqliteTableSchema } from "../../infra/sqlite-schema-sql.js";
+import { migratePortableIdentityColumnsV22 } from "../../state/openclaw-state-db-schema-v22-columns.js";
 import { openOpenClawStateDatabase } from "../../state/openclaw-state-db.js";
 import { OPENCLAW_STATE_SCHEMA_SQL } from "../../state/openclaw-state-schema.js";
 import { closeStateDatabaseForTest } from "../../test-utils/database-cleanup.js";
@@ -9,15 +10,14 @@ import { buildAcpDatabaseSessionKey, upsertAcpSessionMetaRow } from "./session-m
 import { readAcpSessionCommand } from "./session-meta-read.worker.js";
 import { bindAcpSessionMeta } from "./session-meta-write.kernel.js";
 
-it("matches randomized identities using index searches, including malformed and non-string identities", () => {
+it("matches migrated string identities using index searches, including malformed and non-string identities", () => {
   const db = new DatabaseSync(":memory:");
   try {
-    db.exec(
-      extractSqliteTableSchema(OPENCLAW_STATE_SCHEMA_SQL, "acp_sessions", {
-        endMarker: "CREATE TABLE IF NOT EXISTS acp_replay_sessions",
-        includeEndMarker: false,
-      }),
-    );
+    const schema = extractSqliteTableSchema(OPENCLAW_STATE_SCHEMA_SQL, "acp_sessions", {
+      endMarker: "CREATE TABLE IF NOT EXISTS acp_replay_sessions",
+      includeEndMarker: false,
+    });
+    db.exec(schema);
     let random = 485;
     const next = () => (random = (Math.imul(random, 1664525) + 1013904223) >>> 0);
     const fixtures = Array.from({ length: 128 }, (_, i) => {
@@ -71,6 +71,8 @@ it("matches randomized identities using index searches, including malformed and 
         identity_json: fixture.identity,
       });
     }
+    migratePortableIdentityColumnsV22(db, 21);
+    db.exec(schema);
     let selectSql = "";
     const prepare = db.prepare.bind(db);
     const spy = vi.spyOn(db, "prepare").mockImplementation((query) => {
