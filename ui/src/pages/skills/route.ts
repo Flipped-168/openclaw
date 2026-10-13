@@ -1,7 +1,7 @@
 import { definePage, type RouteLoaderOptions } from "@openclaw/uirouter";
 import { createComponent, Show } from "solid-js";
 import { routePageSpec } from "../../app-route-paths.ts";
-import type { SolidRouteProps } from "../../app-routes.ts";
+import type { SolidRouteProps } from "../../app-route-types.ts";
 import type { ApplicationContext } from "../../app/context.ts";
 import { formatUiError } from "../../lib/format-error.ts";
 import { loadSkillStatusReport } from "../../lib/skills/status-report.ts";

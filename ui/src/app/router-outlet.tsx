@@ -1,7 +1,8 @@
 import type { JSX as SolidJSX } from "@solidjs/web";
 import { createEffect, createMemo, createSignal, onCleanup, Show, untrack } from "solid-js";
 import { isSessionRouteId } from "../app-route-paths.ts";
-import type { ApplicationRouter, SolidRouteProps } from "../app-routes.ts";
+import type { SolidRouteProps } from "../app-route-types.ts";
+import type { ApplicationRouter } from "../app-routes.ts";
 import { renderAgentStartupState, renderLazyViewError } from "../components/lazy-view-error.ts";
 import { renderLoadingState } from "../components/loading-state.ts";
 import { McpAppUnmountGate } from "../components/mcp-app-unmount.ts";

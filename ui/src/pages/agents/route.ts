@@ -3,7 +3,7 @@ import { definePage } from "@openclaw/uirouter";
 import { createComponent } from "solid-js";
 import type { AgentsListResult } from "../../api/types.ts";
 import { routePageSpec } from "../../app-route-paths.ts";
-import type { SolidRouteProps } from "../../app-routes.ts";
+import type { SolidRouteProps } from "../../app-route-types.ts";
 import type { ApplicationContext, ApplicationGatewaySnapshot } from "../../app/context.ts";
 import { selectableAgentsList } from "../../lib/agents/display.ts";
 import { resolveAgentsRouteLocation, type AgentsRouteLocation } from "./route-location.ts";

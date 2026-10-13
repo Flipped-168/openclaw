@@ -23,6 +23,7 @@ import {
   sameRouteLocation,
   type RouteId,
 } from "./app-route-paths.ts";
+import type { SolidRouteProps } from "./app-route-types.ts";
 import type { ApplicationContext } from "./app/context.ts";
 import { gatewayPresentationScope } from "./app/gateway-presentation-scope.ts";
 import { page as aboutPage } from "./pages/about/route.ts";
@@ -69,12 +70,6 @@ import { page as usagePage } from "./pages/usage/route.ts";
 import { resolveWorkboardRouteLocation } from "./pages/workboard/route-location.ts";
 import { page as workboardPage } from "./pages/workboard/route.ts";
 import { page as worktreesPage } from "./pages/worktrees/route.ts";
-
-export type SolidRouteProps<Data = unknown> = {
-  data: Data | undefined;
-  loaderPending: boolean;
-  presented: boolean;
-};
 
 type AppRouteModule = (
   | {

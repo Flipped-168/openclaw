@@ -168,7 +168,7 @@ export function CommandPaletteResult(props: {
               name={props.item.label}
               iconUrl={props.pluginIconUrls?.[pluginId]}
               onIconError={() => props.onPluginIconError?.(pluginId)}
-              className="cmd-palette__plugin-icon"
+              class="cmd-palette__plugin-icon"
             />
           )}
         </Match>
