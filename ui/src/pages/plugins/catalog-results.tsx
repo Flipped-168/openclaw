@@ -13,9 +13,9 @@ import type {
 } from "../../lib/plugins/index.ts";
 import { t } from "../../lib/reactive/i18n.ts";
 import { PluginCatalogSkeleton, renderCatalogGridSkeleton } from "./catalog-skeleton.tsx";
+import { PluginArtTile } from "./consent-dialog.tsx";
 import { PluginInstallAction } from "./install-action.tsx";
 import type { PluginInstallProgress } from "./install-progress.ts";
-import { PluginArtTile } from "./plugin-art-tile.tsx";
 import {
   renderPluginAuthor,
   renderPluginCardSummary,
@@ -210,22 +210,13 @@ function CatalogIcon(props: {
     <PluginArtTile
       slug={props.plugin.local.pluginId ?? props.plugin.id}
       name={props.plugin.catalog.name}
-      options={{
-        get iconUrl() {
-          return iconUrl() ?? undefined;
-        },
-        get whiteBackground() {
-          return props.plugin.catalog.official && Boolean(iconUrl());
-        },
-        get loading() {
-          return Boolean(
-            (props.plugin.local.pluginId &&
-              props.state.pluginIconLoading?.(props.plugin.local.pluginId)) ||
-            (props.plugin.catalog.imageUrl &&
-              props.state.iconLoading?.(props.plugin.catalog.imageUrl)),
-          );
-        },
-      }}
+      iconUrl={iconUrl() ?? undefined}
+      whiteBackground={props.plugin.catalog.official && Boolean(iconUrl())}
+      loading={Boolean(
+        (props.plugin.local.pluginId &&
+          props.state.pluginIconLoading?.(props.plugin.local.pluginId)) ||
+        (props.plugin.catalog.imageUrl && props.state.iconLoading?.(props.plugin.catalog.imageUrl)),
+      )}
     />
   );
 }
