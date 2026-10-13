@@ -3,7 +3,6 @@ import fs from "node:fs";
 import path from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
 import { doctorCommand } from "../commands/doctor.js";
-import { getRuntimeConfigSnapshot } from "../config/runtime-snapshot.js";
 import { loadPluginRegistryHandle } from "../plugins/loader.js";
 import * as pluginSourceFiles from "../plugins/plugin-source-file.js";
 import { disposePluginRegistryInstances } from "../plugins/runtime.js";
@@ -18,62 +17,6 @@ vi.mock("../plugins/plugin-source-file.js", async (importOriginal) => ({
 afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllEnvs();
-});
-
-it("prepares the runtime config before standalone Doctor registers plugins", async () => {
-  await withOpenClawTestState({ scenario: "minimal" }, async (state) => {
-    vi.stubEnv("OPENCLAW_DISABLE_BUNDLED_PLUGINS", "1");
-    vi.stubEnv("OPENCLAW_UPDATE_IN_PROGRESS", undefined);
-    vi.stubEnv("OPENCLAW_UPDATE_POST_INSTALL_DOCTOR_RESULT_PATH", undefined);
-    mocks.packageRoot.mockReturnValue(undefined);
-    const id = "doctor-runtime-config-fixture";
-    const root = state.path("plugin");
-    fs.mkdirSync(root);
-    fs.writeFileSync(
-      path.join(root, "index.cjs"),
-      `module.exports = { id: "${id}", register(api) {
-        const config = api.runtime.config.current();
-        api.registerTool({ name: "doctor_config_probe", description: config.agents.defaults.workspace,
-          parameters: { type: "object", properties: {} }, execute: async () => ({ content: [] }) });
-      } };`,
-    );
-    fs.writeFileSync(
-      path.join(root, "openclaw.plugin.json"),
-      JSON.stringify({
-        id,
-        configSchema: { type: "object", properties: {} },
-        contracts: { tools: ["doctor_config_probe"] },
-      }),
-    );
-    const cfg = {
-      agents: { defaults: { workspace: state.workspaceDir } },
-      plugins: { allow: [id], load: { paths: [root] }, slots: { memory: "none" } },
-    };
-    mocks.config.mockReturnValue(cfg);
-    mocks.runContributions.mockImplementation(async () => {
-      const registry = loadPluginRegistryHandle({ config: cfg, cache: false });
-      try {
-        const plugin = registry.plugins.find((entry) => entry.id === id);
-        expect(plugin, plugin?.error).toMatchObject({
-          status: "loaded",
-        });
-        expect(
-          registry.tools.find((tool) => tool.pluginId === id)?.factory({ config: cfg }),
-        ).toMatchObject({
-          description: state.workspaceDir,
-        });
-      } finally {
-        await disposePluginRegistryInstances(registry);
-      }
-    });
-    expect(getRuntimeConfigSnapshot()).toBeNull();
-    const runtime = { log: vi.fn(), error: vi.fn(), exit: vi.fn() };
-    await doctorCommand(runtime, { nonInteractive: true });
-    expect(mocks.runContributions).toHaveBeenCalled();
-    expect(runtime.exit).not.toHaveBeenCalled();
-    expect(runtime.error).not.toHaveBeenCalled();
-    expect(mocks.outro).toHaveBeenCalledWith("Doctor complete.");
-  });
 });
 
 it.each([

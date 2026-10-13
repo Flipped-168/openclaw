@@ -13,7 +13,6 @@ import {
 } from "../commands/doctor/shared/update-phase.js";
 import { ConfigWritePostCommitError } from "../config/io.write-errors.js";
 import { resolveConfigPath, resolveStateDir } from "../config/paths.js";
-import { loadPinnedRuntimeConfigAsync } from "../config/runtime-snapshot.js";
 import { isTruthyEnvValue } from "../infra/env.js";
 import type { AgentDatabaseMigrationTarget } from "../infra/state-migrations.media-persistence-targets.js";
 import { formatUpdateDoctorConfigChange } from "../infra/update-doctor-config.js";
@@ -436,8 +435,6 @@ async function runDoctorHealthFlowWithResult(
         invalidatePluginMetadataSnapshot: configResult.invalidatePluginMetadataSnapshot,
       };
       healthContext = ctx;
-      // Doctor skips the CLI config guard; plugin health checks still need its prepared snapshot.
-      await loadPinnedRuntimeConfigAsync(async () => ({ config: ctx.cfg }));
       const { runDoctorHealthContributions } = await import("./doctor-health-contributions.js");
       await measureGatewayBootstrapStep("doctor.contributions", () =>
         runDoctorHealthContributions(ctx),
