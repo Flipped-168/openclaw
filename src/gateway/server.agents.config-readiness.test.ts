@@ -19,6 +19,7 @@ import type { GatewayScheduler } from "../infra/gateway-scheduler.js";
 import { resolveRuntimeWorkerArgv, resolveRuntimeWorkerUrl } from "../infra/runtime-worker-url.js";
 import { redactSensitiveText } from "../logging/redact.js";
 import * as pluginLifecycleLease from "../plugins/plugin-lifecycle-lease.js";
+import * as agentDatabaseResources from "../state/openclaw-agent-db-resources.js";
 import { OpenClawStateLeaseAcquisitionError } from "../state/openclaw-state-lease-error.js";
 import {
   createGatewaySchedulerClock,
@@ -39,6 +40,20 @@ const cliEntrypoint = resolveRuntimeWorkerArgv(
 it("publishes agent mutations before acknowledging immediate session and roster requests", async ({
   signal,
 }) => {
+  const resourceAdmission = agentDatabaseResources.assertAgentDatabaseResourceAdmission;
+  const resourceAdmissionSpy = vi
+    .spyOn(agentDatabaseResources, "assertAgentDatabaseResourceAdmission")
+    .mockImplementation((...args) => {
+      try {
+        return resourceAdmission(...args);
+      } catch (error) {
+        const detail = error instanceof Error ? (error.stack ?? error.message) : String(error);
+        process.stderr.write(
+          `[config-readiness-database-admission] ${redactSensitiveText(detail)}\n`,
+        );
+        throw error;
+      }
+    });
   const agentId = "readiness-agent";
   let phase = "fixture setup";
   let teardownPhase: string | undefined;
@@ -106,6 +121,7 @@ it("publishes agent mutations before acknowledging immediate session and roster 
       `[config-readiness] ${JSON.stringify({ phase, overlappingPhases, sessionCreatePhases, teardownPhase })}\n`,
     );
     releasePublication.resolve();
+    resourceAdmissionSpy.mockRestore();
     sessionCreateSpy.mockRestore();
     reloaderSpy.mockRestore();
     revivalSpy.mockRestore();
