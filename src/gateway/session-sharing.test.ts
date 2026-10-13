@@ -1001,8 +1001,8 @@ describe("session sharing policy", () => {
               sharing: prepareProjectedSessionSharing({
                 cfg,
                 client: recipient,
-                isMember: (target, id) =>
-                  projection.hasMembership(target.storePath, target.storeKey, id),
+                isMember: (selected, id) =>
+                  projection.hasMembership(selected.storePath, selected.storeKey, id),
               }),
               target: (key) => projection.sharingTarget({ key, agentId: "main" }),
             },

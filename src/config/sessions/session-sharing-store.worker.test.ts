@@ -30,6 +30,7 @@ import { sessionChanges, type SessionRowChange } from "../../sessions/session-ro
 import { createDeferredCore } from "../../shared/deferred.js";
 import { readOpenClawAgentDatabaseIdentity } from "../../state/openclaw-agent-db-identity.js";
 import {
+  closeOpenClawAgentDatabaseByPath,
   openOpenClawAgentDatabase,
   resolveOpenClawAgentSqlitePath,
 } from "../../state/openclaw-agent-db.js";
@@ -459,13 +460,14 @@ it("preserves entry changes and skips reassigned categories after preparation", 
 });
 
 it.each([
-  { mutation: "membership", receipt: "valid" },
-  { mutation: "category", receipt: "valid" },
-  { mutation: "membership", receipt: "conflicting" },
-  { mutation: "membership", receipt: "missing" },
+  { mutation: "membership", receipt: "valid", closeBeforeFailure: false },
+  { mutation: "category", receipt: "valid", closeBeforeFailure: false },
+  { mutation: "membership", receipt: "conflicting", closeBeforeFailure: false },
+  { mutation: "membership", receipt: "missing", closeBeforeFailure: false },
+  { mutation: "membership", receipt: "missing", closeBeforeFailure: true },
 ] as const)(
-  "settles committed $mutation with $receipt receipt when the ordinary worker reply is lost",
-  async ({ mutation, receipt }) => {
+  "settles committed $mutation with $receipt receipt when the ordinary worker reply is lost (host closed: $closeBeforeFailure)",
+  async ({ mutation, receipt, closeBeforeFailure }) => {
     await withOpenClawTestState({ scenario: "minimal" }, async (state) => {
       await captureRuntimeConfigAsyncReader()();
       const scope = {
@@ -552,16 +554,17 @@ it.each([
           async <Operations extends SqliteWorkerOperations>(
             ...args: Parameters<typeof original>
           ) => {
-            const [options, native, configuration] = args;
-            const worker = await original<Operations>(options, native, {
+            const [databaseOptions, native, configuration] = args;
+            const worker = await original<Operations>(databaseOptions, native, {
               ...configuration,
               assertAdmission(request) {
-                configuration.assertAdmission?.(request);
-                if (request.stage === "commit") {
+                const admitted = configuration.assertAdmission?.(request) ?? request;
+                if (admitted.stage === "commit") {
                   expect(() => sharing.readCurrent(cfg)).toThrow(
                     "Session access facts are unavailable",
                   );
                 }
+                return admitted;
               },
             });
             const intercept = async <T>(
@@ -574,6 +577,12 @@ it.each([
               }
               const result = await run();
               if (selected) {
+                if (closeBeforeFailure) {
+                  expect(closeOpenClawAgentDatabaseByPath(database.path, database.agentId)).toBe(
+                    true,
+                  );
+                  expect(database.db.isOpen).toBe(false);
+                }
                 throw failure;
               }
               return result;

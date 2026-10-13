@@ -456,8 +456,14 @@ and provenance in the synchronous transaction. Host grants retain live caller
 authority at transaction and commit; acknowledged publications and accepted-write
 settlement remain with the existing entry owner. Incognito routing is unchanged.
 Confirmed entry receipts publish exact membership and category facts instead of
-forcing a new membership read. Delivery rechecks synchronous listener writes;
-unknown outcomes, moved membership, and superseded metadata still invalidate.
+forcing a new membership read. Prepared membership guards use the entry owner's
+committed facts at the effect boundary. Authority-changing writes deny those
+guards before commit and install committed facts before releasing the denial or
+notifying observers. An unknown authority outcome remains denied until owner
+restart, including after a database handle closes and reopens; a fresh read or
+later successful write cannot settle it. Category and other metadata-only writes
+do not revoke membership authority. Delivery rechecks synchronous listener writes;
+moved membership and superseded metadata still invalidate.
 Committed entry metadata preserves an active trajectory-retention sweep through
 its existing owner. Unknown local writes still invalidate
 the sweep; rollback publishes no acknowledgment.

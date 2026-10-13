@@ -487,7 +487,7 @@ export async function runSessionCollaborationWrite<
                   collectNestedErrorCandidates(error).some(
                     (errorCandidate) => extractErrorCode(errorCandidate) === "outcome-unknown",
                   ));
-              if (unknown && !capturedCommand.type.startsWith("suggestion.") && db.isOpen) {
+              if (unknown && !capturedCommand.type.startsWith("suggestion.")) {
                 publication.beginChanges(
                   publicationKeys,
                   undefined,
@@ -497,7 +497,7 @@ export async function runSessionCollaborationWrite<
                   sharingAuthorityChanged,
                 );
               }
-              publication.settle(undefined, unknown && db.isOpen);
+              publication.settle(undefined, unknown);
               throw error;
             } finally {
               publication.settle(undefined, false);

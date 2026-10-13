@@ -221,6 +221,9 @@ describe("session mutation authorization store caches", () => {
           clone: false,
           projection: "list",
         });
+        const context = requestContext({});
+        await initializeSessionReadContext(context);
+        await getSessionRowProjection(context)!.prepareMembership();
         const inventory = vi.spyOn(sessionAccessor, "listSessionEntriesCore");
         const result = resolveSessionMutationAuthorization({
           client: identifiedClient("viewer@example.test"),
@@ -231,7 +234,7 @@ describe("session mutation authorization store caches", () => {
               : method === "sessions.patch"
                 ? { key: sessionKey, unread: false }
                 : { sessionKey },
-          context: { chatAbortControllers: new Map(), getRuntimeConfig: () => ({}) } as never,
+          context,
         });
         expect(result.error).toBeNull();
         expect(result.authorization).toBeDefined();
@@ -334,7 +337,9 @@ describe("session mutation authorization store caches", () => {
             },
           );
         }
-        const context = { chatAbortControllers: new Map(), getRuntimeConfig: () => cfg } as never;
+        const context = requestContext(cfg);
+        await initializeSessionReadContext(context);
+        await getSessionRowProjection(context)!.prepareMembership();
         const client = identifiedClient(`${viewer}@example.test`);
         const scoped = resolveSessionMutationAuthorization({
           client,
@@ -409,6 +414,9 @@ describe("session mutation authorization store caches", () => {
         },
       );
 
+      const context = requestContext({});
+      await initializeSessionReadContext(context);
+      await getSessionRowProjection(context)!.prepareMembership();
       const result = resolveSessionMutationAuthorization({
         client: identifiedClient("viewer@example.com"),
         method: "sessions.patchMany",
@@ -416,7 +424,7 @@ describe("session mutation authorization store caches", () => {
           targets: [{ key: sharedKey }, { key: draftKey }],
           patch: { unread: false },
         },
-        context: { chatAbortControllers: new Map(), getRuntimeConfig: () => ({}) } as never,
+        context,
       });
 
       expect(result.authorization).toBeUndefined();
@@ -442,6 +450,9 @@ describe("session mutation authorization store caches", () => {
         },
       );
       const target = { sessionKey: ` ${sessionKey} `, agentId: " main " };
+      const context = requestContext({});
+      await initializeSessionReadContext(context);
+      await getSessionRowProjection(context)!.prepareMembership();
       const result = resolveSessionMutationAuthorization({
         client: identifiedClient("viewer@example.com"),
         method: "sessions.patchMany",
@@ -449,7 +460,7 @@ describe("session mutation authorization store caches", () => {
           targets: [{ key: target.sessionKey, agentId: target.agentId }],
           patch: { unread: false },
         },
-        context: { chatAbortControllers: new Map(), getRuntimeConfig: () => ({}) } as never,
+        context,
       });
 
       expect(result.error).toBeNull();
