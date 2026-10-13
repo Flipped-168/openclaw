@@ -146,7 +146,8 @@ describeControlUiE2e("Control UI shell routing E2E", () => {
     });
     const page = await context.newPage();
     const explicitGatewayUrl = "ws://127.0.0.1:29991/alternate";
-    const gateway = await installMockGateway(page, { basePath });
+    // The Gateway cannot load its roster until this flow confirms the new URL.
+    const gateway = await installMockGateway(page, { basePath, awaitInitialRoster: false });
 
     try {
       const url = new URL(`${basePath}/chat`, proxy.baseUrl);
