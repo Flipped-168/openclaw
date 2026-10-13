@@ -90,9 +90,9 @@ describe("ACP accepted cancellation ownership", () => {
           ]),
         );
         expect(
-          (
-            await listSessionStateEventsSince(state.target.sessionKey, "codex", 0, 200)
-          ).events.toSorted((left, right) => (left.runId ?? "").localeCompare(right.runId ?? "")),
+          (await listSessionStateEventsSince(state.target.sessionKey, "codex", 0, 200)).events
+            .map(({ kind, runId, payload }) => ({ kind, runId, payload }))
+            .toSorted((left, right) => String(left.runId).localeCompare(String(right.runId))),
         ).toMatchObject([
           { kind: "run_failed", runId: "snapshot-0", payload: { outcome: "cancelled" } },
           { kind: "run_failed", runId: "snapshot-1", payload: { outcome: "cancelled" } },
