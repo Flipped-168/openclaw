@@ -12,11 +12,8 @@ import { acquireNativeOverlaySurface } from "../lib/native-overlay-occlusion.ts"
 import { t } from "../lib/reactive/i18n.ts";
 import { emptyLegacyContent, LitContent } from "../lit/solid-content.tsx";
 import { createOverlayAnchor } from "./overlay-anchor.ts";
-import {
-  createOverlay,
-  findOverlayParent,
-  type OverlayNativeAdapter,
-} from "./overlay-lifecycle.ts";
+import { createOverlay, findOverlayParent } from "./overlay-lifecycle.ts";
+import type { OverlayNativeAdapter } from "./overlay-types.ts";
 import { revealInScrollRegion } from "./scroll-state.ts";
 import type { PickerOption, PickerParams, PickerGroup } from "./select-picker-types.ts";
 import { Icon } from "./solid/icon.tsx";

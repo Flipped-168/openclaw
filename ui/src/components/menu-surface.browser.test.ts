@@ -126,20 +126,6 @@ async function expectMenuInTopLayer(dropdown: Dropdown) {
   await expect.poll(() => surface?.matches(":popover-open")).toBe(true);
 }
 
-async function pauseMenuOpening(dropdown: Dropdown, trigger: HTMLElement) {
-  const surface = await settledMenuSurface(dropdown);
-  surface.style.setProperty("--show-duration", "1s");
-  trigger.click();
-  await expect.poll(() => surface.getAnimations().length).toBe(1);
-  const animation = surface.getAnimations()[0];
-  if (!animation) {
-    throw new Error("expected the menu to be animating");
-  }
-  animation.pause();
-  animation.currentTime = 500;
-  return surface;
-}
-
 async function browserCardMenu(card: HTMLElementTagNameMap["openclaw-browser-tab-card"]) {
   await card.updateComplete;
   const dropdown = card.querySelector("wa-dropdown");

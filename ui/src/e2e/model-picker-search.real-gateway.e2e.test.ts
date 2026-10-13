@@ -353,10 +353,10 @@ suite.define(() => {
             .poll(() =>
               picker.evaluate((element) => {
                 const menu = element.querySelector(".picker-select__menu")!.getBoundingClientRect();
-                const trigger = element
+                const pickerTriggerBounds = element
                   .querySelector(".picker-select__trigger")!
                   .getBoundingClientRect();
-                return menu.bottom <= trigger.top;
+                return menu.bottom <= pickerTriggerBounds.top;
               }),
             )
             .toBe(true);

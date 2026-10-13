@@ -3,8 +3,9 @@ import { html } from "lit";
 import { defineSolidBridge, type SolidBridgeElement } from "../lit/solid-bridge.ts";
 import type { PickerOption, PickerParams } from "./select-picker-types.ts";
 import { PickerContent } from "./select-picker-view.tsx";
-export type { PickerGroup, PickerOption, PickerParams } from "./select-picker-types.ts";
 import "../styles/select-picker.css";
+
+export type { PickerGroup, PickerOption, PickerParams } from "./select-picker-types.ts";
 
 export type SelectPicker<Option extends PickerOption = PickerOption> = SolidBridgeElement<{
   params: PickerParams<Option>;
