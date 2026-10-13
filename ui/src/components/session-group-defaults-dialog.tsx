@@ -12,9 +12,8 @@ import { registerSessionOrganizationEnglish } from "../i18n/locales/en-session-o
 import { formatUiError } from "../lib/format-error.ts";
 import { pathDisplayName } from "../lib/path-display.ts";
 import { nativeListener } from "../lib/solid-native-listener.ts";
-import { LitContent } from "../lit/solid-content.tsx";
 import { PlaceBrowserState } from "../pages/new-session/place-browser-state.ts";
-import { renderPlaceBrowser } from "../pages/new-session/place-browser.ts";
+import { PlaceBrowser } from "../pages/new-session/place-browser.tsx";
 import "../styles/new-session.css";
 import { withPromiseModalHost } from "./promise-modal-host.ts";
 import { Icon } from "./solid/icon.tsx";
@@ -215,7 +214,7 @@ export function showSessionGroupDefaultsDialog(options: Options): Promise<void> 
           });
           const content = createMemo(() => {
             revision();
-            return renderPlaceBrowser({
+            return {
               browser,
               id: "session-group-defaults-browser",
               label: t("newSession.gateway"),
@@ -225,9 +224,9 @@ export function showSessionGroupDefaultsDialog(options: Options): Promise<void> 
               onClose: showPickerRoot,
               onApplyFolder: applyFolder,
               onRegisterProject: () => {},
-            });
+            };
           });
-          return <LitContent value={content()} />;
+          return <PlaceBrowser params={content()} />;
         }
         function PickerRoot() {
           onSettled(() => {
