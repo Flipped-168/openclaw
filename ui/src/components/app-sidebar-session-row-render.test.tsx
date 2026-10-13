@@ -4,7 +4,13 @@ import type { JSX } from "@solidjs/web";
 import { createSignal, flush } from "solid-js";
 import { expect, it, onTestFinished, vi } from "vitest";
 import "../test-helpers/app-sidebar-suite.ts";
-import { createContext, createGateway, createSessions } from "../test-helpers/app-sidebar.ts";
+import {
+  createContext,
+  createGateway,
+  createGatewayHarness,
+  createSessions,
+  mountSidebarContext,
+} from "../test-helpers/app-sidebar.ts";
 import { createTestGatewayClient } from "../test-helpers/gateway-client.ts";
 import { mountSolid } from "../test-helpers/mount-solid.ts";
 import { waitForSolid } from "../test-helpers/solid-settle.ts";
@@ -80,6 +86,32 @@ function mountObservedHost(
     flush();
   };
 }
+
+it("paints the restored roster and workspace in the first sidebar update", async () => {
+  const gateway = createGatewayHarness(createTestGatewayClient(async () => ({})));
+  gateway.publish({ client: null, phase: "connecting", hello: null });
+  const context = createContext(gateway.gateway, createSessions("main", []));
+  const { sidebar: host } = await mountSidebarContext(context);
+  host.sidebarAgentsMode = "chip";
+  host.sidebarLiveActivity = false;
+
+  host.restoreSidebarSnapshot({
+    ...emptySnapshot,
+    mode: "roster",
+    cards: [{ id: "main", name: "Harbor", mainKey: "agent:main:main", textAvatar: "⚓" }],
+  });
+  host.requestUpdate();
+  await host.updateComplete;
+
+  expect(host.querySelector('aside[data-snapshot-state="cached"]')).not.toBeNull();
+  const roster = host.querySelector<HTMLElement & { updateComplete: Promise<boolean> }>(
+    "openclaw-sidebar-agent-roster",
+  );
+  expect(roster).not.toBeNull();
+  await roster!.updateComplete;
+  expect(host.querySelector('[data-agent-group="main"]')?.textContent).toContain("Harbor");
+  expect(host.querySelector('[data-avatar="⚓"]')).not.toBeNull();
+});
 
 it("materializes the archive hint on hover without changing the action name", () => {
   vi.useFakeTimers();

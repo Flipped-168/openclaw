@@ -26,10 +26,7 @@ function displayUser(user: AuthenticatedUser | null | undefined) {
     : null;
 }
 
-export function isSidebarSnapshotSettled(
-  host: AppSidebarRenderHost,
-  rosterRendererReady: boolean,
-): boolean {
+export function isSidebarSnapshotSettled(host: AppSidebarRenderHost): boolean {
   const context = host.sessionDataContext;
   if (!host.connected || !context) {
     return false;
@@ -49,7 +46,6 @@ export function isSidebarSnapshotSettled(
   if (host.sidebarAgentsMode === "roster") {
     const roster = rosterActivityStore(context).snapshot;
     return (
-      rosterRendererReady &&
       (roster.membershipReady || roster.error !== null) &&
       !roster.loading &&
       roster.involvingMe === host.sidebarSessionOwnerFilter().involvingMe

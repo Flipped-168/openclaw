@@ -1,4 +1,4 @@
-import { dynamic, type JSX } from "@solidjs/web";
+import type { JSX } from "@solidjs/web";
 import { createEffect, createMemo, Show, untrack } from "solid-js";
 import type {
   FsListDirResult,
@@ -55,6 +55,11 @@ import {
   isCommunityInviteEligible,
 } from "./community-invite-state.ts";
 import { SessionOrganizerController } from "./session-organizer-controller.ts";
+import {
+  SidebarAgentRoster,
+  SidebarNewSessionMenu,
+  renderSidebarPinnedSession,
+} from "./sidebar-agent-roster.tsx";
 import { SidebarContextController } from "./sidebar-context-controller.ts";
 import { SidebarMenusController } from "./sidebar-menus-controller.tsx";
 import { SidebarPeopleController } from "./sidebar-people-controller.ts";
@@ -102,9 +107,6 @@ export class AppSidebarOwner extends AppSidebarSessionNavigationElement implemen
     this.people.statusFilter = model.peopleStatusFilter;
     this.teamOnlineExpanded = model.onlineExpanded;
     sidebarOnlineOrder(this).restore(model.onlineUsers, new Map(model.onlineCounts));
-    if (model.mode === "roster") {
-      void this.rosterRendererImport.load().catch(() => undefined);
-    }
   }
 
   releaseSidebarSnapshot(): void {
@@ -129,7 +131,7 @@ export class AppSidebarOwner extends AppSidebarSessionNavigationElement implemen
   }
 
   sidebarSnapshotSettled(): boolean {
-    return isSidebarSnapshotSettled(this, Boolean(this.rosterRenderer));
+    return isSidebarSnapshotSettled(this);
   }
 
   captureSidebarSnapshot(): SidebarSnapshotModel | null {
@@ -257,14 +259,6 @@ export class AppSidebarOwner extends AppSidebarSessionNavigationElement implemen
       }
     },
   );
-  private rosterRenderer: typeof import("./sidebar-agent-roster.tsx") | null = null;
-  private readonly rosterRendererImport = createIdleImport(
-    () => import("./sidebar-agent-roster.tsx"),
-    (module) => {
-      this.rosterRenderer = module;
-      this.requestUpdate();
-    },
-  );
   catalogProjectGrouping: CatalogProjectGrouping = loadStoredSidebarCatalogGrouping();
 
   override dismissTransientMenus(): boolean {
@@ -273,7 +267,6 @@ export class AppSidebarOwner extends AppSidebarSessionNavigationElement implemen
   }
 
   override disconnectedCallback() {
-    this.rosterRendererImport.dispose();
     window.removeEventListener("openclaw:native-gateways-changed", this.nativeGatewaysChanged);
     window.removeEventListener(
       SIDEBAR_HIDDEN_SESSION_CATALOGS_CHANGED_EVENT,
@@ -513,12 +506,8 @@ export class AppSidebarOwner extends AppSidebarSessionNavigationElement implemen
       listItem: false,
     });
     return (
-      <Show
-        when={this.sidebarAgentsMode === "roster" ? this.rosterRenderer : null}
-        keyed
-        fallback={row}
-      >
-        {(renderer) => renderer.renderSidebarPinnedSession(this, session)}
+      <Show when={this.sidebarAgentsMode === "roster"} fallback={row}>
+        {renderSidebarPinnedSession(this, session)}
       </Show>
     );
   }
@@ -545,26 +534,18 @@ export class AppSidebarOwner extends AppSidebarSessionNavigationElement implemen
     });
     createEffect(
       () => ({
-        roster:
-          host().sidebarAgentsMode === "roster" && !host().rosterRenderer
-            ? host().rosterRendererImport
-            : null,
         catalog:
           !host().catalogRenderer &&
           (catalogs().length > 0 || host().sessionData.sessionCatalogRefreshStatus.error !== null)
             ? host().catalogRendererImport
             : null,
       }),
-      ({ roster, catalog }) => {
-        if (roster) {
-          void roster.load().catch(() => undefined);
-        }
+      ({ catalog }) => {
         if (catalog) {
           void catalog.load().catch(() => undefined);
         }
       },
     );
-    const Roster = dynamic(() => host().rosterRenderer?.SidebarAgentRoster);
     const nativeList = renderSessionList({
       host: host(),
       get empty() {
@@ -620,7 +601,7 @@ export class AppSidebarOwner extends AppSidebarSessionNavigationElement implemen
     });
     return (
       <Show when={host().sidebarAgentsMode === "roster"} fallback={nativeList}>
-        <Roster
+        <SidebarAgentRoster
           host={host()}
           active={host().navigationVisible}
           sections={sections()}
@@ -633,16 +614,17 @@ export class AppSidebarOwner extends AppSidebarSessionNavigationElement implemen
 
   renderSidebar(Sessions: () => JSX.Element): JSX.Element {
     const SidebarFrame = () => {
-      const NewSessionMenu = dynamic(() => this.rosterRenderer?.SidebarNewSessionMenu);
       const rail = renderSidebarRail(this);
       const pages = renderSidebarPages(this);
       const toolbar = renderSessionListToolbar(
         this,
-        <NewSessionMenu
-          host={this}
-          active={this.navigationVisible}
-          access={this.readNewSessionAccess()}
-        />,
+        <Show when={this.sidebarAgentsMode === "roster"}>
+          <SidebarNewSessionMenu
+            host={this}
+            active={this.navigationVisible}
+            access={this.readNewSessionAccess()}
+          />
+        </Show>,
       );
       const online = renderAppSidebarOnline(this);
       const menus = untrack(() => this.sidebarMenus).render();
@@ -734,12 +716,7 @@ export class AppSidebarOwner extends AppSidebarSessionNavigationElement implemen
       );
     };
     return (
-      <Show
-        when={
-          !this.sidebarSnapshotController.pending &&
-          !(this.sidebarSnapshot?.mode === "roster" && !this.rosterRenderer)
-        }
-      >
+      <Show when={!this.sidebarSnapshotController.pending}>
         <SidebarFrame />
       </Show>
     );

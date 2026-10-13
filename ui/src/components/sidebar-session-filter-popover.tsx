@@ -45,6 +45,10 @@ function renderSidebarSessionFilterPopover(
   const focusInitialControl = () => {
     if (!focused) {
       focused = true;
+      // A late reposition must not take focus from a control already chosen inside the panel.
+      if (host.contains(host.ownerDocument.activeElement)) {
+        return;
+      }
       host.querySelector<HTMLElement>(props.initialFocusSelector)?.focus({ preventScroll: true });
     }
   };
