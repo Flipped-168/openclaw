@@ -247,9 +247,8 @@ export function getOpenClawAgentDatabaseValidation(
   ) {
     return undefined;
   }
-  const validation = entry.validation;
-  bindValidationLifetime(database, validation);
-  return validation;
+  bindValidationLifetime(database, entry.validation);
+  return entry.validation;
 }
 
 /** The receiving opener must adopt this proof against its own physical file identity. */
@@ -542,6 +541,11 @@ export function invalidateOpenClawAgentCanonicalValidation(
   const validation = canonicalValidationReceipt(database);
   if (validation) {
     Atomics.store(new Int32Array(validation.canonicalReady), 0, 0);
+    // A seal can restore a separate copy of this receipt after the last handle closes.
+    const pathname = findOpenClawAgentDatabaseIdentity(database)?.canonicalPath;
+    if (pathname && validatedPaths.get(pathname)?.integrityVerified) {
+      publishSqliteDatabaseAdmission(database.db, agentDatabaseValidationKey, validation);
+    }
   }
   clearPersistedOpenClawAgentCanonicalValidation(database);
 }
