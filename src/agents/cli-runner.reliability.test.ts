@@ -952,6 +952,7 @@ describe("runCliAgent reliability", () => {
         sessionKey: sessionTarget.sessionKey,
         runId: "run-committed-final",
       });
+      context.authBindingFingerprint = "fixture-auth-binding";
       let committed = false;
       const notifyAuthBinding = vi.fn();
       const error =
