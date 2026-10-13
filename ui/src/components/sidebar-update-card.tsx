@@ -70,6 +70,7 @@ function SidebarUpdateCardContent(props: SidebarUpdateCardProps, host: HTMLEleme
   const refreshFailed = () => refreshState().failed;
   const [checkingTarget, setCheckingTarget] = createSignal(false);
   const [targetCheckFailed, setTargetCheckFailed] = createSignal(false);
+  const [expanded, setExpanded] = createSignal(false);
   const [now, setNow] = createSignal(Date.now());
   let refreshAttempt = 0;
   let refreshPending = false;
@@ -122,6 +123,11 @@ function SidebarUpdateCardContent(props: SidebarUpdateCardProps, host: HTMLEleme
     }
     confirmUpdate(props.updateRun);
   };
+
+  const expansionChecksTarget = () =>
+    Boolean(props.onCheckStatus) &&
+    !nativeUpdateAvailable() &&
+    !isUpdateRunAttentionVisible(props.updateRun, props.updateRunAcknowledged);
 
   const checkTarget = async () => {
     if (!props.onCheckStatus) {
@@ -315,11 +321,8 @@ function SidebarUpdateCardContent(props: SidebarUpdateCardProps, host: HTMLEleme
             severity={current().severity}
             critical={current().critical}
             onToggle={(open) => {
-              if (
-                open &&
-                !hasNativeUpdateBridge() &&
-                !isUpdateRunAttentionVisible(props.updateRun, props.updateRunAcknowledged)
-              ) {
+              setExpanded(open);
+              if (open && expansionChecksTarget()) {
                 void checkTarget();
               }
             }}
@@ -458,6 +461,9 @@ function SidebarUpdateCardContent(props: SidebarUpdateCardProps, host: HTMLEleme
     const campaign = () => props.updateSchedule?.campaign;
     const busy = () => props.updateBusy || campaign()?.state === "applying";
     const statusBanner = () => props.statusBanner;
+    // Expansion queues the target check; its first frame must already be busy.
+    const checking = () =>
+      checkingTarget() || (props.compact && !expanded() && expansionChecksTarget());
     const canUpdate = () => (nativeUpdateAvailable() ? props.canNativeUpdate : props.canUpdate);
     const actionable = () =>
       isUpdateActionable(props.updateAvailable, props.updateSchedule, busy());
@@ -484,23 +490,23 @@ function SidebarUpdateCardContent(props: SidebarUpdateCardProps, host: HTMLEleme
         <button
           class={[
             "sidebar-update-card__action",
-            { "sidebar-update-card__action--busy": busy() || checkingTarget() },
+            { "sidebar-update-card__action--busy": busy() || checking() },
           ]}
           type="button"
           aria-disabled={canUpdate() ? undefined : "true"}
-          disabled={busy() || checkingTarget()}
-          aria-busy={checkingTarget() ? "true" : "false"}
+          disabled={busy() || checking()}
+          aria-busy={checking() ? "true" : "false"}
           onClick={() => void startUpdate()}
         >
           <span class="sidebar-update-card__icon" aria-hidden="true">
-            <Icon name={busy() || checkingTarget() ? "refresh" : "download"} />
+            <Icon name={busy() || checking() ? "refresh" : "download"} />
           </span>
           <span
             class="sidebar-update-card__text"
             role={countdownActive() ? "timer" : undefined}
             aria-live={countdownActive() ? "off" : undefined}
           >
-            {checkingTarget() ? t("updates.sidebar.checking") : text()}
+            {checking() ? t("updates.sidebar.checking") : text()}
           </span>
         </button>
       );
@@ -518,10 +524,10 @@ function SidebarUpdateCardContent(props: SidebarUpdateCardProps, host: HTMLEleme
             <button
               type="button"
               class="sidebar-update-card__review"
-              disabled={checkingTarget() || !props.connected}
+              disabled={checking() || !props.connected}
               onClick={() => void checkTarget()}
             >
-              {checkingTarget() ? t("updates.sidebar.checking") : t("connection.retryNow")}
+              {checking() ? t("updates.sidebar.checking") : t("connection.retryNow")}
             </button>
           </Show>
           <Show when={actionable()}>
@@ -548,7 +554,7 @@ function SidebarUpdateCardContent(props: SidebarUpdateCardProps, host: HTMLEleme
               {t("updates.reviewUpdate")}
             </button>
           </Show>
-          {actionable() && !busy() && !checkingTarget() && !targetCheckFailed()
+          {actionable() && !busy() && !checking() && !targetCheckFailed()
             ? renderUpdateGitRevisions(props.updateSchedule, props.updateAvailable)
             : null}
         </div>

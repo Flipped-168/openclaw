@@ -383,15 +383,20 @@ describe("SidebarUpdateCard", () => {
     element.setProps({ onCheckStatus: vi.fn(async () => false) });
     element.setProps({ onUpdate: vi.fn() });
     await settle();
-    element.element.querySelector<HTMLButtonElement>(".sidebar-update-card__action")!.click();
+    element.element.querySelector("details")!.open = true;
     await vi.waitFor(() =>
       expect(element.element.textContent).toContain("Could not check the latest update"),
     );
+    const action = element.element.querySelector<HTMLButtonElement>(
+      ".sidebar-update-card__action",
+    )!;
+    await vi.waitFor(() => expect(action.disabled).toBe(false));
+    action.click();
+    await vi.waitFor(() => expect(element.props().onCheckStatus).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() => expect(action.disabled).toBe(false));
+    expect(element.element.textContent).toContain("Could not check the latest update");
     expect(document.querySelector("openclaw-modal-dialog")).toBeNull();
     expect(element.props().onUpdate).not.toHaveBeenCalled();
-    expect(
-      element.element.querySelector<HTMLButtonElement>(".sidebar-update-card__action")?.disabled,
-    ).toBe(false);
     // A later status read can clear the unavailable target without clearing its error.
     element.setProps({ updateAvailable: null });
     element.setProps({
@@ -411,8 +416,39 @@ describe("SidebarUpdateCard", () => {
     );
     expect(retry).toBeDefined();
     retry!.click();
-    await vi.waitFor(() => expect(element.props().onCheckStatus).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() => expect(element.props().onCheckStatus).toHaveBeenCalledTimes(3));
     expect(element.props().onUpdate).not.toHaveBeenCalled();
+  });
+
+  it("keeps the compact action busy from expansion until its target check settles", async () => {
+    const element = await mount({
+      currentVersion: "1.0.0",
+      latestVersion: "2.0.0",
+      channel: "stable",
+    });
+    const check = createDeferred<boolean>();
+    element.setProps({ compact: true, onCheckStatus: vi.fn(() => check.promise) });
+    await settle();
+    const action = () =>
+      element.element.querySelector<HTMLButtonElement>(".sidebar-update-card__action")!;
+    const details = element.element.querySelector("details")!;
+    const expanded = new Promise<void>((resolve) => {
+      details.addEventListener("toggle", () => resolve(), { once: true });
+    });
+    details.open = true;
+    // The toggle that starts the check is queued after opening; a press here must not land.
+    expect(element.props().onCheckStatus).not.toHaveBeenCalled();
+    expect(action().disabled).toBe(true);
+    expect(action().getAttribute("aria-busy")).toBe("true");
+
+    await expanded;
+    await settle();
+    expect(element.props().onCheckStatus).toHaveBeenCalledOnce();
+    expect(action().disabled).toBe(true);
+    check.resolve(true);
+    await vi.waitFor(() => expect(action().disabled).toBe(false));
+    expect(action().getAttribute("aria-busy")).toBe("false");
+    expect(action().textContent).toContain("Update Gateway");
   });
 
   it("ignores an obsolete refresh result after recovery state is re-established", async () => {
