@@ -433,7 +433,7 @@ export async function prepareQualifiedSessionEntryTarget(
       }
     }),
   );
-  // Later sibling duplicates affect discovery, not this already pinned physical target.
+  // Later alternate-key or sibling-store duplicates affect discovery, not this pinned target.
   return qualified;
 }
 
