@@ -86,11 +86,10 @@ export async function readConfigFileSnapshotInternal(
       ? captureManagedConfigSnapshotPreparation(context.configPath)
       : options.preparation;
   preparation?.assertCurrent();
-  const result = await readConfigSnapshotWithPreparation(
-    context,
-    { ...options, preparation },
-    sourceRaw,
-  );
+  const read = () =>
+    readConfigSnapshotWithPreparation(context, { ...options, preparation }, sourceRaw);
+  // Unobserved callers retain source artifacts throughout asynchronous preparation.
+  const result = await (context.deps.observe ? read() : withArtifactPreservingStateReads(read));
   preparation?.assertCurrent();
   return result;
 }
@@ -535,10 +534,8 @@ export async function readConfigFileSnapshotWithPluginMetadataFromContext(
   options: ConfigSnapshotMetadataReadOptions = {},
 ): Promise<ReadConfigFileSnapshotWithPluginMetadataResult> {
   const read = () => readConfigSnapshotWithPluginMetadata(context, options);
-  // Explicit CLI validation prepares async state facts before command admission.
-  return options.prepareValidation && !context.deps.observe
-    ? withArtifactPreservingStateReads(read)
-    : read();
+  // Include metadata-only completion in the unobserved caller's inspection scope.
+  return context.deps.observe ? read() : withArtifactPreservingStateReads(read);
 }
 
 async function readConfigSnapshotWithPluginMetadata(

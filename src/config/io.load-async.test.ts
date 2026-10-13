@@ -109,7 +109,7 @@ it.each(["load", "snapshot", "host-snapshot", "metadata", "write-snapshot", "pol
           )
         : undefined;
     try {
-      const config = await withArtifactPreservingStateReads(() =>
+      const read = () =>
         withPluginCache(createPluginCache(), async () => {
           if (method === "policy") {
             return await readCurrentConfigForPolicyCheckAsync(options);
@@ -126,8 +126,11 @@ it.each(["load", "snapshot", "host-snapshot", "metadata", "write-snapshot", "pol
                 : await io.readConfigFileSnapshot();
           expect(snapshot).toMatchObject({ valid: true, raw });
           return snapshot.config;
-        }),
-      );
+        });
+      // Plain loads use their caller's inspection scope; snapshot APIs own theirs.
+      const config = await (method === "load" || method === "policy"
+        ? withArtifactPreservingStateReads(read)
+        : read());
       expect(config.gateway?.mode).toBe("local");
       expect(config).toHaveProperty("session.store", "/srv/synthetic-session-state/sessions.json");
       expect(synchronousSnapshot).not.toHaveBeenCalled();
