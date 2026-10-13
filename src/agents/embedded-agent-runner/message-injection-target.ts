@@ -346,6 +346,7 @@ function bindEmbeddedMessageInjection(
   const ownedOperation =
     operation && getAttachedBackend(operation) === handle ? operation : undefined;
   const assertCurrent = createMessageInjectionAuthority(() => {
+    options?.assertCurrent?.();
     preparation?.assertCurrent();
     preparation?.compatAssertCurrent?.();
     if (sourceCanInject && !sourceCanInject()) {
@@ -377,6 +378,7 @@ function bindEmbeddedMessageInjection(
     preparation &&
     bindPreparedToolAuthority({
       ...preparation,
+      assertCurrent,
       compatAssertCurrent: assertCurrent,
     });
   const legacy =
