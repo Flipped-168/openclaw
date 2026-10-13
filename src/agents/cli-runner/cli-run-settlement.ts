@@ -192,21 +192,40 @@ async function retireCliRunMcpRuntime(
 export async function settlePreparedCliRun(params: {
   context: PreparedCliRunContext;
   diagnosticLifecycle?: ClaudeCliRunDiagnosticLifecycle;
-  run: () => Promise<EmbeddedAgentRunResult>;
+  run: (complete: (result: EmbeddedAgentRunResult) => void) => Promise<EmbeddedAgentRunResult>;
 }): Promise<EmbeddedAgentRunResult> {
   const { context, diagnosticLifecycle, run } = params;
   const runParams = context.params;
+  let completed: EmbeddedAgentRunResult | undefined;
+  const warnAfterCommit = (error: unknown) =>
+    log.warn(
+      `CLI run ${runParams.runId} settlement failed after final reply commit: ${formatErrorMessage(error)}`,
+    );
   let outcome: { result: EmbeddedAgentRunResult } | { error: unknown };
   try {
-    outcome = { result: await run() };
+    outcome = {
+      result: await run((result) => {
+        completed = result;
+      }),
+    };
   } catch (error) {
-    outcome = { error };
+    if (completed) {
+      warnAfterCommit(error);
+    }
+    outcome = completed ? { result: completed } : { error };
   }
   let cleanupError: Error | undefined;
   const recordCleanupError = (error: unknown) => {
     recordAgentCleanupFailure();
     cleanupError ??= error instanceof Error ? error : new Error(formatErrorMessage(error));
   };
+  try {
+    await runCliCleanup(runParams, "cli-backend-release", async () => {
+      await context.preparedBackend.cleanup?.();
+    });
+  } catch (error) {
+    recordCleanupError(error);
+  }
   if (runParams.cleanupCliLiveSessionOnRunEnd === true) {
     try {
       const { closeCliLiveSession } = await import("./cli-live-session-registry.js");
@@ -221,47 +240,54 @@ export async function settlePreparedCliRun(params: {
     recordCleanupError(error);
   }
   if (cleanupError) {
-    if ("error" in outcome || outcome.result.didSendViaMessagingTool === true) {
+    if (completed || "error" in outcome || outcome.result.didSendViaMessagingTool === true) {
       log.warn(`cli run cleanup failed after completion: ${formatErrorMessage(cleanupError)}`);
     } else {
       diagnosticLifecycle?.setPhase("cleanup");
     }
   }
   // Retiring a caller is not a provider failure and must not quarantine its credential.
-  runParams.assertCurrent?.();
-  // Settle only after backend recovery is exhausted. Recording inside an
-  // attempt would quarantine a healthy profile for a recovered session fault.
-  if (context.effectiveAuthProfileId && context.authProfileStore) {
-    const profileId = context.effectiveAuthProfileId;
-    const authProfileStore = context.authProfileStore;
-    const terminal: Parameters<typeof settleCliAuthProfile>[0]["terminal"] | undefined =
-      "error" in outcome
-        ? {
-            outcome: "failure",
-            error: outcome.error,
-            config: runParams.config,
-            runId: runParams.runId,
-            modelId: context.modelId,
-          }
-        : outcome.result.meta.executionTrace?.attempts?.at(-1)?.result === "success"
-          ? { outcome: "success" }
-          : undefined;
-    if (terminal) {
-      await settleCliAuthProfile({
-        store: authProfileStore,
-        profileId,
-        provider: authProfileStore.profiles[profileId]?.provider ?? runParams.provider,
-        agentDir: context.agentDir,
-        terminal,
-      });
+  try {
+    runParams.assertCurrent?.();
+    // Settle only after backend recovery is exhausted. Recording inside an
+    // attempt would quarantine a healthy profile for a recovered session fault.
+    if (context.effectiveAuthProfileId && context.authProfileStore) {
+      const profileId = context.effectiveAuthProfileId;
+      const authProfileStore = context.authProfileStore;
+      const terminal: Parameters<typeof settleCliAuthProfile>[0]["terminal"] | undefined =
+        "error" in outcome
+          ? {
+              outcome: "failure",
+              error: outcome.error,
+              config: runParams.config,
+              runId: runParams.runId,
+              modelId: context.modelId,
+            }
+          : outcome.result.meta.executionTrace?.attempts?.at(-1)?.result === "success"
+            ? { outcome: "success" }
+            : undefined;
+      if (terminal) {
+        await settleCliAuthProfile({
+          store: authProfileStore,
+          profileId,
+          provider: authProfileStore.profiles[profileId]?.provider ?? runParams.provider,
+          agentDir: context.agentDir,
+          terminal,
+        });
+      }
     }
+  } catch (error) {
+    if (!completed) {
+      throw error;
+    }
+    warnAfterCommit(error);
   }
   if ("error" in outcome) {
     throw outcome.error instanceof Error
       ? outcome.error
       : new Error(formatErrorMessage(outcome.error));
   }
-  if (cleanupError && outcome.result.didSendViaMessagingTool !== true) {
+  if (cleanupError && !completed && outcome.result.didSendViaMessagingTool !== true) {
     throw cleanupError;
   }
   return outcome.result;
@@ -539,27 +565,38 @@ export function buildCliRunResult(params: {
   const yielded = output.yielded === true;
   const stopReason = terminalInterruption?.reason ?? (yielded ? "end_turn" : "completed");
 
-  if (!terminalInterruption) {
-    runParams.onSuccessfulAuthBinding?.({
-      ...(context.effectiveAuthProfileId ? { authProfileId: context.effectiveAuthProfileId } : {}),
-      ...(context.authBindingFingerprint
-        ? { authFingerprint: context.authBindingFingerprint }
-        : {}),
-      ...(!context.authBindingFingerprint && context.runtimeOwnerFingerprint
-        ? {
-            runtimeOwnerFingerprint: context.runtimeOwnerFingerprint,
-            runtimeOwnerKind: "cli-runtime" as const,
-            runtimeOwnerId: context.backendResolved.id,
-          }
-        : {}),
-      ...(context.runtimeArtifactFingerprint
-        ? {
-            runtimeArtifactFingerprint: context.runtimeArtifactFingerprint,
-            runtimeArtifactId: context.backendResolved.id,
-          }
-        : {}),
-      ...(context.authBindingSkipsLocalCredential ? { skipLocalCredential: true } : {}),
-    });
+  try {
+    if (!terminalInterruption) {
+      runParams.onSuccessfulAuthBinding?.({
+        ...(context.effectiveAuthProfileId
+          ? { authProfileId: context.effectiveAuthProfileId }
+          : {}),
+        ...(context.authBindingFingerprint
+          ? { authFingerprint: context.authBindingFingerprint }
+          : {}),
+        ...(!context.authBindingFingerprint && context.runtimeOwnerFingerprint
+          ? {
+              runtimeOwnerFingerprint: context.runtimeOwnerFingerprint,
+              runtimeOwnerKind: "cli-runtime" as const,
+              runtimeOwnerId: context.backendResolved.id,
+            }
+          : {}),
+        ...(context.runtimeArtifactFingerprint
+          ? {
+              runtimeArtifactFingerprint: context.runtimeArtifactFingerprint,
+              runtimeArtifactId: context.backendResolved.id,
+            }
+          : {}),
+        ...(context.authBindingSkipsLocalCredential ? { skipLocalCredential: true } : {}),
+      });
+    }
+  } catch (error) {
+    if (!assistantTranscriptIdempotencyKey || terminalInterruption || yielded) {
+      throw error;
+    }
+    log.warn(
+      `CLI run ${runParams.runId} auth binding notification failed after final reply commit: ${formatErrorMessage(error)}`,
+    );
   }
 
   return {
