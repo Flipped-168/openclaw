@@ -30,7 +30,7 @@ function TitlebarButton(props: {
   disabled?: boolean;
   ariaExpanded?: boolean;
   onClick?: () => void;
-  className: string;
+  class: string;
 }) {
   return (
     <openclaw-tooltip prop:content={props.tooltip ?? props.label}>
@@ -39,7 +39,7 @@ function TitlebarButton(props: {
       </Show>
       <button
         type="button"
-        class={`topbar-icon-btn macos-titlebar-controls__button ${props.className}`}
+        class={`topbar-icon-btn macos-titlebar-controls__button ${props.class}`}
         aria-label={props.label}
         aria-expanded={
           props.ariaExpanded === undefined ? undefined : props.ariaExpanded ? "true" : "false"
@@ -65,7 +65,7 @@ export const MacosTitlebarControls = defineSolidBridge<Props>(
             icon={props.navCollapsed ? "panelLeftOpen" : "panelLeftClose"}
             ariaExpanded={!props.navCollapsed}
             onClick={props.onToggleSidebar}
-            className="macos-titlebar-controls__sidebar-toggle"
+            class="macos-titlebar-controls__sidebar-toggle"
           />
         </Show>
         <TitlebarButton
@@ -73,14 +73,14 @@ export const MacosTitlebarControls = defineSolidBridge<Props>(
           icon="chevronLeft"
           disabled={!props.canGoBack}
           onClick={() => globalThis.history.back()}
-          className="macos-titlebar-controls__back"
+          class="macos-titlebar-controls__back"
         />
         <TitlebarButton
           label={t("nav.forward")}
           icon="chevronRight"
           disabled={!props.canGoForward}
           onClick={() => globalThis.history.forward()}
-          className="macos-titlebar-controls__forward"
+          class="macos-titlebar-controls__forward"
         />
         <Show when={!props.historyOnly}>
           <TitlebarButton
@@ -94,7 +94,7 @@ export const MacosTitlebarControls = defineSolidBridge<Props>(
             }
             icon="search"
             onClick={props.onOpenPalette}
-            className="macos-titlebar-controls__search"
+            class="macos-titlebar-controls__search"
           />
           <Show when={props.navCollapsed}>
             <TitlebarButton
@@ -115,7 +115,7 @@ export const MacosTitlebarControls = defineSolidBridge<Props>(
               icon="plus"
               disabled={Boolean(props.newSessionDisabledReason)}
               onClick={props.onOpenNewSession}
-              className="macos-titlebar-controls__new-session"
+              class="macos-titlebar-controls__new-session"
             />
           </Show>
         </Show>

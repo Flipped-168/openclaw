@@ -67,6 +67,25 @@ export function startBrowserAuthRecovery(
           modal.finish(undefined);
         };
         let update: (() => void) | undefined;
+        async function signIn() {
+          if (webKitHostWindow()?.webkit?.messageHandlers?.openclawGateways) {
+            const { nativeGatewaysCapability } = await import("./native-gateways.runtime.ts");
+            if (lifetime.signal.aborted || dismissed) {
+              return;
+            }
+            const native = nativeGatewaysCapability();
+            const currentId = native?.snapshot?.currentId;
+            if (native && currentId) {
+              // The app owns a separate cookie store; a normal browser tab cannot renew it.
+              native.reconnect(currentId);
+              return;
+            }
+          }
+          openedSignIn = true;
+          probeResult = undefined;
+          openExternalUrlSafe(root.href);
+          update?.();
+        }
         const content = () => {
           const readView = () => ({ openedSignIn, pending: Boolean(pending), probeResult });
           const [view, setView] = createSignal(readView());
@@ -79,9 +98,9 @@ export function startBrowserAuthRecovery(
             >
               <div class="exec-approval-card">
                 <div class="exec-approval-header">
-                  <div style="min-width: 0">
+                  <div style={{ "min-width": "0" }}>
                     <div class="exec-approval-title">{t("connection.browserSignIn.title")}</div>
-                    <div class="exec-approval-sub" style="white-space: normal">
+                    <div class="exec-approval-sub" style={{ "white-space": "normal" }}>
                       {t("connection.browserSignIn.description")}
                     </div>
                   </div>
@@ -99,29 +118,7 @@ export function startBrowserAuthRecovery(
                         : null}
                 </p>
                 <div class="exec-approval-actions">
-                  <button
-                    class="btn primary"
-                    onClick={async () => {
-                      if (webKitHostWindow()?.webkit?.messageHandlers?.openclawGateways) {
-                        const { nativeGatewaysCapability } =
-                          await import("./native-gateways.runtime.ts");
-                        if (lifetime.signal.aborted || dismissed) {
-                          return;
-                        }
-                        const native = nativeGatewaysCapability();
-                        const currentId = native?.snapshot?.currentId;
-                        if (native && currentId) {
-                          // The app owns a separate cookie store; a normal browser tab cannot renew it.
-                          native.reconnect(currentId);
-                          return;
-                        }
-                      }
-                      openedSignIn = true;
-                      probeResult = undefined;
-                      openExternalUrlSafe(root.href);
-                      update?.();
-                    }}
-                  >
+                  <button class="btn primary" onClick={() => void signIn()}>
                     {t("connection.browserSignIn.action")}
                   </button>
                   <Show when={view().openedSignIn}>

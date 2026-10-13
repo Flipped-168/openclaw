@@ -1,4 +1,4 @@
-import type { JSX } from "@solidjs/web";
+import type { JSX as SolidJSX } from "@solidjs/web";
 import { For, Show, createEffect, createMemo, flush, onSettled, untrack } from "solid-js";
 import { createTabsController } from "../lib/tabs-controller.ts";
 import type { PanelTabStripTab } from "./panel-tab-strip-types.ts";
@@ -16,7 +16,7 @@ declare module "@solidjs/web" {
   }
 }
 
-export type SolidPanelTabStripTab = Omit<PanelTabStripTab, "icon"> & { icon?: JSX.Element };
+export type SolidPanelTabStripTab = Omit<PanelTabStripTab, "icon"> & { icon?: SolidJSX.Element };
 export type PanelTabStripProps<T extends SolidPanelTabStripTab> = {
   tabs: T[];
   activeId: string | null;
@@ -28,7 +28,7 @@ export type PanelTabStripProps<T extends SolidPanelTabStripTab> = {
   newDisabled?: boolean;
   newTabAction?: boolean;
   /** null hides the control; undefined renders the default new-tab button. */
-  newControl?: JSX.Element;
+  newControl?: SolidJSX.Element;
   separateTabs?: boolean;
   onReorder?: (sourceId: string, targetId: string, placement: "before" | "after") => void;
 };

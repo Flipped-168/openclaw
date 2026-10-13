@@ -10,7 +10,7 @@ export function CommandPaletteLoading(props: {
   onClose: () => void;
 }) {
   const current = createMemo(() => {
-    props.revision;
+    void props.revision;
     return {
       defined: Boolean(customElements.get("openclaw-modal-dialog")),
       value: props.state.value,
@@ -38,7 +38,7 @@ export function CommandPaletteLoading(props: {
             value={value()}
             placeholder={t("palette.placeholder")}
             onInputRef={(element, previous) => props.state.inputRef(element, previous)}
-            onValueChange={(value, event) => props.state.captureInput(value, event)}
+            onValueChange={(nextValue, event) => props.state.captureInput(nextValue, event)}
             onPaste={(event) => props.state.handlePaste(event)}
             readOnly={current().readOnly}
           />

@@ -276,7 +276,7 @@ export async function confirmAndStartUpdateRuntime(
                           { "btn--busy": view().working || view().checkingStatus },
                         ]}
                         disabled={view().working || view().checkingStatus}
-                        onClick={confirm}
+                        onClick={() => void confirm()}
                       >
                         {view().checkingStatus ? (
                           t("updates.dialog.checkingStatus")
@@ -300,7 +300,7 @@ export async function confirmAndStartUpdateRuntime(
                       type="button"
                       class={["btn", { "btn--busy": view().checkingStatus }]}
                       disabled={view().checkingStatus || view().disconnected}
-                      onClick={checkStatus}
+                      onClick={() => void checkStatus()}
                     >
                       {view().checkingStatus ? (
                         <>
@@ -317,7 +317,7 @@ export async function confirmAndStartUpdateRuntime(
                       type="button"
                       class="btn primary"
                       disabled={view().checkingStatus || view().disconnected}
-                      onClick={retry}
+                      onClick={() => void retry()}
                     >
                       {t("updates.dialog.retryUpdate")}
                     </button>

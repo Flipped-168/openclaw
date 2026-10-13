@@ -175,7 +175,7 @@ describe("PanelTabStrip", () => {
     const iconElement = container.querySelector(".tabstrip-tab__icon span");
     const onSelect = vi.fn();
     await renderStrip({
-      tabs: tabs.map((tab) => ({ ...tab })),
+      tabs: tabs.map((tab) => Object.assign({}, tab)),
       activeId: "tab-2",
       onSelect,
       container,
