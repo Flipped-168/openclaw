@@ -2789,6 +2789,7 @@ describe("openclaw agent database", () => {
       )
       .run();
     corrupt.close();
+    revokeSqliteDatabaseAdmissionsForPath(databasePath);
 
     openOpenClawAgentDatabase(options);
     closeOpenClawAgentDatabasesForTest();
