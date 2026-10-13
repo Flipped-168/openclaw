@@ -20,6 +20,7 @@ import {
   captureNativeWorkspaceFailure,
   catalog,
   expectComposerFooterLayout,
+  installNativeWorkspaceLitErrorTrace,
   pluginId,
   pluginModule,
   waitForPendingPluginInitializer,
@@ -467,6 +468,7 @@ suite.define(() => {
           : undefined,
       },
       async ({ page }) => {
+        await installNativeWorkspaceLitErrorTrace(page);
         const sessionKey = "agent:main:main";
         const otherSessionKey = "agent:main:accessory-peer";
         const boardSnapshot = {

@@ -95,18 +95,27 @@ it("restores the delegated shell after a pending update and can select another w
       label: "Workspace fixture",
       surface: "workspace",
       mount(container, context) {
-        const target = document.createElement("section");
-        target.dataset.delegatedWorkspace = "";
-        container.append(target);
-        return { dispose: context.mountDefault(target) };
+        container.dataset.delegatedWorkspace = "";
+        return { dispose: context.mountDefault(container) };
       },
     },
   };
   const selected = vi.spyOn(runtime.context.plugins, "selectedReplacement");
+  selected.mockReturnValue(undefined);
+  owner.routeState = { routeId: "plugins" };
+  owner.invalidate();
+  flush();
   selected.mockImplementation((surface) => (surface === "workspace" ? replacement : undefined));
   owner.invalidate();
   flush();
-  const plugin =
+  expect(view.container.querySelector("openclaw-plugin-view")).toBeNull();
+  expect(view.container.querySelector(".shell")).toBe(shell);
+  expect(view.container.querySelector("openclaw-app-sidebar")).toBe(sidebar);
+
+  owner.routeState = { routeId: "dashboard" };
+  owner.invalidate();
+  flush();
+  let plugin =
     view.container.querySelector<HTMLElementTagNameMap["openclaw-plugin-view"]>(
       "openclaw-plugin-view",
     );
@@ -116,9 +125,33 @@ it("restores the delegated shell after a pending update and can select another w
   expect(target?.querySelector(".shell")).toBe(shell);
   expect(target?.querySelector("openclaw-app-sidebar")).toBe(sidebar);
 
-  // A final shell update may already be queued when the user recovers the built-in view.
-  plugin!.props = { sessionKey: "agent:main:updated", routeId: "chat" };
+  // A pending plugin update cannot remove the shell restored directly on Dashboard.
+  plugin!.props = { sessionKey: "agent:main:updated", routeId: "dashboard" };
   selected.mockReturnValue(undefined);
+  owner.invalidate();
+  flush();
+  expect(view.container.querySelector("openclaw-plugin-view")).toBeNull();
+  expect(view.container.querySelector(".shell")).toBe(shell);
+  expect(view.container.querySelector("openclaw-app-sidebar")).toBe(sidebar);
+  await settleLitElement(plugin!);
+  expect(view.container.querySelector(".shell")).toBe(shell);
+  expect(view.container.querySelector("openclaw-app-sidebar")).toBe(sidebar);
+  expect(shell?.isConnected).toBe(true);
+
+  selected.mockImplementation((surface) => (surface === "workspace" ? replacement : undefined));
+  owner.invalidate();
+  flush();
+  plugin =
+    view.container.querySelector<HTMLElementTagNameMap["openclaw-plugin-view"]>(
+      "openclaw-plugin-view",
+    );
+  expect(plugin).not.toBeNull();
+  await settleLitElement(plugin!);
+  expect(plugin!.querySelector(".shell")).toBe(shell);
+
+  // Plugins restores the built-in shell while the delegated workspace remains selected.
+  plugin!.props = { sessionKey: "agent:main:updated", routeId: "dashboard" };
+  owner.routeState = { routeId: "plugins" };
   owner.invalidate();
   flush();
   expect(view.container.querySelector("openclaw-plugin-view")).toBeNull();
@@ -129,6 +162,16 @@ it("restores the delegated shell after a pending update and can select another w
   expect(view.container.querySelector(".shell")).toBe(shell);
   expect(view.container.querySelector("openclaw-app-sidebar")).toBe(sidebar);
   expect(shell?.isConnected).toBe(true);
+
+  selected.mockReturnValue(undefined);
+  owner.invalidate();
+  flush();
+  owner.routeState = { routeId: "dashboard" };
+  owner.invalidate();
+  flush();
+  expect(view.container.querySelector("openclaw-plugin-view")).toBeNull();
+  expect(view.container.querySelector(".shell")).toBe(shell);
+  expect(view.container.querySelector("openclaw-app-sidebar")).toBe(sidebar);
 
   const customWorkspace: ControlUiRegistration<ControlUiReplacement> = {
     ...replacement,
@@ -145,6 +188,8 @@ it("restores the delegated shell after a pending update and can select another w
     },
   };
   owner.routeState = { routeId: "plugins" };
+  owner.invalidate();
+  flush();
   selected.mockImplementation((surface) => (surface === "workspace" ? customWorkspace : undefined));
   owner.invalidate();
   flush();
@@ -162,10 +207,20 @@ it("restores the delegated shell after a pending update and can select another w
   await settleLitElement(customPlugin!);
   expect(view.getByRole("heading", { name: "Custom workspace" })).toBeTruthy();
 
-  selected.mockReturnValue(undefined);
+  owner.routeState = { routeId: "plugins" };
   owner.invalidate();
   flush();
   await settleLitElement(customPlugin!);
+  expect(view.container.querySelector("openclaw-plugin-view")).toBeNull();
+  expect(view.container.querySelector(".shell")).toBe(shell);
+  expect(view.container.querySelector("openclaw-app-sidebar")).toBe(sidebar);
+
+  selected.mockReturnValue(undefined);
+  owner.invalidate();
+  flush();
+  owner.routeState = { routeId: "dashboard" };
+  owner.invalidate();
+  flush();
   expect(view.container.querySelector(".shell")).toBe(shell);
   expect(view.container.querySelector("openclaw-app-sidebar")).toBe(sidebar);
   expect(shell?.isConnected).toBe(true);

@@ -6,6 +6,108 @@ import { expect } from "vitest";
 import type { ApplicationContext } from "../app/context.ts";
 import { createControlUiE2eArtifactDir } from "../test-helpers/control-ui-e2e-artifacts.ts";
 
+type TracedLitPart = {
+  startNode: Node;
+  endNode: Node | null;
+  options?: { host?: object; renderBefore?: Node };
+};
+
+function traceNativeWorkspaceLitErrors() {
+  const scope = window as NativePluginWindow;
+  const trace = { prototypes: 0, errors: [] as unknown[] };
+  scope.nativeWorkspaceLitTrace = trace;
+  const prototypes = new WeakSet<object>();
+  const ranges = new WeakMap<object, unknown>();
+  let rangeId = 0;
+  const describe = (node: unknown) =>
+    node instanceof Node
+      ? {
+          nodeType: node.nodeType,
+          tag: node instanceof Element ? node.localName : null,
+          classes:
+            node instanceof Element
+              ? [...node.classList].slice(0, 8).map((name) => name.slice(0, 128))
+              : [],
+          connected: node.isConnected,
+        }
+      : null;
+  const facts = (node: unknown) => ({
+    node: describe(node),
+    parent: node instanceof Node ? describe(node.parentNode) : null,
+  });
+  const discover = (node: Node) => {
+    if (!(node instanceof Comment) || node.data !== "lit-content") {
+      return;
+    }
+    const cached: unknown = Reflect.get(node, "_$litPart$");
+    if (!cached || typeof cached !== "object") {
+      return;
+    }
+    // SAFETY: Lit 3.3.3 render caches its RootPart on this renderBefore comment.
+    const part = cached as TracedLitPart;
+    const range = part.options ?? part;
+    if (!ranges.has(range)) {
+      ranges.set(range, {
+        id: ++rangeId,
+        container: describe(node.parentNode),
+        host: describe(part.options?.host),
+      });
+    }
+    const prototype: object = Object.getPrototypeOf(part);
+    const original: unknown = Reflect.get(prototype, "_$setValue");
+    // The bundled production runtime renames this method; this probe targets Lit DEV.
+    if (prototypes.has(prototype) || typeof original !== "function") {
+      return;
+    }
+    prototypes.add(prototype);
+    trace.prototypes += 1;
+    Reflect.set(prototype, "_$setValue", function (this: TracedLitPart, ...args: unknown[]) {
+      try {
+        return Reflect.apply(original, this, args);
+      } catch (error) {
+        if (trace.errors.length < 3) {
+          trace.errors.push({
+            message: error instanceof Error ? error.message.slice(0, 1_600) : "Non-Error throw",
+            stack: error instanceof Error ? error.stack?.slice(0, 1_600) : undefined,
+            range: ranges.get(this.options ?? this),
+            start: facts(this.startNode),
+            end: facts(this.endNode),
+            renderBefore: facts(this.options?.renderBefore),
+            host: facts(this.options?.host),
+          });
+        }
+        throw error;
+      }
+    });
+  };
+  const scan = (node: Node) => {
+    discover(node);
+    const comments = document.createTreeWalker(node, NodeFilter.SHOW_COMMENT);
+    for (let comment = comments.nextNode(); comment; comment = comments.nextNode()) {
+      discover(comment);
+    }
+  };
+  const observer = new MutationObserver((mutations) => {
+    for (const mutation of mutations) {
+      for (const node of mutation.addedNodes) {
+        scan(node);
+      }
+      for (const node of mutation.removedNodes) {
+        scan(node);
+      }
+    }
+  });
+  // The auth:none fixture's withPage context owns this observer and patched realm.
+  observer.observe(document, { childList: true, subtree: true });
+  scan(document);
+}
+
+export async function installNativeWorkspaceLitErrorTrace(page: Page): Promise<void> {
+  await page.addInitScript({
+    content: `;(() => { const __name = (target) => target; (${traceNativeWorkspaceLitErrors.toString()})(); })();`,
+  });
+}
+
 /** Capture only synthetic fixture ownership and geometry after the original wait fails. */
 export async function captureNativeWorkspaceFailure(page: Page): Promise<void> {
   const readBrowserState = page.evaluate(() => {
@@ -111,6 +213,7 @@ export async function captureNativeWorkspaceFailure(page: Page): Promise<void> {
           }
           return Object.assign(facts(heading), { ancestors });
         }),
+      litErrors: (window as NativePluginWindow).nativeWorkspaceLitTrace ?? null,
     };
   });
   const observation = await withTimeout(readBrowserState, 5_000, "native workspace diagnostics");
@@ -137,6 +240,7 @@ export async function captureNativePluginUiProof(
 }
 
 export type NativePluginWindow = Window & {
+  nativeWorkspaceLitTrace?: { prototypes: number; errors: unknown[] };
   nativePluginProof?: { release?: () => void };
   nativeActionProof?: {
     runs: number;
